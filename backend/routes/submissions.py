@@ -52,6 +52,36 @@ def create_submission():
     if not society_id or not society_name:
         return jsonify({"error": "society_id and society_name are required"}), 400
 
+    # Validate society exists + enforce city-scoping for non-admin CPs
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT city_id FROM societies WHERE id = %s",
+                (society_id,),
+            )
+            soc_row = cur.fetchone()
+            if not soc_row:
+                return jsonify({"error": "Invalid society_id"}), 400
+
+            if not g.user.get("is_admin", False):
+                cur.execute(
+                    "SELECT city_id FROM channel_partners WHERE id = %s",
+                    (g.user["cp_id"],),
+                )
+                cp_row = cur.fetchone()
+                if (
+                    not cp_row
+                    or cp_row["city_id"] is None
+                    or cp_row["city_id"] != soc_row["city_id"]
+                ):
+                    return (
+                        jsonify({"error": "This society is not in your service area"}),
+                        403,
+                    )
+    finally:
+        put_app_conn(conn)
+
     # Server-side duplicate check (both tiers block; admin no longer bypasses)
     dup = check_duplicate(
         society_id=society_id,
