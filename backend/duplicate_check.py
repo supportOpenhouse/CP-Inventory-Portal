@@ -87,12 +87,6 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                         "details": {
                             "society": society_name,
                             "city": city,
-                            "tower": exact["tower_no"],
-                            "unit_no": exact["unit_no"],
-                            "configuration": exact["configuration"],
-                            "area_sqft": exact["area_sqft"],
-                            "floor": exact["floor"],
-                            "registry_status": exact["registry_status"],
                         },
                     }
 
@@ -121,8 +115,6 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                         "details": {
                             "society": society_name,
                             "city": city,
-                            "tower": tower,
-                            "matched_count": row["cnt"],
                         },
                     }
 
@@ -155,8 +147,6 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                             "details": {
                                 "society": society_name,
                                 "city": city,
-                                "floor": floor_int,
-                                "matched_count": row["cnt"],
                             },
                         }
 
@@ -180,7 +170,6 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                     "details": {
                         "society": society_name,
                         "city": city,
-                        "matched_count": row["cnt"],
                     },
                 }
     finally:
