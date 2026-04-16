@@ -3,7 +3,7 @@
 Run locally:
     python app.py
 
-Run in production (later, via Render):
+Run in production (Render, later):
     gunicorn "app:create_app()" --bind 0.0.0.0:$PORT
 """
 
@@ -13,30 +13,39 @@ from flask_cors import CORS
 from config import Config
 from db import init_pools
 from routes.health import bp as health_bp
+from routes.auth_routes import bp as auth_bp
+from routes.meta import bp as meta_bp
+from routes.societies import bp as societies_bp
+from routes.submissions import bp as submissions_bp
 
 
 def create_app() -> Flask:
-    # Fail fast if required env is missing
     Config.validate()
 
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # CORS — only allow the configured frontend origin
+    # CORS — allow only the configured frontend origin
     CORS(
         app,
         origins=[Config.FRONTEND_ORIGIN],
         supports_credentials=False,
     )
 
-    # Initialize DB connection pools (once per process)
     init_pools()
 
     # Register blueprints
     app.register_blueprint(health_bp)
-    # Future: auth_bp, societies_bp, submissions_bp, faqs_bp
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(meta_bp)
+    app.register_blueprint(societies_bp)
+    app.register_blueprint(submissions_bp)
 
-    # Global error handlers — always return JSON
+    # Global JSON error handlers
+    @app.errorhandler(400)
+    def bad_request(e):
+        return jsonify({"error": "Bad request"}), 400
+
     @app.errorhandler(404)
     def not_found(e):
         return jsonify({"error": "Not found"}), 404
@@ -48,6 +57,8 @@ def create_app() -> Flask:
     @app.errorhandler(500)
     def server_error(e):
         return jsonify({"error": "Internal server error"}), 500
+
+    # TODO: wire up flask-limiter for per-IP rate limits once OTP flow lands.
 
     return app
 
