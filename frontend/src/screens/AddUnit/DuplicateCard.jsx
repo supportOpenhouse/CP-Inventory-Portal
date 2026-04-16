@@ -3,10 +3,11 @@
  * No internal inventory fields are displayed — just society name, city, and a generic message.
  *
  * Props:
- *   result  — { match_level, block, message, details: { society, city } }
- *   onBack  — called when user clicks "Go back"
+ *   result     — { match_level, block, message, details: { society, city } }
+ *   onBack     — called when user clicks the back button
+ *   backLabel  — button label; defaults to "Go back" (Step 1 style); Step 4 uses "Return to Dashboard"
  */
-export default function DuplicateCard({ result, onBack }) {
+export default function DuplicateCard({ result, onBack, backLabel = 'Go back' }) {
   const isExact = result.match_level === 'exact';
   const d = result.details || {};
 
@@ -27,7 +28,7 @@ export default function DuplicateCard({ result, onBack }) {
 
         <div className="dup-card-message">{result.message}</div>
 
-        <button className="primary-btn" onClick={onBack}>Go back</button>
+        <button className="primary-btn" onClick={onBack}>{backLabel}</button>
       </div>
     </div>
   );

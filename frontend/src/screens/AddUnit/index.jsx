@@ -1,6 +1,10 @@
 import { useState } from 'react';
 
 import Step1 from './Step1';
+import Step2 from './Step2';
+import Step3 from './Step3';
+import Step4 from './Step4';
+import SuccessScreen from './SuccessScreen';
 
 const STEP_LABELS = {
   1: 'Unit Details',
@@ -9,28 +13,9 @@ const STEP_LABELS = {
   4: 'Pricing & Submit',
 };
 
-/* Placeholder for Steps 2/3/4 — filled in Step 2.4 */
-function PlaceholderStep({ n, onBack, onDone }) {
-  return (
-    <div className="form-section">
-      <div className="form-card">
-        <div className="form-card-title">Step {n} — coming in 2.4</div>
-        <p style={{ fontSize: 13, color: 'var(--oh-gray)', lineHeight: 1.6 }}>
-          {n === 2 && 'More details form (floor, furnishing, facings, parking, extras, registry) lands in the next step.'}
-          {n === 3 && 'Photos step — skipped for v1. This placeholder will stay as "Coming soon".'}
-          {n === 4 && 'Pricing + seller details + final submit lands in the next step.'}
-        </p>
-      </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
-        <button className="secondary-btn" onClick={onBack}>Back</button>
-        <button className="primary-btn" onClick={onDone}>Done</button>
-      </div>
-    </div>
-  );
-}
-
 export default function AddUnit({ onDone }) {
   const [step, setStep] = useState(1);
+  const [submittedId, setSubmittedId] = useState(null);
   const [form, setForm] = useState({
     society: null,
     tower: '',
@@ -42,7 +27,8 @@ export default function AddUnit({ onDone }) {
     exitFacing: '',
     balconyFacing: '',
     view: '',
-    parking: '',
+    coveredParking: '',
+    openParking: '',
     features: [],
     registryStatus: 'Registered',
     askPrice: '',
@@ -50,6 +36,10 @@ export default function AddUnit({ onDone }) {
     sellerName: '',
     sellerPhone: '',
   });
+
+  if (submittedId) {
+    return <SuccessScreen submissionId={submittedId} onDone={onDone} />;
+  }
 
   const handleBack = () => {
     if (step > 1) setStep(step - 1);
@@ -82,9 +72,21 @@ export default function AddUnit({ onDone }) {
       {step === 1 && (
         <Step1 form={form} setForm={setForm} onNext={() => setStep(2)} />
       )}
-      {step === 2 && <PlaceholderStep n={2} onBack={() => setStep(1)} onDone={onDone} />}
-      {step === 3 && <PlaceholderStep n={3} onBack={() => setStep(2)} onDone={onDone} />}
-      {step === 4 && <PlaceholderStep n={4} onBack={() => setStep(3)} onDone={onDone} />}
+      {step === 2 && (
+        <Step2 form={form} setForm={setForm} onNext={() => setStep(3)} onBack={() => setStep(1)} />
+      )}
+      {step === 3 && (
+        <Step3 onNext={() => setStep(4)} onBack={() => setStep(2)} />
+      )}
+      {step === 4 && (
+        <Step4
+          form={form}
+          setForm={setForm}
+          onBack={() => setStep(3)}
+          onSubmitted={setSubmittedId}
+          onAbandon={onDone}
+        />
+      )}
     </div>
   );
 }
