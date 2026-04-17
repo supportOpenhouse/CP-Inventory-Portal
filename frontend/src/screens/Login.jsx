@@ -34,9 +34,7 @@ export default function Login() {
   return (
     <div className="app-shell">
       <div className="login-hero">
-        <div className="login-logo">
-          open<span className="login-logo-accent">house</span>
-        </div>
+        <img src="/openhouse-logo.jpg" alt="Openhouse" className="login-logo-img" />
         <div className="login-tagline">Channel Partner Portal</div>
       </div>
 

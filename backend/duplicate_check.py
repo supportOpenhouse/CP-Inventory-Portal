@@ -63,6 +63,9 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
     try:
         with pconn.cursor() as cur:
             # ---------- Tier 1: exact match ----------
+            # If the CP provided both tower AND unit_no, they're being specific.
+            # Either it matches exactly (block) or we trust them and let them proceed.
+            # We skip the partial-match fallback in this case to avoid false positives.
             if tower and unit_no:
                 cur.execute("""
                     SELECT uid, tower_no, unit_no, configuration, area_sqft,
@@ -89,8 +92,10 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                             "city": city,
                         },
                     }
+                # No exact match AND CP gave full details — trust them, proceed.
+                return _no_match()
 
-            # ---------- Tier 2: partial matches ----------
+            # ---------- Tier 2: partial matches (only when CP didn't give full details) ----------
 
             # 2a: society + tower
             if tower:

@@ -72,10 +72,8 @@ export default function Dashboard({ onAdd }) {
     <div className="app-shell">
       <div className="header">
         <div>
-          <div className="header-brand">
-            open<span className="header-brand-accent">house</span>
-          </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+          <img src="/openhouse-logo.jpg" alt="Openhouse" className="header-logo-img" />
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
             Channel Partner Portal
           </div>
         </div>
