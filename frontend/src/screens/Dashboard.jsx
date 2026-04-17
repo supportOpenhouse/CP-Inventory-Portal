@@ -3,13 +3,11 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { thumbnailUrl } from '../cloudinary';
 import { useAuth } from '../contexts/AuthContext';
-import { formatPrice, stageMeta, timeAgo } from '../format';
+import { formatPrice } from '../format';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import Chatbot from './Chatbot';
 
 function badgeClass(status) {
-  const stage = stageMeta(status);
-  // backwards compat
   if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Closed' || status === 'Visit Scheduled') return 'badge badge-closed';
   if (status === 'Rejected') return 'badge badge-rejected';
