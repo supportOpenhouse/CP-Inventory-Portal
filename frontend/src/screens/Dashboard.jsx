@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
 import { useAuth } from '../contexts/AuthContext';
+import Chatbot from './Chatbot';
 
 function formatPrice(val) {
   const n = parseInt(val);
@@ -25,6 +26,7 @@ export default function Dashboard({ onAdd }) {
     stats: { submitted: 0, offers: 0, closures: 0 },
     error: null,
   });
+  const [rmPhone, setRmPhone] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -47,10 +49,24 @@ export default function Dashboard({ onAdd }) {
           error: err instanceof ApiError ? err.message : 'Failed to load',
         }));
       });
+
+    // Resolve the CP's RM WhatsApp number for the chatbot fallback
+    api
+      .getRmContacts()
+      .then((data) => {
+        if (!alive) return;
+        const contacts = data?.contacts || {};
+        const myRm = user.city && contacts[user.city];
+        setRmPhone(myRm?.phone || '+919555666059');
+      })
+      .catch(() => {
+        if (alive) setRmPhone('+919555666059');
+      });
+
     return () => {
       alive = false;
     };
-  }, []);
+  }, [user.city]);
 
   return (
     <div className="app-shell">
@@ -132,6 +148,7 @@ export default function Dashboard({ onAdd }) {
       )}
 
       <button className="fab" onClick={onAdd} title="Add unit">+</button>
+      <Chatbot rmPhone={rmPhone} />
     </div>
   );
 }
