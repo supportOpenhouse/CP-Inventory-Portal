@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import InstallPrompt from './components/InstallPrompt';
 import Login from './screens/Login';
 import Dashboard from './screens/Dashboard';
 import AddUnit from './screens/AddUnit';
@@ -22,6 +23,7 @@ export default function App() {
     <AuthProvider>
       <style>{fonts}{css}</style>
       <Shell />
+      <InstallPrompt />
     </AuthProvider>
   );
 }

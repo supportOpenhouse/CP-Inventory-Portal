@@ -171,4 +171,13 @@ export const css = `
   .chatbot-faq-question { width: 100%; padding: 13px 16px; background: none; border: none; font-family: inherit; font-size: 14px; font-weight: 500; color: var(--oh-charcoal); text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .chatbot-faq-question:hover { background: var(--oh-orange-light); }
   .chatbot-faq-answer { padding: 0 16px 14px; font-size: 13px; color: var(--oh-gray); line-height: 1.6; animation: slideUp 0.2s ease; }
+
+  /* ===== PWA install banner ===== */
+  .install-banner { position: fixed; bottom: 0; left: 0; right: 0; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; z-index: 200; box-shadow: 0 -4px 16px rgba(0,0,0,0.18); animation: installSlideUp 0.3s ease; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  @keyframes installSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .install-banner-text { flex: 1; min-width: 0; }
+  .install-banner-primary { background: var(--oh-orange); color: #fff; border: none; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .install-banner-primary:hover { background: #E55C1E; }
+  .install-banner-secondary { background: rgba(255,255,255,0.12); color: #fff; border: none; padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .install-banner-secondary:hover { background: rgba(255,255,255,0.2); }
 `;
