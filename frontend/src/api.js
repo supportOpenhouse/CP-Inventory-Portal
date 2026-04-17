@@ -1,6 +1,5 @@
 /**
- * Thin API client. Attaches the JWT (if present) to every request,
- * parses JSON, and throws a consistent ApiError on non-2xx responses.
+ * Thin API client. Attaches JWT, parses JSON, throws ApiError on non-2xx.
  */
 
 import { getToken } from './auth';
@@ -21,7 +20,6 @@ async function request(path, { method = 'GET', body = null, auth = true } = {}) 
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -32,47 +30,89 @@ async function request(path, { method = 'GET', body = null, auth = true } = {}) 
   } catch (netErr) {
     throw new ApiError(0, { error: `Network error: ${netErr.message}` });
   }
-
   let data = null;
   try {
     data = await res.json();
   } catch {
     data = null;
   }
-
   if (!res.ok) {
     throw new ApiError(res.status, data || { error: `HTTP ${res.status}` });
   }
   return data;
 }
 
-/* Convenience wrappers by endpoint — one per backend route.
-   Add new endpoints here as they come online in later steps. */
+function buildQuery(params) {
+  const entries = Object.entries(params).filter(([, v]) => v !== null && v !== undefined && v !== '');
+  if (entries.length === 0) return '';
+  return '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+}
+
+export { API_BASE };
 
 export const api = {
-  // Auth (public)
+  // Auth
   phoneLogin: (phone) =>
     request('/auth/phone-login', { method: 'POST', body: { phone }, auth: false }),
-
-  // Current user (requires auth)
   me: () => request('/me'),
 
   // Public lookups
   getRmContacts: () => request('/rm-contacts', { auth: false }),
   getFaqs: () => request('/faqs', { auth: false }),
 
-  // Societies (auth)
+  // Societies
   searchSocieties: (search = '', limit = 20) =>
     request(`/societies?search=${encodeURIComponent(search)}&limit=${limit}`),
   getSocietyInventory: (id) => request(`/societies/${id}/inventory`),
 
-  // Submissions (auth)
+  // Submissions (CP side)
   listSubmissions: () => request('/submissions'),
   createSubmission: (payload) =>
     request('/submissions', { method: 'POST', body: payload }),
   checkDuplicate: (payload) =>
     request('/check-duplicate', { method: 'POST', body: payload }),
 
-  // Health (debugging)
+  // Admin (staff only)
+  adminListSubmissions: (filters = {}) =>
+    request(`/admin/submissions${buildQuery(filters)}`),
+  adminGetSubmission: (id) => request(`/admin/submissions/${id}`),
+  adminChangeStatus: (id, status) =>
+    request(`/admin/submissions/${id}/status`, { method: 'POST', body: { status } }),
+  adminAddComment: (id, text) =>
+    request(`/admin/submissions/${id}/comment`, { method: 'POST', body: { text } }),
+
+  // Health
   health: () => request('/health', { auth: false }),
 };
+
+/**
+ * CSV export requires the browser to follow a download. Use this helper:
+ * it appends the JWT to the URL via a signed query param approach — but since
+ * we use Authorization header, we fetch the CSV as a blob and trigger a download.
+ */
+export async function downloadAdminCsv(filters = {}) {
+  const token = getToken();
+  const qs = buildQuery(filters);
+  const res = await fetch(`${API_BASE}/admin/submissions.csv${qs}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, { error: 'Failed to export CSV' });
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  // Extract filename from Content-Disposition header, fallback to default
+  let filename = 'submissions.csv';
+  const disp = res.headers.get('Content-Disposition') || '';
+  const match = disp.match(/filename="([^"]+)"/);
+  if (match) filename = match[1];
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

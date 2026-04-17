@@ -1,15 +1,8 @@
 import { useState } from 'react';
 
 import { api, ApiError } from '../../api';
+import { formatIndianNumber, formatPrice } from '../../format';
 import DuplicateCard from './DuplicateCard';
-
-function formatPrice(val) {
-  const n = parseInt(val);
-  if (!n || isNaN(n)) return '';
-  if (n >= 10000000) return '₹' + (n / 10000000).toFixed(2) + ' Cr';
-  if (n >= 100000) return '₹' + (n / 100000).toFixed(1) + ' L';
-  return '₹' + n.toLocaleString('en-IN');
-}
 
 function buildParkingString(form) {
   const closed = parseInt(form.coveredParking) || 0;
@@ -89,8 +82,8 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
         <input
           className="input-field"
           inputMode="numeric"
-          placeholder="e.g. 9500000"
-          value={form.askPrice}
+          placeholder="e.g. 95,00,000"
+          value={formatIndianNumber(form.askPrice)}
           onChange={(e) => setForm({ ...form, askPrice: e.target.value.replace(/\D/g, '') })}
         />
         {form.askPrice && <div className="optional-hint">{formatPrice(form.askPrice)}</div>}
@@ -102,7 +95,7 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
           className="input-field"
           inputMode="numeric"
           placeholder="Optional"
-          value={form.closingPrice}
+          value={formatIndianNumber(form.closingPrice)}
           onChange={(e) => setForm({ ...form, closingPrice: e.target.value.replace(/\D/g, '') })}
         />
         {form.closingPrice && <div className="optional-hint">{formatPrice(form.closingPrice)}</div>}
@@ -125,8 +118,13 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
           placeholder="10-digit mobile"
           value={form.sellerPhone}
           maxLength={15}
-          onChange={(e) => setForm({ ...form, sellerPhone: e.target.value })}
+          onChange={(e) => setForm({ ...form, sellerPhone: e.target.value.replace(/\D/g, '').slice(0, 15) })}
         />
+        {form.sellerPhone && form.sellerPhone.length > 0 && form.sellerPhone.length < 10 && (
+          <div className="optional-hint" style={{ color: 'var(--oh-red)' }}>
+            Phone must be 10 digits
+          </div>
+        )}
       </div>
 
       <div

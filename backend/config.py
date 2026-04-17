@@ -1,8 +1,4 @@
-"""Configuration loaded from environment variables.
-
-Required:  DATABASE_URL, JWT_SECRET
-Optional:  PROPERTIES_DATABASE_URL, FRONTEND_ORIGIN, FLASK_ENV
-"""
+"""Configuration loaded from environment variables."""
 
 import os
 from dotenv import load_dotenv
@@ -17,9 +13,14 @@ class Config:
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
     ENV = os.getenv("FLASK_ENV", "development")
 
+    # Gmail SMTP for alerts
+    GMAIL_FROM_ADDRESS = os.getenv("GMAIL_FROM_ADDRESS") or None
+    GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") or None
+    # Kill-switch: set to "false" to silence alerts without changing code
+    ALERTS_ENABLED = os.getenv("ALERTS_ENABLED", "true").lower() == "true"
+
     @classmethod
     def validate(cls) -> None:
-        """Raise if any required env var is missing."""
         missing = []
         if not cls.DATABASE_URL:
             missing.append("DATABASE_URL")

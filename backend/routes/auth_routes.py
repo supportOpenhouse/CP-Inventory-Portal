@@ -9,9 +9,23 @@ from utils import normalize_phone
 bp = Blueprint("auth_routes", __name__, url_prefix="/api")
 
 
+def _user_response(cp: dict) -> dict:
+    """Shared user serializer for login + /me responses."""
+    return {
+        "id": cp["cp_code"],
+        "cp_code": cp["cp_code"],
+        "name": cp["name"],
+        "phone": cp["phone"],
+        "company": cp["company"],
+        "city": cp.get("city"),
+        "isAdmin": bool(cp.get("is_admin", False)),
+        "role": cp.get("role") or "cp",
+        "microMarkets": cp.get("micro_markets") or [],
+    }
+
+
 @bp.post("/auth/phone-login")
 def phone_login():
-    """Lookup CP by phone. If found, issue JWT. If not, return RM contacts."""
     data = request.get_json(silent=True) or {}
     phone = normalize_phone(data.get("phone"))
     if not phone:
@@ -22,7 +36,7 @@ def phone_login():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company,
-                       cp.is_admin, cp.micro_markets,
+                       cp.is_admin, cp.role, cp.micro_markets, cp.city_id,
                        c.name AS city
                 FROM channel_partners cp
                 LEFT JOIN cities c ON cp.city_id = c.id
@@ -31,8 +45,6 @@ def phone_login():
             cp = cur.fetchone()
 
             if not cp:
-                # Phone not in our CP table — return RM contacts so the frontend
-                # can show the "not registered" card with contact buttons.
                 cur.execute(
                     "SELECT name, rm_name, rm_phone FROM cities ORDER BY name"
                 )
@@ -49,7 +61,6 @@ def phone_login():
                     "rm_contacts": rm_contacts,
                 }), 200
 
-            # Update last_login
             cur.execute(
                 "UPDATE channel_partners SET last_login = NOW() WHERE id = %s",
                 (cp["id"],),
@@ -62,29 +73,19 @@ def phone_login():
     return jsonify({
         "success": True,
         "token": token,
-        "user": {
-            "id": cp["cp_code"],          # JSX expects `id` = CP code for display
-            "cp_code": cp["cp_code"],
-            "name": cp["name"],
-            "phone": cp["phone"],
-            "company": cp["company"],
-            "city": cp["city"],
-            "isAdmin": bool(cp["is_admin"]),
-            "microMarkets": cp["micro_markets"] or [],
-        },
+        "user": _user_response(cp),
     }), 200
 
 
 @bp.get("/me")
 @require_auth
 def me():
-    """Verify token and return current CP (frontend uses this on page load)."""
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company,
-                       cp.is_admin, cp.micro_markets,
+                       cp.is_admin, cp.role, cp.micro_markets, cp.city_id,
                        c.name AS city
                 FROM channel_partners cp
                 LEFT JOIN cities c ON cp.city_id = c.id
@@ -97,15 +98,4 @@ def me():
     if not cp:
         return jsonify({"error": "User not found or inactive"}), 404
 
-    return jsonify({
-        "user": {
-            "id": cp["cp_code"],
-            "cp_code": cp["cp_code"],
-            "name": cp["name"],
-            "phone": cp["phone"],
-            "company": cp["company"],
-            "city": cp["city"],
-            "isAdmin": bool(cp["is_admin"]),
-            "microMarkets": cp["micro_markets"] or [],
-        }
-    }), 200
+    return jsonify({"user": _user_response(cp)}), 200

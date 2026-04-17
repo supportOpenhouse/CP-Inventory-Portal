@@ -53,9 +53,18 @@ function isIosSafari() {
   return isIos && isSafari;
 }
 
+function isIosNonSafari() {
+  // iOS Chrome/Firefox/Edge — can't install anything, user must switch to Safari
+  const ua = window.navigator.userAgent;
+  const isIos = /iPhone|iPad|iPod/i.test(ua);
+  const isNonSafariBrowser = /CriOS|FxiOS|EdgiOS/i.test(ua);
+  return isIos && isNonSafariBrowser;
+}
+
 export default function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null); // Android
   const [showIosBanner, setShowIosBanner] = useState(false);
+  const [showIosChromeBanner, setShowIosChromeBanner] = useState(false);
   const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
@@ -71,12 +80,16 @@ export default function InstallPrompt() {
     // ---- iOS: show custom instruction banner ----
     if (isIosSafari()) {
       setShowIosBanner(true);
+    } else if (isIosNonSafari()) {
+      // Chrome/Firefox/Edge on iOS — can't install, tell user to switch to Safari
+      setShowIosChromeBanner(true);
     }
 
     // Also listen for successful install to auto-hide
     const onInstalled = () => {
       setDeferredPrompt(null);
       setShowIosBanner(false);
+      setShowIosChromeBanner(false);
     };
     window.addEventListener('appinstalled', onInstalled);
 
@@ -102,6 +115,7 @@ export default function InstallPrompt() {
     setHidden(true);
     setDeferredPrompt(null);
     setShowIosBanner(false);
+    setShowIosChromeBanner(false);
     markDismissed();
   };
 
@@ -131,7 +145,7 @@ export default function InstallPrompt() {
     );
   }
 
-  // ---- iOS banner ----
+  // ---- iOS Safari banner ----
   if (showIosBanner) {
     return (
       <div className="install-banner">
@@ -153,6 +167,25 @@ export default function InstallPrompt() {
               &#x2191;
             </span>{' '}
             then <b>Add to Home Screen</b>
+          </div>
+        </div>
+        <button className="install-banner-secondary" onClick={handleDismiss}>
+          Got it
+        </button>
+      </div>
+    );
+  }
+
+  // ---- iOS non-Safari banner (Chrome/Firefox/Edge on iOS) ----
+  if (showIosChromeBanner) {
+    return (
+      <div className="install-banner">
+        <div className="install-banner-text">
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>
+            Open this site in Safari
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>
+            iOS only lets Safari install apps. Copy the URL and open it in Safari.
           </div>
         </div>
         <button className="install-banner-secondary" onClick={handleDismiss}>

@@ -3,19 +3,16 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { thumbnailUrl } from '../cloudinary';
 import { useAuth } from '../contexts/AuthContext';
+import { formatPrice, stageMeta, timeAgo } from '../format';
+import { UnitCardSkeleton } from '../components/Skeleton';
 import Chatbot from './Chatbot';
 
-function formatPrice(val) {
-  const n = parseInt(val);
-  if (!n || isNaN(n)) return '—';
-  if (n >= 10000000) return '₹' + (n / 10000000).toFixed(2) + ' Cr';
-  if (n >= 100000) return '₹' + (n / 100000).toFixed(1) + ' L';
-  return '₹' + n.toLocaleString('en-IN');
-}
-
 function badgeClass(status) {
+  const stage = stageMeta(status);
+  // backwards compat
   if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
-  if (status === 'Closed') return 'badge badge-closed';
+  if (status === 'Closed' || status === 'Visit Scheduled') return 'badge badge-closed';
+  if (status === 'Rejected') return 'badge badge-rejected';
   return 'badge badge-submitted';
 }
 
@@ -109,7 +106,10 @@ export default function Dashboard({ onAdd }) {
       <div className="section-title">Your Inventory</div>
 
       {state.loading ? (
-        <div className="loading-block">Loading submissions…</div>
+        <>
+          <UnitCardSkeleton />
+          <UnitCardSkeleton />
+        </>
       ) : state.error ? (
         <div className="empty-state">
           <div className="empty-state-icon">⚠️</div>
