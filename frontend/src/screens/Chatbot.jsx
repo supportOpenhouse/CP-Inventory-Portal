@@ -49,7 +49,7 @@ export default function Chatbot({ rmPhone = '+919555666059' }) {
     return Array.from(m.entries());
   }, [filtered]);
 
-  const waLink = `https://wa.me/${rmPhone.replace(/\D/g, '')}`;
+  const waLink = `https://wa.me/${(rmPhone || '+919555666059').replace(/\D/g, '')}`;
 
   return (
     <>
