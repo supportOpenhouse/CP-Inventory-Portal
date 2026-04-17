@@ -22,7 +22,7 @@ def list_my_submissions():
             cur.execute("""
                 SELECT id, society_id, society_name, tower, unit_no, floor,
                        sqft, bhk, furnishing, asking_price, closing_price,
-                       status, submitted_at
+                       status, photos, submitted_at
                 FROM submissions
                 WHERE cp_id = %s
                 ORDER BY submitted_at DESC
@@ -100,12 +100,12 @@ def create_submission():
                     cp_id, society_id, society_name, tower, unit_no, floor,
                     sqft, bhk, furnishing, exit_facing, balcony_facing, balcony_view,
                     parking, extra_rooms, registry_status,
-                    asking_price, closing_price, seller_name, seller_phone
+                    asking_price, closing_price, seller_name, seller_phone, photos
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
                     %s, %s::jsonb, %s,
-                    %s, %s, %s, %s
+                    %s, %s, %s, %s, %s::jsonb
                 )
                 RETURNING id
             """, (
@@ -128,6 +128,7 @@ def create_submission():
                 to_int(data.get("closing_price")),
                 to_str(data.get("seller_name"), 200),
                 to_str(data.get("seller_phone"), 20),
+                json.dumps(data.get("photos") or []),
             ))
             new_id = cur.fetchone()["id"]
             conn.commit()

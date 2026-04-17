@@ -35,6 +35,7 @@ export default function AddUnit({ onDone }) {
     closingPrice: '',
     sellerName: '',
     sellerPhone: '',
+    photos: [],
   });
 
   if (submittedId) {
@@ -76,7 +77,7 @@ export default function AddUnit({ onDone }) {
         <Step2 form={form} setForm={setForm} onNext={() => setStep(3)} onBack={() => setStep(1)} />
       )}
       {step === 3 && (
-        <Step3 onNext={() => setStep(4)} onBack={() => setStep(2)} />
+        <Step3 form={form} setForm={setForm} onNext={() => setStep(4)} onBack={() => setStep(2)} />
       )}
       {step === 4 && (
         <Step4

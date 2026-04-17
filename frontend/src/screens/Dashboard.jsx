@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
+import { thumbnailUrl } from '../cloudinary';
 import { useAuth } from '../contexts/AuthContext';
 import Chatbot from './Chatbot';
 
@@ -72,7 +73,7 @@ export default function Dashboard({ onAdd }) {
     <div className="app-shell">
       <div className="header">
         <div>
-          <img src="/logo_long.png" alt="Openhouse" className="header-logo-img" />
+          <img src="/openhouse-logo.jpg" alt="Openhouse" className="header-logo-img" />
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
             Channel Partner Portal
           </div>
@@ -120,29 +121,47 @@ export default function Dashboard({ onAdd }) {
           <p>No units submitted yet.<br />Tap + to add your first unit.</p>
         </div>
       ) : (
-        state.submissions.map((s) => (
-          <div className="unit-card" key={s.id}>
-            <div className="unit-card-body">
-              <div className="unit-card-header">
-                <div>
-                  <div className="unit-card-society">{s.society_name}</div>
-                  <div className="unit-card-config">
-                    {[s.tower && `${s.tower}${s.unit_no ? '-' + s.unit_no : ''}`, s.bhk, s.sqft && `${s.sqft} sqft`, s.floor && `Floor ${s.floor}`]
-                      .filter(Boolean)
-                      .join(' · ')}
+        state.submissions.map((s) => {
+          const thumbId = Array.isArray(s.photos) && s.photos.length > 0 ? s.photos[0] : null;
+          return (
+            <div className="unit-card" key={s.id}>
+              <div className="unit-card-body" style={{ display: 'flex', gap: 14 }}>
+                {thumbId && (
+                  <img
+                    src={thumbnailUrl(thumbId, 80)}
+                    alt=""
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: 8,
+                      objectFit: 'cover',
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="unit-card-header">
+                    <div>
+                      <div className="unit-card-society">{s.society_name}</div>
+                      <div className="unit-card-config">
+                        {[s.tower && `${s.tower}${s.unit_no ? '-' + s.unit_no : ''}`, s.bhk, s.sqft && `${s.sqft} sqft`, s.floor && `Floor ${s.floor}`]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </div>
+                    </div>
+                    <div className={badgeClass(s.status)}>{s.status}</div>
+                  </div>
+                  <div className="unit-card-price">
+                    {formatPrice(s.asking_price)}
+                    {s.sqft && s.asking_price ? (
+                      <span>₹{Math.round(s.asking_price / s.sqft).toLocaleString('en-IN')}/sqft</span>
+                    ) : null}
                   </div>
                 </div>
-                <div className={badgeClass(s.status)}>{s.status}</div>
-              </div>
-              <div className="unit-card-price">
-                {formatPrice(s.asking_price)}
-                {s.sqft && s.asking_price ? (
-                  <span>₹{Math.round(s.asking_price / s.sqft).toLocaleString('en-IN')}/sqft</span>
-                ) : null}
               </div>
             </div>
-          </div>
-        ))
+          );
+        })
       )}
 
       <button className="fab" onClick={onAdd} title="Add unit">+</button>

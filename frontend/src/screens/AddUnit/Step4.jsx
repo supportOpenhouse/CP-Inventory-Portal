@@ -50,6 +50,7 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
         closing_price: form.closingPrice ? parseInt(form.closingPrice) : null,
         seller_name: form.sellerName || null,
         seller_phone: form.sellerPhone || null,
+        photos: form.photos || [],
       };
 
       const result = await api.createSubmission(payload);
