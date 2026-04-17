@@ -73,7 +73,7 @@ export default function Dashboard({ onAdd }) {
     <div className="app-shell">
       <div className="header">
         <div>
-          <img src="/openhouse-logo.jpg" alt="Openhouse" className="header-logo-img" />
+          <img src="/logo_long.png" alt="Openhouse" className="header-logo-img" />
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
             Channel Partner Portal
           </div>

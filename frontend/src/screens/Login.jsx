@@ -30,7 +30,7 @@ export default function Login() {
     }
     setError(res.message || 'Login failed');
   };
- 
+
   return (
     <div className="app-shell">
       <div className="login-hero">
