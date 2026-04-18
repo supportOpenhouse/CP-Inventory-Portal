@@ -143,6 +143,14 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
                     <div className="admin-panel-label">Balcony view</div>
                     <div className="admin-panel-val">{s.balcony_view || '—'}</div>
                   </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <div className="admin-panel-label">Extra rooms</div>
+                    <div className="admin-panel-val">
+                      {Array.isArray(s.extra_rooms) && s.extra_rooms.length > 0
+                        ? s.extra_rooms.join(', ')
+                        : '—'}
+                    </div>
+                  </div>
                 </div>
               </div>
 
