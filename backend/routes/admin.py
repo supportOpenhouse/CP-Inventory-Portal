@@ -102,7 +102,7 @@ def _list_submissions_core():
             """
             params = list(scope_params)
             sql, params = _apply_filters(base_sql, params)
-            sql += " ORDER BY s.submitted_at DESC LIMIT 500"
+            sql += " ORDER BY s.submitted_at DESC LIMIT 5000"
 
             cur.execute(sql, params)
             return cur.fetchall()
