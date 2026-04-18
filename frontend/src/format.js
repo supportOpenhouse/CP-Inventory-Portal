@@ -64,7 +64,7 @@ export const STAGES = [
   { key: 'Evaluation',      color: '#E8A838', bg: '#FFF8EC' },
   { key: 'Offer Given',     color: '#FF6B2B', bg: '#FFF3ED' },
   { key: 'Visit Scheduled', color: '#D946EF', bg: '#FDF4FF' },
-  { key: 'Rejected',        color: '#D64045', bg: '#FFF0F0' },
+  { key: 'Rejected',        color: '#DC2626', bg: '#FEE2E2' },  // deeper red for emphasis
 ];
 
 export function stageMeta(key) {

@@ -237,6 +237,21 @@ export const css = `
   .board-card { background: #fff; border: 1px solid #E8E6E0; border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer; transition: all 0.15s; position: relative; }
   .board-card:hover { border-color: #CCC; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transform: translateY(-1px); }
   .board-card.active { border-color: var(--oh-orange); box-shadow: 0 0 0 2px rgba(255,107,43,0.12); }
+
+  /* Weak-match rows (low-confidence society match during import) */
+  .board-card.weak-match { border-color: #FCA5A5; background: #FFF8F8; }
+  .board-card.weak-match:hover { border-color: #DC2626; }
+  .board-card.weak-match.active { border-color: #DC2626; box-shadow: 0 0 0 2px rgba(220,38,38,0.15); }
+  .board-card-weak-badge { position: absolute; top: 8px; right: 8px; font-size: 14px; color: #DC2626; font-weight: 700; }
+  .admin-table tbody tr.weak-match { background: #FFF8F8; }
+  .admin-table tbody tr.weak-match:hover { background: #FEE2E2; }
+  .admin-table tbody tr.weak-match.active { background: #FECACA; }
+
+  /* Rejected column visual emphasis — the stage dot gets a red shadow,
+     count badge goes red, status pill in table pops */
+  .board-column.is-rejected .col-dot { box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
+  .board-column.is-rejected .col-count { background: #FEE2E2; color: #DC2626; font-weight: 700; }
+  .status-pill.is-rejected { background: #FEE2E2 !important; color: #DC2626 !important; font-weight: 700; }
   .board-card-flag { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: #D64045; }
   .board-card-society { font-size: 14px; font-weight: 600; color: #222; margin-bottom: 2px; padding-right: 16px; }
   .board-card-city { position: absolute; top: 14px; right: 22px; font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.4px; }

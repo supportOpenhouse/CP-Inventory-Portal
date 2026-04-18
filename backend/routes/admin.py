@@ -91,7 +91,7 @@ def _list_submissions_core():
                     s.parking, s.exit_facing, s.balcony_facing, s.balcony_view,
                     s.asking_price, s.closing_price,
                     s.seller_name, s.seller_phone,
-                    s.status, s.submitted_at, s.photos,
+                    s.status, s.submitted_at, s.photos, s.weak_match,
                     c.name AS city,
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
                     cp.company AS cp_company

@@ -27,13 +27,19 @@ export default function TableView({ submissions, loading, selectedId, onSelect }
         <tbody>
           {submissions.map((s) => {
             const stage = stageMeta(s.status);
+            const isWeakMatch = s.weak_match === true;
+            const isRejected = s.status === 'Rejected';
             return (
               <tr
                 key={s.id}
-                className={selectedId === s.id ? 'active' : ''}
+                className={`${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''}`}
                 onClick={() => onSelect(s.id)}
+                title={isWeakMatch ? 'Weak society match during import — verify' : undefined}
               >
-                <td style={{ fontWeight: 600 }}>{s.society_name}</td>
+                <td style={{ fontWeight: 600 }}>
+                  {isWeakMatch && <span style={{ color: '#DC2626', marginRight: 6 }}>⚠</span>}
+                  {s.society_name}
+                </td>
                 <td style={{ color: '#888' }}>{s.city || '—'}</td>
                 <td>
                   {[s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no || '—'), s.floor && `F${s.floor}`]
@@ -49,7 +55,7 @@ export default function TableView({ submissions, loading, selectedId, onSelect }
                 </td>
                 <td>
                   <span
-                    className="status-pill"
+                    className={`status-pill ${isRejected ? 'is-rejected' : ''}`}
                     style={{ background: stage.bg, color: stage.color }}
                   >
                     {s.status}
