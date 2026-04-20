@@ -6,14 +6,15 @@ import { STAGES } from '../../format';
 import BoardView from './BoardView';
 import TableView from './TableView';
 import DetailPanel from './DetailPanel';
+import CpHistoryDrawer from './CpHistoryDrawer';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
+const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
 
 export default function Admin() {
   const { user, logout } = useAuth();
   const isAdmin = user.role === 'admin';
 
-  // Admin can switch cities; RMs are locked to their own.
   const defaultCity = isAdmin ? 'All' : user.city || 'All';
   const [city, setCity] = useState(defaultCity);
   const [search, setSearch] = useState('');
@@ -23,14 +24,26 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [cpHistoryId, setCpHistoryId] = useState(null);
   const [exporting, setExporting] = useState(false);
+
+  // Filter bar state
+  const [showFilters, setShowFilters] = useState(false);
+  const [bhk, setBhk] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
+  const activeFilterCount = [bhk, dateFrom, dateTo].filter(Boolean).length;
 
   const effectiveFilters = useMemo(() => {
     const f = {};
     if (city && city !== 'All') f.city = city;
     if (search.trim().length >= 2) f.search = search.trim();
+    if (bhk) f.bhk = bhk;
+    if (dateFrom) f.date_from = dateFrom;
+    if (dateTo) f.date_to = dateTo;
     return f;
-  }, [city, search]);
+  }, [city, search, bhk, dateFrom, dateTo]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -55,9 +68,7 @@ export default function Admin() {
         if (alive) setError('Failed to load');
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [reload]);
 
   const handleExport = async () => {
@@ -69,6 +80,12 @@ export default function Admin() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const clearFilters = () => {
+    setBhk('');
+    setDateFrom('');
+    setDateTo('');
   };
 
   return (
@@ -109,10 +126,17 @@ export default function Admin() {
           )}
           <input
             className="search-box"
-            placeholder="Search society, CP, unit…"
+            placeholder="Search society, CP, unit, seller…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <button
+            className={`filter-toggle ${showFilters ? 'active' : ''} ${activeFilterCount > 0 ? 'has-active' : ''}`}
+            onClick={() => setShowFilters(!showFilters)}
+            title="More filters"
+          >
+            ⚙ Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+          </button>
         </div>
         <div className="admin-toolbar-right">
           <div className="view-toggle">
@@ -138,6 +162,41 @@ export default function Admin() {
           </button>
         </div>
       </div>
+
+      {/* Filter bar (collapsible) */}
+      {showFilters && (
+        <div className="admin-filter-bar">
+          <div className="filter-field">
+            <label>BHK</label>
+            <select value={bhk} onChange={(e) => setBhk(e.target.value)}>
+              {BHK_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt || 'All BHKs'}</option>
+              ))}
+            </select>
+          </div>
+          <div className="filter-field">
+            <label>From date</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </div>
+          <div className="filter-field">
+            <label>To date</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </div>
+          {activeFilterCount > 0 && (
+            <button className="btn-secondary-sm" onClick={clearFilters}>
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="admin-stats">
@@ -182,6 +241,18 @@ export default function Admin() {
           submissionId={selectedId}
           onClose={() => setSelectedId(null)}
           onChanged={reload}
+          onOpenCpHistory={(cpId) => setCpHistoryId(cpId)}
+        />
+      )}
+
+      {cpHistoryId && (
+        <CpHistoryDrawer
+          cpId={cpHistoryId}
+          onClose={() => setCpHistoryId(null)}
+          onOpenSubmission={(sid) => {
+            setCpHistoryId(null);
+            setSelectedId(sid);
+          }}
         />
       )}
     </div>

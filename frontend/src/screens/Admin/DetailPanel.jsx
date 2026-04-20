@@ -2,14 +2,40 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../api';
 import { formatDateTime, formatPrice, STAGES } from '../../format';
+import { getUser } from '../../auth';
 
-export default function DetailPanel({ submissionId, onClose, onChanged }) {
-  const [data, setData] = useState(null); // { submission, events }
+// Fields the admin can edit (mirrors EDITABLE_FIELDS in backend/routes/admin.py)
+const EDITABLE_FIELDS = [
+  { key: 'tower',               label: 'Tower',            type: 'text'   },
+  { key: 'unit_no',              label: 'Unit No',          type: 'text'   },
+  { key: 'floor',                label: 'Floor',            type: 'text'   },
+  { key: 'sqft',                 label: 'Area (sqft)',      type: 'number' },
+  { key: 'bhk',                  label: 'BHK',              type: 'text'   },
+  { key: 'furnishing',           label: 'Furnishing',       type: 'text'   },
+  { key: 'exit_facing',          label: 'Exit facing',      type: 'text'   },
+  { key: 'balcony_facing',       label: 'Balcony facing',   type: 'text'   },
+  { key: 'balcony_view',         label: 'Balcony view',     type: 'text'   },
+  { key: 'parking',              label: 'Parking',          type: 'text'   },
+  { key: 'registry_status',      label: 'Registry',         type: 'text'   },
+  { key: 'asking_price',         label: 'Asking price (₹)', type: 'number' },
+  { key: 'closing_price',        label: 'Closing price (₹)', type: 'number' },
+  { key: 'seller_name',          label: 'Seller name',      type: 'text'   },
+  { key: 'seller_phone',         label: 'Seller phone',     type: 'text'   },
+  { key: 'additional_comments',  label: 'Additional comments', type: 'textarea' },
+];
+
+export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCpHistory }) {
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [newComment, setNewComment] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({});
   const eventsEndRef = useRef(null);
+
+  const user = getUser();
+  const isAdmin = user?.role === 'admin';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -17,6 +43,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
     try {
       const res = await api.adminGetSubmission(submissionId);
       setData(res);
+      setEditMode(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load');
     } finally {
@@ -24,17 +51,14 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
     }
   }, [submissionId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [data?.events?.length]);
 
   const handleStatusChange = async (newStatus) => {
-    if (!data || busy) return;
-    if (newStatus === data.submission.status) return;
+    if (!data || busy || newStatus === data.submission.status) return;
     setBusy(true);
     try {
       await api.adminChangeStatus(submissionId, newStatus);
@@ -62,6 +86,73 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
     }
   };
 
+  const startEdit = () => {
+    const s = data?.submission;
+    if (!s) return;
+    const form = {};
+    EDITABLE_FIELDS.forEach(({ key }) => {
+      form[key] = s[key] ?? '';
+    });
+    setEditForm(form);
+    setEditMode(true);
+  };
+
+  const cancelEdit = () => {
+    setEditMode(false);
+    setEditForm({});
+  };
+
+  const saveEdit = async () => {
+    if (busy) return;
+    // Build payload of only changed fields
+    const orig = data.submission;
+    const payload = {};
+    EDITABLE_FIELDS.forEach(({ key, type }) => {
+      const newVal = editForm[key];
+      const oldVal = orig[key];
+      const normalizedOld = oldVal === null || oldVal === undefined ? '' : String(oldVal);
+      const normalizedNew = newVal === null || newVal === undefined ? '' : String(newVal);
+      if (normalizedOld !== normalizedNew) {
+        if (type === 'number' && newVal !== '') {
+          payload[key] = parseInt(newVal, 10);
+        } else {
+          payload[key] = newVal === '' ? null : newVal;
+        }
+      }
+    });
+
+    if (Object.keys(payload).length === 0) {
+      setEditMode(false);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await api.adminUpdateSubmission(submissionId, payload);
+      await load();
+      onChanged?.();
+    } catch (err) {
+      alert(err.message || 'Failed to save');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (busy) return;
+    if (!confirm('Archive this submission? It will be hidden from lists but kept in DB.')) return;
+    setBusy(true);
+    try {
+      await api.adminDeleteSubmission(submissionId);
+      onChanged?.();
+      onClose?.();
+    } catch (err) {
+      alert(err.message || 'Failed to archive');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const s = data?.submission;
   const events = data?.events || [];
 
@@ -80,8 +171,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
                 <div className="admin-panel-title">{s.society_name}</div>
                 <div className="admin-panel-sub">
                   {[s.city, s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : null, s.floor && `Floor ${s.floor}`]
-                    .filter(Boolean)
-                    .join(' · ')}
+                    .filter(Boolean).join(' · ')}
                 </div>
               </>
             ) : null}
@@ -89,8 +179,16 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
           <button className="panel-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
+        {/* Admin action bar */}
+        {s && isAdmin && !editMode && (
+          <div className="admin-panel-actions">
+            <button className="btn-secondary-sm" onClick={startEdit} disabled={busy}>✏ Edit</button>
+            <button className="btn-danger-sm" onClick={handleDelete} disabled={busy}>🗑 Archive</button>
+          </div>
+        )}
+
         <div className="admin-panel-body">
-          {s && (
+          {s && !editMode && (
             <>
               {/* Status selector */}
               <div className="admin-panel-section">
@@ -107,42 +205,18 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
                 </select>
               </div>
 
-              {/* Unit details grid */}
+              {/* Unit details */}
               <div className="admin-panel-section">
                 <div className="admin-panel-section-title">Unit details</div>
                 <div className="admin-detail-grid">
-                  <div>
-                    <div className="admin-panel-label">BHK</div>
-                    <div className="admin-panel-val">{s.bhk || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Area</div>
-                    <div className="admin-panel-val">{s.sqft ? `${s.sqft} sqft` : <span className="missing-flag">Missing</span>}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Floor</div>
-                    <div className="admin-panel-val">{s.floor || <span className="missing-flag">Missing</span>}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Registry</div>
-                    <div className="admin-panel-val">{s.registry_status || <span className="missing-flag">Missing</span>}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Parking</div>
-                    <div className="admin-panel-val">{s.parking || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Furnishing</div>
-                    <div className="admin-panel-val">{s.furnishing || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Exit facing</div>
-                    <div className="admin-panel-val">{s.exit_facing || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Balcony view</div>
-                    <div className="admin-panel-val">{s.balcony_view || '—'}</div>
-                  </div>
+                  <Row label="BHK" value={s.bhk} />
+                  <Row label="Area" value={s.sqft ? `${s.sqft} sqft` : null} />
+                  <Row label="Floor" value={s.floor} />
+                  <Row label="Registry" value={s.registry_status} />
+                  <Row label="Parking" value={s.parking} optional />
+                  <Row label="Furnishing" value={s.furnishing} optional />
+                  <Row label="Exit facing" value={s.exit_facing} optional />
+                  <Row label="Balcony view" value={s.balcony_view} optional />
                   <div style={{ gridColumn: '1 / -1' }}>
                     <div className="admin-panel-label">Extra rooms</div>
                     <div className="admin-panel-val">
@@ -182,7 +256,13 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
                   <div>
                     <div className="admin-panel-label">Channel partner</div>
                     <div className="admin-panel-val">
-                      {s.cp_name}
+                      <button
+                        className="link-btn"
+                        onClick={() => onOpenCpHistory?.(s.cp_id)}
+                        title="See all submissions by this CP"
+                      >
+                        {s.cp_name}
+                      </button>
                       <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
                         {s.cp_code} · +91 {s.cp_phone}
                       </div>
@@ -202,11 +282,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
                 </div>
               </div>
 
-              {/* Events timeline */}
+              {/* Events */}
               <div className="admin-panel-section" style={{ borderBottom: 'none' }}>
-                <div className="admin-panel-section-title">
-                  Activity ({events.length})
-                </div>
+                <div className="admin-panel-section-title">Activity ({events.length})</div>
                 <div className="admin-events">
                   {events.map((ev) => (
                     <div key={ev.id} className={`admin-event ${ev.kind === 'system' ? 'is-system' : ''}`}>
@@ -219,9 +297,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
                       </div>
                       <div className="admin-event-body">
                         {ev.kind === 'status_change' && (
-                          <span>
-                            Status: <strong>{ev.from_status || '—'}</strong> → <strong>{ev.to_status}</strong>
-                          </span>
+                          <span>Status: <strong>{ev.from_status || '—'}</strong> → <strong>{ev.to_status}</strong></span>
                         )}
                         {ev.kind === 'comment' && <span>{ev.text}</span>}
                         {ev.kind === 'system' && <em>{ev.text || 'Unit submitted'}</em>}
@@ -233,10 +309,48 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
               </div>
             </>
           )}
+
+          {/* EDIT MODE */}
+          {s && editMode && (
+            <div className="admin-panel-section">
+              <div className="admin-panel-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Edit unit details</span>
+                <small style={{ fontWeight: 400, color: '#999' }}>Society &amp; CP cannot be changed</small>
+              </div>
+              <div className="admin-edit-grid">
+                {EDITABLE_FIELDS.map(({ key, label, type }) => (
+                  <div key={key} className={type === 'textarea' ? 'admin-edit-full' : ''}>
+                    <label className="admin-panel-label">{label}</label>
+                    {type === 'textarea' ? (
+                      <textarea
+                        className="admin-edit-input"
+                        rows={3}
+                        value={editForm[key] ?? ''}
+                        onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
+                      />
+                    ) : (
+                      <input
+                        className="admin-edit-input"
+                        type={type}
+                        value={editForm[key] ?? ''}
+                        onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button className="btn-primary-sm" onClick={saveEdit} disabled={busy}>
+                  {busy ? 'Saving…' : '✓ Save changes'}
+                </button>
+                <button className="btn-secondary-sm" onClick={cancelEdit} disabled={busy}>Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Comment input */}
-        {s && (
+        {s && !editMode && (
           <div className="admin-comment-input">
             <input
               placeholder="Add a comment…"
@@ -250,15 +364,23 @@ export default function DetailPanel({ submissionId, onClose, onChanged }) {
               }}
               disabled={busy}
             />
-            <button
-              onClick={handleAddComment}
-              disabled={busy || !newComment.trim()}
-            >
+            <button onClick={handleAddComment} disabled={busy || !newComment.trim()}>
               {busy ? '…' : 'Send'}
             </button>
           </div>
         )}
       </div>
     </>
+  );
+}
+
+function Row({ label, value, optional = false }) {
+  return (
+    <div>
+      <div className="admin-panel-label">{label}</div>
+      <div className="admin-panel-val">
+        {value || (optional ? '—' : <span className="missing-flag">Missing</span>)}
+      </div>
+    </div>
   );
 }

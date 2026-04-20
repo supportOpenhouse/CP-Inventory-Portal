@@ -80,6 +80,12 @@ export const api = {
     request(`/admin/submissions/${id}/status`, { method: 'POST', body: { status } }),
   adminAddComment: (id, text) =>
     request(`/admin/submissions/${id}/comment`, { method: 'POST', body: { text } }),
+  adminUpdateSubmission: (id, fields) =>
+    request(`/admin/submissions/${id}`, { method: 'PATCH', body: fields }),
+  adminDeleteSubmission: (id) =>
+    request(`/admin/submissions/${id}`, { method: 'DELETE' }),
+  adminGetCpHistory: (cpId) =>
+    request(`/admin/cp/${cpId}/submissions`),
 
   // Health
   health: () => request('/health', { auth: false }),
