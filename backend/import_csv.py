@@ -31,12 +31,15 @@ logger = logging.getLogger("csv_import")
 COLUMN_MAP = {
     "Timestamp":                "timestamp",
     "Referred by - Email ID":   "referred_by_email",
+    "Source":                   "referred_by_email",   # Gurgaon CSV alias
     "CP Name":                  "cp_name_csv",
     "Contact":                  "cp_contact",
+    "CP Number":                "cp_contact",          # Gurgaon CSV alias
     "City":                     "city",
     "Society":                  "society_name",
-    "configuration":            "bhk",       # lowercase 'c' in the CSV
-    "Configuration":            "bhk",       # but also allow capital
+    "configuration":            "bhk",
+    "Configuration":            "bhk",
+    "Config.":                  "bhk",                 # Gurgaon CSV alias
     "Size":                     "sqft",
     "Ask Price":                "asking_price",
     "Exit Facing - main gate":  "exit_facing",
@@ -53,14 +56,19 @@ COLUMN_MAP = {
 
 
 STATUS_MAP = {
-    "":                      "Submitted",
-    "followup":              "Submitted",
-    "visit to be scheduled": "Submitted",
-    "hold":                  "Submitted",
-    "visit completed":       "Evaluation",
-    "visit scheduled":       "Visit Scheduled",
-    "rejected":              "Rejected",
-    "sold out":              "Rejected",
+    "":                       "Submitted",
+    "followup":               "Submitted",
+    "visit to be scheduled":  "Submitted",
+    "visittobescheduled":     "Submitted",   # Gurgaon CSV — concatenated form
+    "lead":                   "Submitted",   # Gurgaon CSV
+    "hold":                   "Submitted",
+    "visit completed":        "Evaluation",
+    "visited":                "Evaluation",  # Gurgaon CSV
+    "onboarded":              "Offer Given", # Gurgaon CSV
+    "visit scheduled":        "Visit Scheduled",
+    "rejected":               "Rejected",
+    "sold out":               "Rejected",
+    "duplicate":              "Rejected",    # Gurgaon CSV
 }
 
 
@@ -444,13 +452,23 @@ def main():
 
     logger.info("Reading CSV: %s", args.csv_path)
     logger.info("City filter: %s", args.city)
-    df = pd.read_csv(args.csv_path, dtype=str)
+    try:
+        df = pd.read_csv(args.csv_path, dtype=str)
+    except UnicodeDecodeError:
+        logger.warning("UTF-8 decode failed; retrying with latin-1 encoding")
+        df = pd.read_csv(args.csv_path, dtype=str, encoding="latin-1")
     logger.info("CSV has %d rows and %d columns", len(df), len(df.columns))
 
     df.columns = [c.strip() for c in df.columns]
+    # Build rename map; dedupe target fields so aliases (e.g. "Configuration" + "configuration")
+    # don't produce a misleading "missing column" warning for the alias.
     rename_map = {c: COLUMN_MAP[c] for c in df.columns if c in COLUMN_MAP}
+    mapped_targets = set(rename_map.values())
     unknown = [c for c in df.columns if c not in COLUMN_MAP and c]
-    missing = [c for c in COLUMN_MAP if c not in df.columns]
+    missing = [
+        csv_col for csv_col, target in COLUMN_MAP.items()
+        if csv_col not in df.columns and target not in mapped_targets
+    ]
     if unknown:
         logger.warning("Ignoring unknown columns: %s", unknown)
     if missing:
