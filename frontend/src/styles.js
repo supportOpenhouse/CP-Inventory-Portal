@@ -510,6 +510,141 @@ export const css = `
     .admin-panel-actions { padding: 8px 18px; }
   }
 
+  /* ===== Turn 2: photos, bulk select, notes, assignment ===== */
+
+  /* Photo grid in DetailPanel */
+  .admin-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .admin-photo-thumb {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--oh-border);
+    background: #f0f0f0;
+  }
+  .admin-photo-thumb img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    cursor: zoom-in;
+    display: block;
+  }
+  .admin-photo-remove {
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .admin-photo-remove:hover { background: #DC2626; }
+
+  /* Photo lightbox */
+  .photo-lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+  }
+  .photo-lightbox img {
+    max-width: 95vw;
+    max-height: 95vh;
+    object-fit: contain;
+    border-radius: 8px;
+  }
+  .photo-lightbox-close {
+    position: absolute;
+    top: 20px; right: 20px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .photo-lightbox-close:hover { background: rgba(255,255,255,0.3); }
+
+  /* Bulk selection */
+  .board-card-checkbox {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 18px; height: 18px;
+    cursor: pointer;
+  }
+  .board-card.bulk-selected {
+    border-color: var(--oh-orange);
+    background: #FFF3ED;
+    box-shadow: 0 0 0 2px rgba(255,107,43,0.18);
+  }
+  .admin-table tbody tr.bulk-selected {
+    background: #FFF3ED;
+  }
+
+  .bulk-action-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 28px;
+    background: #FFF8F4;
+    border-bottom: 1px solid var(--oh-orange);
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    flex-wrap: wrap;
+  }
+
+  /* CP notes thread */
+  .cp-note {
+    background: #FFF8F4;
+    border: 1px solid #FFE3D1;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .cp-note-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .cp-note-body {
+    font-size: 13px;
+    color: #333;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .cp-note-delete {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .cp-note-delete:hover { color: #DC2626; background: #FEE2E2; }
+
+  @media (max-width: 520px) {
+    .bulk-action-bar { padding: 10px 14px; gap: 6px; font-size: 12px; }
+    .admin-photo-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
   /* ===== Mobile polish (< 520px) ===== */
   @media (max-width: 520px) {
     .fab { right: 18px; bottom: 88px; }

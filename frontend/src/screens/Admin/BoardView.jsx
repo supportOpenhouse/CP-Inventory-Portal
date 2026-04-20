@@ -1,6 +1,9 @@
 import { formatPrice, STAGES, timeAgo } from '../../format';
 
-export default function BoardView({ submissions, loading, selectedId, onSelect }) {
+export default function BoardView({
+  submissions, loading, selectedId, onSelect,
+  bulkMode = false, selectedIds = new Set(), onToggleSelect,
+}) {
   if (loading) {
     return (
       <div className="admin-board">
@@ -34,45 +37,53 @@ export default function BoardView({ submissions, loading, selectedId, onSelect }
               <span className="col-count">{colSubs.length}</span>
             </div>
 
-            {colSubs.length === 0 && (
-              <div className="col-empty">No units</div>
-            )}
+            {colSubs.length === 0 && <div className="col-empty">No units</div>}
 
             {colSubs.map((s) => {
               const missingCore = !s.asking_price || !s.seller_name;
               const isWeakMatch = s.weak_match === true;
+              const isChecked = selectedIds.has(s.id);
+              const handleClick = (e) => {
+                if (bulkMode) {
+                  e.stopPropagation();
+                  onToggleSelect?.(s.id);
+                } else {
+                  onSelect(s.id);
+                }
+              };
               return (
                 <div
                   key={s.id}
-                  className={`board-card ${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''}`}
-                  onClick={() => onSelect(s.id)}
+                  className={`board-card ${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''} ${isChecked ? 'bulk-selected' : ''}`}
+                  onClick={handleClick}
                   title={isWeakMatch ? 'Society name was a weak match during import — verify' : undefined}
                 >
-                  {missingCore && !isWeakMatch && (
+                  {bulkMode && (
+                    <input
+                      type="checkbox"
+                      className="board-card-checkbox"
+                      checked={isChecked}
+                      readOnly
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+                  {missingCore && !isWeakMatch && !bulkMode && (
                     <span className="board-card-flag" title="Missing asking price or seller info" />
                   )}
-                  {isWeakMatch && (
-                    <span className="board-card-weak-badge" title="Weak society match — verify the listing">⚠</span>
+                  {isWeakMatch && !bulkMode && (
+                    <span className="board-card-weak-badge" title="Weak society match — verify">⚠</span>
                   )}
                   <div className="board-card-society">{s.society_name}</div>
                   <div className="board-card-city">{s.city || ''}</div>
                   <div className="board-card-meta">
                     {[s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no), s.floor && `F${s.floor}`]
-                      .filter(Boolean)
-                      .join(' · ')}
+                      .filter(Boolean).join(' · ')}
                   </div>
                   <div className="board-card-chips">
                     {s.bhk && (
-                      <span
-                        className="board-chip"
-                        style={{ background: stage.bg, color: stage.color }}
-                      >
-                        {s.bhk}
-                      </span>
+                      <span className="board-chip" style={{ background: stage.bg, color: stage.color }}>{s.bhk}</span>
                     )}
-                    {s.sqft ? (
-                      <span className="board-chip board-chip-plain">{s.sqft} sqft</span>
-                    ) : null}
+                    {s.sqft ? <span className="board-chip board-chip-plain">{s.sqft} sqft</span> : null}
                   </div>
                   <div className="board-card-bottom">
                     <span className="board-card-price">{formatPrice(s.asking_price)}</span>

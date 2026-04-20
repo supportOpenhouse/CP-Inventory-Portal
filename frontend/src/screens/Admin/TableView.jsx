@@ -1,6 +1,9 @@
 import { formatPrice, stageMeta, timeAgo } from '../../format';
 
-export default function TableView({ submissions, loading, selectedId, onSelect }) {
+export default function TableView({
+  submissions, loading, selectedId, onSelect,
+  bulkMode = false, selectedIds = new Set(), onToggleSelect, onToggleAll,
+}) {
   if (loading) {
     return <div className="admin-table-loading">Loading submissions…</div>;
   }
@@ -8,11 +11,24 @@ export default function TableView({ submissions, loading, selectedId, onSelect }
     return <div className="admin-table-loading">No submissions match.</div>;
   }
 
+  const allChecked = bulkMode && submissions.length > 0 && submissions.every((s) => selectedIds.has(s.id));
+  const someChecked = bulkMode && submissions.some((s) => selectedIds.has(s.id));
+
   return (
     <div className="admin-table-wrap">
       <table className="admin-table">
         <thead>
           <tr>
+            {bulkMode && (
+              <th style={{ width: 34 }}>
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  ref={(el) => { if (el) el.indeterminate = !allChecked && someChecked; }}
+                  onChange={() => onToggleAll?.()}
+                />
+              </th>
+            )}
             <th>Society</th>
             <th>City</th>
             <th>Unit</th>
@@ -29,13 +45,27 @@ export default function TableView({ submissions, loading, selectedId, onSelect }
             const stage = stageMeta(s.status);
             const isWeakMatch = s.weak_match === true;
             const isRejected = s.status === 'Rejected';
+            const isChecked = selectedIds.has(s.id);
+            const handleClick = () => {
+              if (bulkMode) onToggleSelect?.(s.id);
+              else onSelect(s.id);
+            };
             return (
               <tr
                 key={s.id}
-                className={`${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''}`}
-                onClick={() => onSelect(s.id)}
+                className={`${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''} ${isChecked ? 'bulk-selected' : ''}`}
+                onClick={handleClick}
                 title={isWeakMatch ? 'Weak society match during import — verify' : undefined}
               >
+                {bulkMode && (
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => onToggleSelect?.(s.id)}
+                    />
+                  </td>
+                )}
                 <td style={{ fontWeight: 600 }}>
                   {isWeakMatch && <span style={{ color: '#DC2626', marginRight: 6 }}>⚠</span>}
                   {s.society_name}
@@ -43,8 +73,7 @@ export default function TableView({ submissions, loading, selectedId, onSelect }
                 <td style={{ color: '#888' }}>{s.city || '—'}</td>
                 <td>
                   {[s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no || '—'), s.floor && `F${s.floor}`]
-                    .filter(Boolean)
-                    .join(' · ')}
+                    .filter(Boolean).join(' · ')}
                 </td>
                 <td>{[s.bhk, s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={{ fontWeight: 600, color: '#FF6B2B' }}>{formatPrice(s.asking_price)}</td>

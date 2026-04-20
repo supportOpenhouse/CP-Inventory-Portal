@@ -2,18 +2,29 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { api, ApiError } from '../../api';
 import { formatDateTime, formatPrice, stageMeta, STAGES } from '../../format';
+import { getUser } from '../../auth';
 
 export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const user = getUser();
+  const isAdmin = user?.role === 'admin';
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.adminGetCpHistory(cpId);
-      setData(res);
+      const [hist, noteRes] = await Promise.all([
+        api.adminGetCpHistory(cpId),
+        api.adminListCpNotes(cpId).catch(() => ({ notes: [] })),
+      ]);
+      setData(hist);
+      setNotes(noteRes.notes || []);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load');
     } finally {
@@ -22,6 +33,35 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
   }, [cpId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const addNote = async () => {
+    const text = newNote.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    try {
+      await api.adminAddCpNote(cpId, text);
+      setNewNote('');
+      const r = await api.adminListCpNotes(cpId);
+      setNotes(r.notes || []);
+    } catch (err) {
+      alert(err.message || 'Failed to add note');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeNote = async (id) => {
+    if (busy || !confirm('Delete this note?')) return;
+    setBusy(true);
+    try {
+      await api.adminDeleteCpNote(id);
+      setNotes(notes.filter((n) => n.id !== id));
+    } catch (err) {
+      alert(err.message || 'Failed to delete note');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const cp = data?.cp;
   const subs = data?.submissions || [];
@@ -116,9 +156,61 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
                   );
                 })}
               </div>
+
+              {/* Notes thread */}
+              <div className="admin-panel-section" style={{ borderBottom: 'none' }}>
+                <div className="admin-panel-section-title">
+                  Notes on this CP ({notes.length})
+                </div>
+                {notes.length === 0 && (
+                  <div style={{ fontSize: 13, color: '#999', marginBottom: 8 }}>
+                    No notes yet{isAdmin ? ' — add one below.' : '.'}
+                  </div>
+                )}
+                {notes.map((n) => (
+                  <div key={n.id} className="cp-note">
+                    <div className="cp-note-head">
+                      <strong>{n.actor_name}</strong>
+                      {n.actor_role && n.actor_role !== 'cp' && (
+                        <span className="admin-event-role">{n.actor_role}</span>
+                      )}
+                      <span className="admin-event-time">{formatDateTime(n.created_at)}</span>
+                      {isAdmin && (
+                        <button
+                          className="cp-note-delete"
+                          onClick={() => removeNote(n.id)}
+                          title="Delete note"
+                        >✕</button>
+                      )}
+                    </div>
+                    <div className="cp-note-body">{n.text}</div>
+                  </div>
+                ))}
+              </div>
             </>
           )}
         </div>
+
+        {/* Admin-only: add a note */}
+        {isAdmin && cp && (
+          <div className="admin-comment-input">
+            <input
+              placeholder="Add a note about this CP…"
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  addNote();
+                }
+              }}
+              disabled={busy}
+            />
+            <button onClick={addNote} disabled={busy || !newNote.trim()}>
+              {busy ? '…' : 'Save note'}
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

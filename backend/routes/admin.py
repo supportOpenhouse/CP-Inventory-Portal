@@ -44,13 +44,19 @@ def require_admin_role(f):
 # ---- helpers ----
 
 def _scoped_city_filter(cur):
+    """
+    RM scope: city_id match OR assigned_rm_id match (both included).
+    Admin: no restriction.
+    """
     role = g.user.get("role", "cp")
     if role == "admin":
         return "", []
     city_id = g.user.get("city_id")
-    if not city_id:
+    cp_id = g.user.get("cp_id")
+    if not city_id and not cp_id:
         return "AND FALSE", []
-    return "AND s.city_id = %s", [city_id]
+    # Include rows in RM's city OR explicitly assigned to them
+    return "AND (s.city_id = %s OR s.assigned_rm_id = %s)", [city_id, cp_id]
 
 
 def _apply_filters(base_sql: str, params: list):
@@ -121,14 +127,16 @@ def _list_submissions_core():
                     s.asking_price, s.closing_price,
                     s.seller_name, s.seller_phone,
                     s.status, s.submitted_at, s.photos, s.weak_match,
-                    s.deleted_at,
+                    s.deleted_at, s.drive_links, s.assigned_rm_id,
                     c.name AS city,
                     cp.id AS cp_id,
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
-                    cp.company AS cp_company
+                    cp.company AS cp_company,
+                    rm.name AS assigned_rm_name
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
+                LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
                 WHERE TRUE {scope_sql}
             """
             params = list(scope_params)
@@ -222,10 +230,12 @@ def get_submission(sid: int):
             cur.execute(f"""
                 SELECT s.*, c.name AS city,
                        cp.id AS cp_id, cp.cp_code, cp.name AS cp_name,
-                       cp.phone AS cp_phone, cp.company AS cp_company
+                       cp.phone AS cp_phone, cp.company AS cp_company,
+                       rm.name AS assigned_rm_name
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
+                LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
                 WHERE s.id = %s {scope_sql}
             """, [sid, *scope_params])
             submission = cur.fetchone()
@@ -338,8 +348,11 @@ EDITABLE_FIELDS = {
     "closing_price":       ("int", None),
     "seller_name":         ("str", 200),
     "seller_phone":        ("str", 20),
-    "extra_rooms":         ("json", None),   # list of strings
+    "extra_rooms":         ("json", None),
     "additional_comments": ("text", None),
+    "drive_links":         ("text", None),
+    "photos":              ("json", None),
+    "assigned_rm_id":      ("int", None),   # null = unassigned; city-default applies
 }
 
 
@@ -521,3 +534,176 @@ def export_csv():
         mimetype="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ===================================================================
+# Turn 2: RMs list, bulk status, CP notes
+# ===================================================================
+
+
+@bp.get("/rms")
+@require_staff
+def list_rms():
+    """All RMs and admins, for the assignment dropdown."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT cp.id, cp.name, cp.cp_code, cp.role,
+                       c.name AS city
+                FROM channel_partners cp
+                LEFT JOIN cities c ON cp.city_id = c.id
+                WHERE cp.role IN ('rm', 'admin') AND cp.is_active = TRUE
+                ORDER BY cp.role DESC, cp.name ASC
+            """)
+            rows = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+    return jsonify({"rms": rows}), 200
+
+
+@bp.post("/submissions/bulk-status")
+@require_staff
+def bulk_status():
+    """
+    Bulk status change.
+    Body: { "ids": [1, 2, 3], "status": "Evaluation" }
+    Max 200 IDs per call.
+    """
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids") or []
+    new_status = to_str(data.get("status"))
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "ids must be a non-empty list"}), 400
+    if len(ids) > 200:
+        return jsonify({"error": "Max 200 IDs per bulk operation"}), 400
+    if not new_status or new_status not in VALID_STAGES:
+        return jsonify({"error": f"Invalid status. Must be one of: {VALID_STAGES}"}), 400
+
+    # Coerce IDs to int
+    clean_ids = []
+    for v in ids:
+        iv = to_int(v)
+        if iv is None:
+            return jsonify({"error": f"Invalid id: {v}"}), 400
+        clean_ids.append(iv)
+
+    conn = get_app_conn()
+    updated, skipped = 0, 0
+    try:
+        with conn.cursor() as cur:
+            scope_sql, scope_params = _scoped_city_filter(cur)
+            # Pull in-scope, not-deleted, not-already-at-target
+            cur.execute(f"""
+                SELECT s.id, s.status FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
+                WHERE s.id = ANY(%s)
+                  AND s.deleted_at IS NULL
+                  {scope_sql}
+            """, [clean_ids, *scope_params])
+            rows = cur.fetchall()
+            in_scope = {r["id"]: r["status"] for r in rows}
+
+            for sid, old_status in in_scope.items():
+                if old_status == new_status:
+                    skipped += 1
+                    continue
+                cur.execute(
+                    "UPDATE submissions SET status = %s WHERE id = %s",
+                    (new_status, sid),
+                )
+                cur.execute("""
+                    INSERT INTO submission_events
+                        (submission_id, actor_cp_id, kind, from_status, to_status, text)
+                    VALUES (%s, %s, 'status_change', %s, %s, 'Bulk action')
+                """, (sid, g.user["cp_id"], old_status, new_status))
+                updated += 1
+
+            out_of_scope = len(clean_ids) - len(in_scope)
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "updated": updated,
+        "skipped_same_status": skipped,
+        "out_of_scope_or_deleted": out_of_scope,
+    }), 200
+
+
+@bp.get("/cp/<int:cp_id>/notes")
+@require_staff
+def list_cp_notes(cp_id: int):
+    """List notes for a CP. RM can read notes but only admin creates them."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT n.id, n.text, n.created_at,
+                       cp.name AS actor_name, cp.role AS actor_role
+                FROM cp_notes n
+                JOIN channel_partners cp ON n.actor_cp_id = cp.id
+                WHERE n.cp_id = %s
+                ORDER BY n.created_at DESC
+                LIMIT 200
+            """, (cp_id,))
+            notes = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+    return jsonify({"notes": notes}), 200
+
+
+@bp.post("/cp/<int:cp_id>/notes")
+@require_staff
+@require_admin_role
+def add_cp_note(cp_id: int):
+    """Admin-only: add a timestamped note on a CP."""
+    data = request.get_json(silent=True) or {}
+    text = to_str(data.get("text"))
+    if not text or not text.strip():
+        return jsonify({"error": "Note text required"}), 400
+    if len(text) > 2000:
+        return jsonify({"error": "Note too long (max 2000 chars)"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Ensure CP exists
+            cur.execute("SELECT id FROM channel_partners WHERE id = %s", (cp_id,))
+            if not cur.fetchone():
+                return jsonify({"error": "CP not found"}), 404
+
+            cur.execute("""
+                INSERT INTO cp_notes (cp_id, actor_cp_id, text)
+                VALUES (%s, %s, %s)
+                RETURNING id, created_at
+            """, (cp_id, g.user["cp_id"], text.strip()))
+            row = cur.fetchone()
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "note_id": row["id"],
+        "created_at": row["created_at"],
+    }), 201
+
+
+@bp.delete("/cp/notes/<int:note_id>")
+@require_staff
+@require_admin_role
+def delete_cp_note(note_id: int):
+    """Admin-only: delete a CP note (hard delete since these are low-stakes)."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM cp_notes WHERE id = %s RETURNING id", (note_id,))
+            if not cur.fetchone():
+                return jsonify({"error": "Not found"}), 404
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+    return jsonify({"ok": True}), 200

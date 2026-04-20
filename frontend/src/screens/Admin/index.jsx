@@ -27,6 +27,11 @@ export default function Admin() {
   const [cpHistoryId, setCpHistoryId] = useState(null);
   const [exporting, setExporting] = useState(false);
 
+  // Bulk select state
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
   const [bhk, setBhk] = useState('');
@@ -88,6 +93,44 @@ export default function Admin() {
     setDateTo('');
   };
 
+  const toggleBulkMode = () => {
+    setBulkMode(!bulkMode);
+    setSelectedIds(new Set());
+  };
+
+  const toggleBulkSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleBulkAll = () => {
+    if (selectedIds.size === submissions.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(submissions.map((s) => s.id)));
+    }
+  };
+
+  const bulkChangeStatus = async (newStatus) => {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    if (!confirm(`Move ${selectedIds.size} submission(s) to "${newStatus}"?`)) return;
+    setBulkBusy(true);
+    try {
+      const res = await api.adminBulkStatus(Array.from(selectedIds), newStatus);
+      alert(`Updated ${res.updated}. ${res.skipped_same_status ? res.skipped_same_status + ' were already ' + newStatus + '. ' : ''}${res.out_of_scope_or_deleted ? res.out_of_scope_or_deleted + ' out of scope.' : ''}`);
+      setSelectedIds(new Set());
+      setBulkMode(false);
+      await reload();
+    } catch (err) {
+      alert(err.message || 'Bulk update failed');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div className="admin-root">
       {/* Top bar */}
@@ -139,6 +182,15 @@ export default function Admin() {
           </button>
         </div>
         <div className="admin-toolbar-right">
+          {isAdmin && (
+            <button
+              className={`filter-toggle ${bulkMode ? 'active' : ''}`}
+              onClick={toggleBulkMode}
+              title="Select multiple to change status"
+            >
+              {bulkMode ? `✕ Cancel${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '☐ Select'}
+            </button>
+          )}
           <div className="view-toggle">
             <button
               className={`view-btn ${view === 'board' ? 'active' : ''}`}
@@ -220,12 +272,42 @@ export default function Admin() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {bulkMode && selectedIds.size > 0 && (
+        <div className="bulk-action-bar">
+          <span>{selectedIds.size} selected</span>
+          <span style={{ fontSize: 12, color: '#666' }}>Move to:</span>
+          {STAGES.map((st) => (
+            <button
+              key={st.key}
+              className="btn-secondary-sm"
+              style={{ borderColor: st.color, color: st.color }}
+              onClick={() => bulkChangeStatus(st.key)}
+              disabled={bulkBusy}
+            >
+              {st.key}
+            </button>
+          ))}
+          <button
+            className="btn-secondary-sm"
+            style={{ marginLeft: 'auto' }}
+            onClick={() => setSelectedIds(new Set())}
+            disabled={bulkBusy}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {view === 'board' ? (
         <BoardView
           submissions={submissions}
           loading={loading}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          bulkMode={bulkMode}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleBulkSelect}
         />
       ) : (
         <TableView
@@ -233,6 +315,10 @@ export default function Admin() {
           loading={loading}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          bulkMode={bulkMode}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleBulkSelect}
+          onToggleAll={toggleBulkAll}
         />
       )}
 

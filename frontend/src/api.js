@@ -86,6 +86,14 @@ export const api = {
     request(`/admin/submissions/${id}`, { method: 'DELETE' }),
   adminGetCpHistory: (cpId) =>
     request(`/admin/cp/${cpId}/submissions`),
+  adminListRms: () => request('/admin/rms'),
+  adminBulkStatus: (ids, status) =>
+    request('/admin/submissions/bulk-status', { method: 'POST', body: { ids, status } }),
+  adminListCpNotes: (cpId) => request(`/admin/cp/${cpId}/notes`),
+  adminAddCpNote: (cpId, text) =>
+    request(`/admin/cp/${cpId}/notes`, { method: 'POST', body: { text } }),
+  adminDeleteCpNote: (noteId) =>
+    request(`/admin/cp/notes/${noteId}`, { method: 'DELETE' }),
 
   // Health
   health: () => request('/health', { auth: false }),
@@ -121,4 +129,4 @@ export async function downloadAdminCsv(filters = {}) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
+} 

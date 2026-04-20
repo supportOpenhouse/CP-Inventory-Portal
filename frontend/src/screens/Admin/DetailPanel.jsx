@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../../api';
 import { formatDateTime, formatPrice, STAGES } from '../../format';
 import { getUser } from '../../auth';
+import {
+  uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
+} from '../../cloudinary';
 
 // Fields the admin can edit (mirrors EDITABLE_FIELDS in backend/routes/admin.py)
 const EDITABLE_FIELDS = [
@@ -21,6 +24,7 @@ const EDITABLE_FIELDS = [
   { key: 'closing_price',        label: 'Closing price (₹)', type: 'number' },
   { key: 'seller_name',          label: 'Seller name',      type: 'text'   },
   { key: 'seller_phone',         label: 'Seller phone',     type: 'text'   },
+  { key: 'drive_links',          label: 'Google Drive URLs (one per line)', type: 'textarea' },
   { key: 'additional_comments',  label: 'Additional comments', type: 'textarea' },
 ];
 
@@ -32,6 +36,10 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   const [busy, setBusy] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
+  const [rms, setRms] = useState([]);
+  const [uploadingPct, setUploadingPct] = useState(null);
+  const [lightboxId, setLightboxId] = useState(null);
+  const fileInputRef = useRef(null);
   const eventsEndRef = useRef(null);
 
   const user = getUser();
@@ -52,6 +60,11 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   }, [submissionId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!isAdmin || rms.length > 0) return;
+    api.adminListRms().then((r) => setRms(r.rms || [])).catch(() => {});
+  }, [isAdmin, rms.length]);
 
   useEffect(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -148,6 +161,74 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
       onClose?.();
     } catch (err) {
       alert(err.message || 'Failed to archive');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const assignToRm = async (rmIdRaw) => {
+    if (busy) return;
+    const rmId = rmIdRaw ? parseInt(rmIdRaw, 10) : null;
+    setBusy(true);
+    try {
+      await api.adminUpdateSubmission(submissionId, { assigned_rm_id: rmId });
+      await load();
+      onChanged?.();
+    } catch (err) {
+      alert(err.message || 'Failed to assign');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const currentPhotos = Array.isArray(data?.submission?.photos) ? data.submission.photos : [];
+    if (currentPhotos.length + files.length > MAX_PHOTOS) {
+      alert(`Max ${MAX_PHOTOS} photos per submission. Already has ${currentPhotos.length}.`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    const newIds = [];
+    for (const file of files) {
+      const err = validateFile(file);
+      if (err) { alert(err); continue; }
+      try {
+        setUploadingPct(0);
+        const { publicId } = await uploadToCloudinary(file, setUploadingPct);
+        newIds.push(publicId);
+      } catch (uploadErr) {
+        alert(`Upload failed: ${uploadErr.message}`);
+      }
+    }
+    setUploadingPct(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (newIds.length) {
+      try {
+        await api.adminUpdateSubmission(submissionId, {
+          photos: [...currentPhotos, ...newIds],
+        });
+        await load();
+        onChanged?.();
+      } catch (err) {
+        alert(err.message || 'Failed to save photos');
+      }
+    }
+  };
+
+  const handleRemovePhoto = async (publicId) => {
+    if (busy) return;
+    if (!confirm('Remove this photo from the submission?')) return;
+    const current = Array.isArray(data?.submission?.photos) ? data.submission.photos : [];
+    const remaining = current.filter((p) => p !== publicId);
+    setBusy(true);
+    try {
+      await api.adminUpdateSubmission(submissionId, { photos: remaining });
+      await load();
+      onChanged?.();
+    } catch (err) {
+      alert(err.message || 'Failed to remove');
     } finally {
       setBusy(false);
     }
@@ -282,6 +363,94 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </div>
               </div>
 
+              {/* Assignment — admin only */}
+              {isAdmin && (
+                <div className="admin-panel-section">
+                  <div className="admin-panel-section-title">Assigned RM</div>
+                  <select
+                    className="status-select"
+                    value={s.assigned_rm_id || ''}
+                    onChange={(e) => assignToRm(e.target.value)}
+                    disabled={busy}
+                  >
+                    <option value="">— None (city default) —</option>
+                    {rms.map((rm) => (
+                      <option key={rm.id} value={rm.id}>
+                        {rm.name} {rm.city ? `(${rm.city})` : ''} {rm.role === 'admin' ? '· admin' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {s.assigned_rm_name && (
+                    <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
+                      Currently assigned to <strong>{s.assigned_rm_name}</strong>.
+                      They see this in addition to their city's submissions.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Attachments */}
+              <div className="admin-panel-section">
+                <div className="admin-panel-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Attachments</span>
+                  {isAdmin && (
+                    <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={handlePhotoUpload}
+                      />
+                      <button
+                        className="btn-secondary-sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={busy || uploadingPct !== null}
+                      >
+                        {uploadingPct !== null ? `Uploading ${uploadingPct}%` : '＋ Photos'}
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Photos grid */}
+                {Array.isArray(s.photos) && s.photos.length > 0 ? (
+                  <div className="admin-photo-grid">
+                    {s.photos.map((pid) => (
+                      <div key={pid} className="admin-photo-thumb">
+                        <img src={thumbnailUrl(pid, 120)} alt="" onClick={() => setLightboxId(pid)} />
+                        {isAdmin && (
+                          <button
+                            className="admin-photo-remove"
+                            onClick={() => handleRemovePhoto(pid)}
+                            title="Remove photo"
+                          >✕</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: '#999' }}>No photos.</div>
+                )}
+
+                {/* Drive links */}
+                {s.drive_links && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="admin-panel-label">Google Drive URLs</div>
+                    <div className="admin-panel-val" style={{ fontSize: 12 }}>
+                      {s.drive_links.split(/[,\n]/).map((url) => url.trim()).filter(Boolean).map((url, i) => (
+                        <div key={i} style={{ marginTop: 2 }}>
+                          <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--oh-orange)' }}>
+                            {url.length > 60 ? url.slice(0, 60) + '…' : url}
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Events */}
               <div className="admin-panel-section" style={{ borderBottom: 'none' }}>
                 <div className="admin-panel-section-title">Activity ({events.length})</div>
@@ -370,6 +539,14 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
           </div>
         )}
       </div>
+
+      {/* Lightbox for photos */}
+      {lightboxId && (
+        <div className="photo-lightbox" onClick={() => setLightboxId(null)}>
+          <img src={previewUrl(lightboxId)} alt="" onClick={(e) => e.stopPropagation()} />
+          <button className="photo-lightbox-close" onClick={() => setLightboxId(null)}>✕</button>
+        </div>
+      )}
     </>
   );
 }
