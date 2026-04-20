@@ -24,31 +24,18 @@ export default function Step2({ form, setForm, onNext, onBack }) {
   return (
     <div className="form-section">
       <div className="form-card">
-        <div className="form-card-title">Floor & Furnishing</div>
-        <div className="form-row" style={{ marginBottom: 12 }}>
-          <div>
-            <div className="input-label">Floor</div>
-            <input
-              className="input-field"
-              placeholder="e.g. 7, G, B1"
-              value={form.floor}
-              onChange={(e) => setForm({ ...form, floor: e.target.value })}
-            />
-          </div>
-          <div>
-            <div className="input-label">Furnishing</div>
-            <select
-              className="select-field"
-              value={form.furnishing}
-              onChange={(e) => setForm({ ...form, furnishing: e.target.value })}
-            >
-              <option value="">Select</option>
-              {FURNISHING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-        </div>
+        <div className="form-card-title">Furnishing & Registry</div>
+        <div className="input-label">Furnishing</div>
+        <select
+          className="select-field"
+          value={form.furnishing}
+          onChange={(e) => setForm({ ...form, furnishing: e.target.value })}
+        >
+          <option value="">Select</option>
+          {FURNISHING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+        </select>
 
-        <div className="input-label">Registry status</div>
+        <div className="input-label" style={{ marginTop: 12 }}>Registry status</div>
         <select
           className="select-field"
           value={form.registryStatus}

@@ -48,6 +48,7 @@ export const css = `
   .form-card { background: #fff; border: 1px solid var(--oh-border); border-radius: 12px; padding: 18px; margin-top: 16px; box-shadow: var(--oh-shadow-sm); }
   .form-card-title { font-size: 14px; font-weight: 600; color: var(--oh-charcoal); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.3px; }
   .input-label { font-size: 13px; color: var(--oh-gray); font-weight: 500; margin-bottom: 6px; }
+  .required-star { color: #DC2626; margin-left: 3px; font-weight: 700; }
   .input-field, .select-field { width: 100%; padding: 13px 14px; border: 1.5px solid var(--oh-border); border-radius: 10px; font-size: 15px; font-family: 'DM Sans', sans-serif; outline: none; color: var(--oh-charcoal); background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
   .input-field:focus, .select-field:focus { border-color: var(--oh-orange); box-shadow: 0 0 0 3px rgba(255,107,43,0.08); }
   .input-field::placeholder { color: #B5B5B5; }

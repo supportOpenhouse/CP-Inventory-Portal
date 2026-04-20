@@ -38,12 +38,17 @@ export default function Step1({ form, setForm, onNext }) {
   }, [debouncedSearch, dropdownOpen]);
 
   const selectSociety = (s) => {
-    setForm({ ...form, society: s, tower: '', unitNo: '', sqft: '', bhk: '' });
+    setForm({ ...form, society: s, tower: '', unitNo: '', sqft: '', bhk: '', floor: '' });
     setSearch('');
     setDropdownOpen(false);
   };
 
-  const canContinue = !!form.society?.id && !checking;
+  // Required: society + bhk + floor (per product spec)
+  const canContinue =
+    !!form.society?.id &&
+    !!form.bhk &&
+    !!(form.floor && form.floor.trim()) &&
+    !checking;
 
   const handleContinue = async () => {
     setApiError('');
@@ -54,7 +59,7 @@ export default function Step1({ form, setForm, onNext }) {
         society_id: form.society.id,
         tower: form.tower || null,
         unit_no: form.unitNo || null,
-        // floor is collected in Step 2
+        floor: form.floor || null,
       });
       if (result.block) {
         setDupResult(result);
@@ -81,7 +86,9 @@ export default function Step1({ form, setForm, onNext }) {
     <div className="form-section">
       {/* Society */}
       <div className="form-card">
-        <div className="form-card-title">Society</div>
+        <div className="form-card-title">
+          Society <span className="required-star">*</span>
+        </div>
         <div className="society-search-wrap">
           <input
             className="input-field"
@@ -91,7 +98,7 @@ export default function Step1({ form, setForm, onNext }) {
               setSearch(e.target.value);
               setDropdownOpen(true);
               if (form.society) {
-                setForm({ ...form, society: null, tower: '', unitNo: '', sqft: '', bhk: '' });
+                setForm({ ...form, society: null, tower: '', unitNo: '', sqft: '', bhk: '', floor: '' });
               }
             }}
             onFocus={() => {
@@ -125,6 +132,37 @@ export default function Step1({ form, setForm, onNext }) {
         <div className="form-card">
           <div className="form-card-title">Unit Info</div>
 
+          {/* Row 1: BHK + Floor (both required) */}
+          <div className="form-row" style={{ marginBottom: 12 }}>
+            <div>
+              <div className="input-label">
+                BHK <span className="required-star">*</span>
+              </div>
+              <select
+                className="select-field"
+                value={form.bhk}
+                onChange={(e) => setForm({ ...form, bhk: e.target.value })}
+              >
+                <option value="">Select</option>
+                {BHK_OPTIONS.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div className="input-label">
+                Floor <span className="required-star">*</span>
+              </div>
+              <input
+                className="input-field"
+                placeholder="e.g. 7, G, B1"
+                value={form.floor}
+                onChange={(e) => setForm({ ...form, floor: e.target.value })}
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Tower + Unit No (optional) */}
           <div className="form-row" style={{ marginBottom: 12 }}>
             <div>
               <div className="input-label">Tower</div>
@@ -146,34 +184,20 @@ export default function Step1({ form, setForm, onNext }) {
             </div>
           </div>
 
-          <div className="form-row">
-            <div>
-              <div className="input-label">Area (sqft)</div>
-              <input
-                className="input-field"
-                inputMode="numeric"
-                placeholder="e.g. 1200"
-                value={form.sqft}
-                onChange={(e) => setForm({ ...form, sqft: e.target.value.replace(/\D/g, '') })}
-              />
-            </div>
-            <div>
-              <div className="input-label">BHK</div>
-              <select
-                className="select-field"
-                value={form.bhk}
-                onChange={(e) => setForm({ ...form, bhk: e.target.value })}
-              >
-                <option value="">Select</option>
-                {BHK_OPTIONS.map((b) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
+          {/* Row 3: Area (optional, full width) */}
+          <div>
+            <div className="input-label">Area (sqft)</div>
+            <input
+              className="input-field"
+              inputMode="numeric"
+              placeholder="e.g. 1200"
+              value={form.sqft}
+              onChange={(e) => setForm({ ...form, sqft: e.target.value.replace(/\D/g, '') })}
+            />
           </div>
 
           <div className="optional-hint">
-            All fields except society are optional. Fill what you know — we'll check for duplicates against Openhouse inventory.
+            <span className="required-star">*</span> are required. Tower, Unit No, and Area are optional but help us match against Openhouse inventory.
           </div>
         </div>
       )}
