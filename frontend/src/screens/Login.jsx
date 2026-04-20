@@ -215,7 +215,7 @@ export default function Login() {
               disabled={loading || code.length !== 6}
               style={{ marginTop: 16 }}
             >
-              {loading ? <><span className="spinner" /> Verifying…</> : 'Verify &amp; sign in'}
+              {loading ? <><span className="spinner" /> Verifying…</> : 'Verify & sign in'}
             </button>
 
             <div style={{ textAlign: 'center', marginTop: 14, fontSize: 13 }}>
