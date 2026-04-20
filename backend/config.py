@@ -19,6 +19,26 @@ class Config:
     # Kill-switch: set to "false" to silence alerts without changing code
     ALERTS_ENABLED = os.getenv("ALERTS_ENABLED", "true").lower() == "true"
 
+    # -------- OTP auth (Kaleyra SMS) --------
+    # Master switch. If false, login skips OTP (back to phone-only).
+    OTP_ENABLED = os.getenv("OTP_ENABLED", "false").lower() == "true"
+    # Kaleyra SMS API credentials
+    KALEYRA_API_KEY = os.getenv("KALEYRA_API_KEY") or None
+    KALEYRA_SID = os.getenv("KALEYRA_SID", "HXIN1815766768IN")
+    KALEYRA_SENDER_ID = os.getenv("KALEYRA_SENDER_ID", "OHAVAN")
+    KALEYRA_TEMPLATE_ID = os.getenv("KALEYRA_TEMPLATE_ID", "1107173502114302174")
+    # Comma-separated list of phone numbers that accept `000000` as a universal bypass.
+    # Default includes the admin phone so testing works even without env setup.
+    OTP_DEV_BYPASS_PHONES = [
+        p.strip() for p in os.getenv(
+            "OTP_DEV_BYPASS_PHONES", "9555666059"
+        ).split(",") if p.strip()
+    ]
+    # OTP behavior
+    OTP_EXPIRY_MINUTES = int(os.getenv("OTP_EXPIRY_MINUTES", "5"))
+    OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
+    OTP_SEND_RATE_LIMIT = int(os.getenv("OTP_SEND_RATE_LIMIT", "3"))  # sends per 10 min
+
     @classmethod
     def validate(cls) -> None:
         missing = []

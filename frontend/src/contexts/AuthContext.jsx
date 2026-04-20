@@ -6,11 +6,9 @@ import { clearSession, getToken, getUser, setToken, setUser } from '../auth';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  // Start with whatever's in sessionStorage (lets refresh preserve login)
   const [user, setUserState] = useState(() => getUser());
   const [loading, setLoading] = useState(false);
 
-  // If we have a token but no validated user yet, verify it on mount.
   useEffect(() => {
     const token = getToken();
     if (token && !user) {
@@ -29,11 +27,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * Call /api/auth/phone-login.
-   * Returns:
-   *   { kind: 'authenticated', user }   — success, user is logged in
-   *   { kind: 'not_registered', rmContacts } — phone not found
-   *   { kind: 'error', message }        — validation or network error
+   * Legacy phone-only login. Will return 410 Gone if backend has OTP_ENABLED=true.
    */
   async function login(phone) {
     setLoading(true);
@@ -54,13 +48,76 @@ export function AuthProvider({ children }) {
     }
   }
 
+  /**
+   * Step 1 of OTP flow: request an OTP.
+   * Returns:
+   *   { kind: 'otp_sent', devMode: boolean } — OTP sent (or dev bypass active)
+   *   { kind: 'not_registered', rmContacts }  — phone not a CP
+   *   { kind: 'rate_limited', message }
+   *   { kind: 'error', message }
+   */
+  async function sendOtp(phone) {
+    setLoading(true);
+    try {
+      const res = await api.sendOtp(phone);
+      if (res.user === null && res.token === null) {
+        return { kind: 'not_registered', rmContacts: res.rm_contacts || {} };
+      }
+      if (res.success) {
+        return { kind: 'otp_sent', devMode: res.status === 'dev_bypass' };
+      }
+      return { kind: 'error', message: res.error || 'Could not send OTP' };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        return { kind: 'rate_limited', message: err.message };
+      }
+      const message = err instanceof ApiError ? err.message : 'Could not send OTP';
+      return { kind: 'error', message };
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /**
+   * Step 2 of OTP flow: verify OTP + log in.
+   * Returns:
+   *   { kind: 'authenticated', user }
+   *   { kind: 'not_registered', rmContacts }
+   *   { kind: 'invalid', message }
+   *   { kind: 'error', message }
+   */
+  async function verifyOtp(phone, code) {
+    setLoading(true);
+    try {
+      const res = await api.verifyOtp(phone, code);
+      if (res.token && res.user) {
+        setToken(res.token);
+        setUser(res.user);
+        setUserState(res.user);
+        return { kind: 'authenticated', user: res.user };
+      }
+      if (res.user === null) {
+        return { kind: 'not_registered', rmContacts: res.rm_contacts || {} };
+      }
+      return { kind: 'error', message: 'Unexpected response' };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        return { kind: 'invalid', message: err.message || 'Invalid OTP' };
+      }
+      const message = err instanceof ApiError ? err.message : 'Verification failed';
+      return { kind: 'error', message };
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function logout() {
     clearSession();
     setUserState(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, sendOtp, verifyOtp, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -54,6 +54,10 @@ export const api = {
   // Auth
   phoneLogin: (phone) =>
     request('/auth/phone-login', { method: 'POST', body: { phone }, auth: false }),
+  sendOtp: (phone) =>
+    request('/auth/send-otp', { method: 'POST', body: { phone }, auth: false }),
+  verifyOtp: (phone, code) =>
+    request('/auth/verify-otp', { method: 'POST', body: { phone, code }, auth: false }),
   me: () => request('/me'),
 
   // Public lookups
@@ -129,4 +133,4 @@ export async function downloadAdminCsv(filters = {}) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-} 
+}

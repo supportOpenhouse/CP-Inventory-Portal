@@ -645,6 +645,44 @@ export const css = `
     .admin-photo-grid { grid-template-columns: repeat(3, 1fr); }
   }
 
+  /* ===== OTP input (6-box) ===== */
+  .otp-input-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin: 8px 0;
+  }
+  .otp-digit {
+    width: 44px;
+    height: 54px;
+    font-size: 22px;
+    font-weight: 700;
+    text-align: center;
+    border: 1.5px solid var(--oh-border);
+    border-radius: 10px;
+    background: #fff;
+    font-family: inherit;
+    color: #222;
+    padding: 0;
+    -moz-appearance: textfield;
+  }
+  .otp-digit::-webkit-outer-spin-button,
+  .otp-digit::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .otp-digit:focus {
+    outline: none;
+    border-color: var(--oh-orange);
+    box-shadow: 0 0 0 3px rgba(255,107,43,0.15);
+  }
+  .otp-digit:disabled { background: #F5F5F5; color: #999; }
+
+  @media (max-width: 420px) {
+    .otp-input-row { gap: 7px; }
+    .otp-digit { width: 40px; height: 48px; font-size: 20px; }
+  }
+
   /* ===== Mobile polish (< 520px) ===== */
   @media (max-width: 520px) {
     .fab { right: 18px; bottom: 88px; }
