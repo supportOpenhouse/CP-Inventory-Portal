@@ -273,7 +273,7 @@ def change_status(sid: int):
                 SELECT s.id, s.status FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}
-                FOR UPDATE
+                FOR UPDATE OF s
             """, [sid, *scope_params])
             existing = cur.fetchone()
             if not existing:
