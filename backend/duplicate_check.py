@@ -3,7 +3,7 @@
 Tier 1 (exact):   society + tower + unit_no all match (case-insensitive, is_dead excluded)
                   -> block=True, match_level="exact"
 Tier 2 (partial): society alone OR society+tower OR society+floor
-                  -> block=True, match_level="partial"
+                  -> block=False, match_level="partial", warning only (CP can proceed)
 No match:         block=False, match_level="none"
 
 NOTE: society_name + city must match identically (after LOWER/TRIM) between our
@@ -62,10 +62,9 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
     pconn = get_props_conn()
     try:
         with pconn.cursor() as cur:
-            # ---------- Tier 1: exact match ----------
+            # ---------- Tier 1: exact match (BLOCKS) ----------
             # If the CP provided both tower AND unit_no, they're being specific.
-            # Either it matches exactly (block) or we trust them and let them proceed.
-            # We skip the partial-match fallback in this case to avoid false positives.
+            # An exact match is the only hard block — blocks submission outright.
             if tower and unit_no:
                 cur.execute("""
                     SELECT uid, tower_no, unit_no, configuration, area_sqft,
@@ -92,10 +91,13 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                             "city": city,
                         },
                     }
-                # No exact match AND CP gave full details — trust them, proceed.
+                # Full details given, no exact match — trust them, proceed with no warning.
                 return _no_match()
 
-            # ---------- Tier 2: partial matches (only when CP didn't give full details) ----------
+            # ---------- Tier 2: partial matches (WARNINGS ONLY) ----------
+            # The CP didn't give tower+unit together, so we can only make soft guesses.
+            # We surface these as warnings — CP sees a banner but can proceed.
+            # Ordered specific -> general; first hit is what we return.
 
             # 2a: society + tower
             if tower:
@@ -111,11 +113,11 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                 if row and row["cnt"] > 0:
                     return {
                         "match_level": "partial",
-                        "block": True,
+                        "block": False,
                         "message": (
-                            f"Some units in Tower {tower} at {society_name} are already "
-                            f"with Openhouse. Please contact your Openhouse representative "
-                            f"for further checking."
+                            f"Heads up: Openhouse already has units in Tower {tower} at "
+                            f"{society_name}. Double-check that this isn't a duplicate "
+                            f"before submitting."
                         ),
                         "details": {
                             "society": society_name,
@@ -123,7 +125,7 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                         },
                     }
 
-            # 2b: society + floor (floor arrives as string, properties stores INT)
+            # 2b: society + floor
             if floor is not None:
                 try:
                     floor_int = int(str(floor).strip())
@@ -143,11 +145,11 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
                     if row and row["cnt"] > 0:
                         return {
                             "match_level": "partial",
-                            "block": True,
+                            "block": False,
                             "message": (
-                                f"Some units on floor {floor_int} at {society_name} are "
-                                f"already with Openhouse. Please contact your Openhouse "
-                                f"representative for further checking."
+                                f"Heads up: Openhouse already has units on floor "
+                                f"{floor_int} at {society_name}. Double-check that this "
+                                f"isn't a duplicate before submitting."
                             ),
                             "details": {
                                 "society": society_name,
@@ -167,10 +169,10 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
             if row and row["cnt"] > 0:
                 return {
                     "match_level": "partial",
-                    "block": True,
+                    "block": False,
                     "message": (
-                        f"{society_name} has existing units with Openhouse. "
-                        f"Please contact your Openhouse representative for further checking."
+                        f"Heads up: Openhouse already has units in {society_name}. "
+                        f"Double-check that this isn't a duplicate before submitting."
                     ),
                     "details": {
                         "society": society_name,

@@ -16,7 +16,8 @@ export default function Step1({ form, setForm, onNext }) {
 
   // ---- duplicate check state ----
   const [checking, setChecking] = useState(false);
-  const [dupResult, setDupResult] = useState(null);
+  const [dupResult, setDupResult] = useState(null);    // hard block (exact match)
+  const [dupWarning, setDupWarning] = useState(null);  // soft warning (partial match)
   const [apiError, setApiError] = useState('');
 
   // Society search (debounced). Fires only when dropdown is open + 2+ chars.
@@ -53,6 +54,7 @@ export default function Step1({ form, setForm, onNext }) {
   const handleContinue = async () => {
     setApiError('');
     setDupResult(null);
+    setDupWarning(null);
     setChecking(true);
     try {
       const result = await api.checkDuplicate({
@@ -62,7 +64,11 @@ export default function Step1({ form, setForm, onNext }) {
         floor: form.floor || null,
       });
       if (result.block) {
+        // Exact match — hard stop
         setDupResult(result);
+      } else if (result.match_level === 'partial') {
+        // Soft warning — show inline banner, CP decides whether to proceed
+        setDupWarning(result);
       } else {
         onNext();
       }
@@ -71,6 +77,11 @@ export default function Step1({ form, setForm, onNext }) {
     } finally {
       setChecking(false);
     }
+  };
+
+  const handleProceedAnyway = () => {
+    setDupWarning(null);
+    onNext();
   };
 
   // If blocking duplicate, show just the card + back button
@@ -84,6 +95,34 @@ export default function Step1({ form, setForm, onNext }) {
 
   return (
     <div className="form-section">
+      {/* Soft duplicate warning (partial match) */}
+      {dupWarning && (
+        <div className="dup-warning-card">
+          <div className="dup-warning-title">
+            ⚠ Possible duplicate
+          </div>
+          <div className="dup-warning-message">
+            {dupWarning.message}
+          </div>
+          <div className="dup-warning-actions">
+            <button
+              className="secondary-btn"
+              onClick={() => setDupWarning(null)}
+              type="button"
+            >
+              Edit details
+            </button>
+            <button
+              className="primary-btn"
+              onClick={handleProceedAnyway}
+              type="button"
+            >
+              Continue anyway
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Society */}
       <div className="form-card">
         <div className="form-card-title">

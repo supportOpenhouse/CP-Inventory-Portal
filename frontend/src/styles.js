@@ -49,6 +49,37 @@ export const css = `
   .form-card-title { font-size: 14px; font-weight: 600; color: var(--oh-charcoal); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.3px; }
   .input-label { font-size: 13px; color: var(--oh-gray); font-weight: 500; margin-bottom: 6px; }
   .required-star { color: #DC2626; margin-left: 3px; font-weight: 700; }
+
+  /* ===== Soft duplicate warning (partial match, non-blocking) ===== */
+  .dup-warning-card {
+    background: #FFF9EC;
+    border: 1.5px solid #F5B90B;
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+  .dup-warning-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #8A6100;
+    margin-bottom: 8px;
+  }
+  .dup-warning-message {
+    font-size: 13px;
+    color: #5B4100;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  .dup-warning-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .dup-warning-actions .secondary-btn,
+  .dup-warning-actions .primary-btn {
+    flex: 1;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
   .input-field, .select-field { width: 100%; padding: 13px 14px; border: 1.5px solid var(--oh-border); border-radius: 10px; font-size: 15px; font-family: 'DM Sans', sans-serif; outline: none; color: var(--oh-charcoal); background: #fff; transition: border-color 0.15s, box-shadow 0.15s; }
   .input-field:focus, .select-field:focus { border-color: var(--oh-orange); box-shadow: 0 0 0 3px rgba(255,107,43,0.08); }
   .input-field::placeholder { color: #B5B5B5; }
