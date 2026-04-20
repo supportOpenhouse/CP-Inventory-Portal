@@ -74,7 +74,12 @@ export default function BoardView({
                     <span className="board-card-weak-badge" title="Weak society match — verify">⚠</span>
                   )}
                   <div className="board-card-society">{s.society_name}</div>
-                  <div className="board-card-city">{s.city || ''}</div>
+                  <div className="board-card-city">
+                    {s.city || ''}
+                    {s.public_id && (
+                      <span className="board-card-pubid"> · {s.public_id}</span>
+                    )}
+                  </div>
                   <div className="board-card-meta">
                     {[s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no), s.floor && `F${s.floor}`]
                       .filter(Boolean).join(' · ')}

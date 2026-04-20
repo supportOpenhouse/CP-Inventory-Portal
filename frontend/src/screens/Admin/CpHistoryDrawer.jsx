@@ -132,6 +132,20 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
                             <span style={{ color: '#DC2626', marginLeft: 6 }} title="Weak match">⚠</span>
                           )}
                         </div>
+                        {s.public_id && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: '#888',
+                              fontFamily: 'monospace',
+                              fontWeight: 600,
+                              letterSpacing: '0.3px',
+                              marginTop: 1,
+                            }}
+                          >
+                            {s.public_id}
+                          </div>
+                        )}
                         <div className="cp-history-meta">
                           {[
                             s.bhk,

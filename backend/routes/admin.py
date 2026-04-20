@@ -121,7 +121,7 @@ def _list_submissions_core():
             scope_sql, scope_params = _scoped_city_filter(cur)
             base_sql = f"""
                 SELECT
-                    s.id, s.society_name, s.tower, s.unit_no, s.floor,
+                    s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
                     s.sqft, s.bhk, s.furnishing, s.registry_status,
                     s.parking, s.exit_facing, s.balcony_facing, s.balcony_view,
                     s.asking_price, s.closing_price,
@@ -475,7 +475,7 @@ def cp_history(cp_id: int):
 
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
-                SELECT s.id, s.society_name, s.tower, s.unit_no, s.floor,
+                SELECT s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
                        s.bhk, s.sqft, s.asking_price, s.closing_price,
                        s.status, s.submitted_at, s.weak_match, s.deleted_at,
                        c.name AS city
@@ -505,7 +505,7 @@ def export_csv():
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow([
-        "ID", "Submitted at", "Status", "City", "Society",
+        "Listing ID", "Internal ID", "Submitted at", "Status", "City", "Society",
         "Tower", "Unit", "Floor", "BHK", "Sqft",
         "Registry", "Furnishing", "Parking",
         "Exit facing", "Balcony facing", "Balcony view",
@@ -515,6 +515,7 @@ def export_csv():
     ])
     for s in subs:
         writer.writerow([
+            s.get("public_id") or "",
             s["id"],
             s["submitted_at"].isoformat() if s.get("submitted_at") else "",
             s["status"],

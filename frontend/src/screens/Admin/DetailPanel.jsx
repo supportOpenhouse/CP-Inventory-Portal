@@ -250,6 +250,20 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
             ) : s ? (
               <>
                 <div className="admin-panel-title">{s.society_name}</div>
+                {s.public_id && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: '#666',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      letterSpacing: '0.5px',
+                      marginTop: 2,
+                    }}
+                  >
+                    {s.public_id}
+                  </div>
+                )}
                 <div className="admin-panel-sub">
                   {[s.city, s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : null, s.floor && `Floor ${s.floor}`]
                     .filter(Boolean).join(' · ')}

@@ -1,16 +1,31 @@
-"""Two-tier duplicate check against the properties DB.
+"""Duplicate check against the properties DB.
 
-Tier 1 (exact):   society + tower + unit_no all match (case-insensitive, is_dead excluded)
-                  -> block=True, match_level="exact"
-Tier 2 (partial): society alone OR society+tower OR society+floor
-                  -> block=False, match_level="partial", warning only (CP can proceed)
-No match:         block=False, match_level="none"
+Matching fields:
+  society (required) + bhk + floor + optionally tower + optionally unit_no
 
-NOTE: society_name + city must match identically (after LOWER/TRIM) between our
-master societies table and the properties table. If matching reliability drops
-in production, we may need a normalized_name column on societies or a
-city-name mapping (e.g., 'Gurugram' <-> 'Gurgaon').
+Decision table:
+  CP inputs                                     Match found?        Result
+  ────────────────────────────────────────────  ─────────────────   ──────────────────
+  society+bhk+floor (no tower/unit)             soc+bhk+floor       partial warning ("Heads up: openhouse already has a unit on this floor")
+  society+bhk+floor (no tower/unit)             no match            proceed
+  society+bhk+floor+tower (no unit)             soc+bhk+floor+tower BLOCK "already exists"
+  society+bhk+floor+tower (no unit)             no finer match      proceed
+  society+bhk+floor+unit (no tower)             soc+bhk+floor+unit  BLOCK "already exists"
+  society+bhk+floor+unit (no tower)             no finer match      proceed
+  society+bhk+floor+tower+unit                  full exact match    BLOCK "already exists"
+  society+bhk+floor+tower+unit                  partial only        proceed
+
+Hard blocks return block=True with Contact RM / Edit buttons on the UI.
+Soft warnings return block=False with a "Continue anyway" option.
+
+BHK is normalized by stripping "BHK" and matching digits only:
+  "2 BHK" -> "2", "2BHK" -> "2", "2" -> "2"
+Properties DB stores config as e.g. "2 BHK" or "2BHK" — we normalize both sides.
+
+If properties DB isn't configured, we fail open (no match).
 """
+
+import re
 
 from db import (
     get_app_conn,
@@ -20,22 +35,63 @@ from db import (
     properties_configured,
 )
 
+_BHK_DIGIT_RE = re.compile(r"(\d+)")
+
+
+def _norm_bhk(value) -> str | None:
+    """Strip 'BHK' and return just the digit count. '2 BHK' -> '2'."""
+    if value is None:
+        return None
+    m = _BHK_DIGIT_RE.search(str(value))
+    return m.group(1) if m else None
+
+
+def _norm_floor(value):
+    """Coerce floor string to int. Returns None if unparseable."""
+    if value is None or value == "":
+        return None
+    try:
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _fetch_rm(city_name: str):
+    """Look up RM phone/name for a city. Returns {} if not found."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT rm_name, rm_phone FROM cities WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s))",
+                (city_name,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {}
+            return {
+                "rm_name": row["rm_name"],
+                "rm_phone": row["rm_phone"],
+            }
+    finally:
+        put_app_conn(conn)
+
 
 def _no_match():
     return {"match_level": "none", "block": False, "message": "", "details": {}}
 
 
-def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=None):
+def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
+                    floor=None, city_hint=None):
     """
     Returns:
         {
           "match_level": "exact" | "partial" | "none",
-          "block": bool,
+          "block": bool,               # True => hard-block (Contact RM/Edit), False => soft warning
           "message": str,
-          "details": { ... }
+          "details": { "society": str, "city": str }
         }
     """
-    # 1. Resolve society_id -> canonical (name, city) using the app DB
+    # 1. Resolve society
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
@@ -52,132 +108,92 @@ def check_duplicate(society_id, tower=None, unit_no=None, floor=None, city_hint=
     if not soc:
         return _no_match()
 
-    # 2. If properties DB isn't configured, we can't check. Fail open.
     if not properties_configured():
         return _no_match()
 
     city = soc["city"]
     society_name = soc["name"]
 
+    bhk_n = _norm_bhk(bhk)
+    floor_n = _norm_floor(floor)
+
+    # BHK + floor are required for any meaningful duplicate signal.
+    # Without them, we can't narrow the search enough to be useful,
+    # so fail open rather than flood CPs with weak warnings.
+    if bhk_n is None or floor_n is None:
+        return _no_match()
+
+    # Shared base WHERE clause — society + bhk (digit-normalized) + floor
+    base_where = (
+        "LOWER(TRIM(city))         = LOWER(TRIM(%s)) "
+        "AND LOWER(TRIM(society_name)) = LOWER(TRIM(%s)) "
+        "AND REGEXP_REPLACE(COALESCE(configuration, ''), '[^0-9]', '', 'g') = %s "
+        "AND floor                   = %s "
+        "AND COALESCE(is_dead, FALSE) = FALSE"
+    )
+    base_params = [city, society_name, bhk_n, floor_n]
+
+    hard_block_details = {"society": society_name, "city": city}
+    unit_label = society_name
+    if tower:
+        unit_label += f", Tower {tower}"
+    if unit_no:
+        unit_label += f", Unit {unit_no}"
+
     pconn = get_props_conn()
     try:
         with pconn.cursor() as cur:
-            # ---------- Tier 1: exact match (BLOCKS) ----------
-            # If the CP provided both tower AND unit_no, they're being specific.
-            # An exact match is the only hard block — blocks submission outright.
-            if tower and unit_no:
-                cur.execute("""
-                    SELECT uid, tower_no, unit_no, configuration, area_sqft,
-                           demand_price, registry_status, floor
-                    FROM properties
-                    WHERE LOWER(TRIM(city))         = LOWER(TRIM(%s))
-                      AND LOWER(TRIM(society_name)) = LOWER(TRIM(%s))
-                      AND UPPER(TRIM(tower_no))     = UPPER(TRIM(%s))
-                      AND UPPER(TRIM(unit_no))      = UPPER(TRIM(%s))
-                      AND COALESCE(is_dead, FALSE)  = FALSE
-                    LIMIT 1
-                """, (city, society_name, tower, unit_no))
-                exact = cur.fetchone()
-                if exact:
+            # ---------- HARD BLOCK: society+bhk+floor + (tower AND/OR unit) ----------
+            if tower or unit_no:
+                conditions = [base_where]
+                params = list(base_params)
+
+                if tower:
+                    conditions.append("UPPER(TRIM(tower_no)) = UPPER(TRIM(%s))")
+                    params.append(tower)
+                if unit_no:
+                    conditions.append("UPPER(TRIM(unit_no)) = UPPER(TRIM(%s))")
+                    params.append(unit_no)
+
+                sql = (
+                    "SELECT uid FROM properties "
+                    f"WHERE {' AND '.join(conditions)} "
+                    "LIMIT 1"
+                )
+                cur.execute(sql, params)
+                hit = cur.fetchone()
+
+                if hit:
+                    rm_info = _fetch_rm(city)
                     return {
                         "match_level": "exact",
                         "block": True,
                         "message": (
-                            f"Unit {tower}-{unit_no} at {society_name} is already "
-                            f"with Openhouse. Please contact your Openhouse representative."
+                            f"This unit ({unit_label}) is already with Openhouse. "
+                            f"Please contact your Openhouse representative."
                         ),
-                        "details": {
-                            "society": society_name,
-                            "city": city,
-                        },
+                        "details": {**hard_block_details, **rm_info},
                     }
-                # Full details given, no exact match — trust them, proceed with no warning.
+                # No narrower match — CP proceeds even if society+bhk+floor matches
+                # (the tower/unit they gave rules out the existing records).
                 return _no_match()
 
-            # ---------- Tier 2: partial matches (WARNINGS ONLY) ----------
-            # The CP didn't give tower+unit together, so we can only make soft guesses.
-            # We surface these as warnings — CP sees a banner but can proceed.
-            # Ordered specific -> general; first hit is what we return.
-
-            # 2a: society + tower
-            if tower:
-                cur.execute("""
-                    SELECT COUNT(*) AS cnt
-                    FROM properties
-                    WHERE LOWER(TRIM(city))         = LOWER(TRIM(%s))
-                      AND LOWER(TRIM(society_name)) = LOWER(TRIM(%s))
-                      AND UPPER(TRIM(tower_no))     = UPPER(TRIM(%s))
-                      AND COALESCE(is_dead, FALSE)  = FALSE
-                """, (city, society_name, tower))
-                row = cur.fetchone()
-                if row and row["cnt"] > 0:
-                    return {
-                        "match_level": "partial",
-                        "block": False,
-                        "message": (
-                            f"Heads up: Openhouse already has units in Tower {tower} at "
-                            f"{society_name}. Double-check that this isn't a duplicate "
-                            f"before submitting."
-                        ),
-                        "details": {
-                            "society": society_name,
-                            "city": city,
-                        },
-                    }
-
-            # 2b: society + floor
-            if floor is not None:
-                try:
-                    floor_int = int(str(floor).strip())
-                except (ValueError, TypeError):
-                    floor_int = None
-
-                if floor_int is not None:
-                    cur.execute("""
-                        SELECT COUNT(*) AS cnt
-                        FROM properties
-                        WHERE LOWER(TRIM(city))         = LOWER(TRIM(%s))
-                          AND LOWER(TRIM(society_name)) = LOWER(TRIM(%s))
-                          AND floor                     = %s
-                          AND COALESCE(is_dead, FALSE)  = FALSE
-                    """, (city, society_name, floor_int))
-                    row = cur.fetchone()
-                    if row and row["cnt"] > 0:
-                        return {
-                            "match_level": "partial",
-                            "block": False,
-                            "message": (
-                                f"Heads up: Openhouse already has units on floor "
-                                f"{floor_int} at {society_name}. Double-check that this "
-                                f"isn't a duplicate before submitting."
-                            ),
-                            "details": {
-                                "society": society_name,
-                                "city": city,
-                            },
-                        }
-
-            # 2c: society only
-            cur.execute("""
-                SELECT COUNT(*) AS cnt
-                FROM properties
-                WHERE LOWER(TRIM(city))         = LOWER(TRIM(%s))
-                  AND LOWER(TRIM(society_name)) = LOWER(TRIM(%s))
-                  AND COALESCE(is_dead, FALSE)  = FALSE
-            """, (city, society_name))
+            # ---------- SOFT WARNING: society+bhk+floor only ----------
+            cur.execute(
+                f"SELECT COUNT(*) AS cnt FROM properties WHERE {base_where}",
+                base_params,
+            )
             row = cur.fetchone()
             if row and row["cnt"] > 0:
                 return {
                     "match_level": "partial",
                     "block": False,
                     "message": (
-                        f"Heads up: Openhouse already has units in {society_name}. "
-                        f"Double-check that this isn't a duplicate before submitting."
+                        f"Heads up: Openhouse already has a unit on floor {floor_n} "
+                        f"at {society_name}. Double-check that this isn't a duplicate "
+                        f"before submitting."
                     ),
-                    "details": {
-                        "society": society_name,
-                        "city": city,
-                    },
+                    "details": hard_block_details,
                 }
     finally:
         put_props_conn(pconn)

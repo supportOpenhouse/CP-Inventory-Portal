@@ -146,6 +146,20 @@ export default function Dashboard({ onAdd }) {
                           .filter(Boolean)
                           .join(' · ')}
                       </div>
+                      {s.public_id && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--oh-gray)',
+                            fontFamily: 'monospace',
+                            fontWeight: 600,
+                            letterSpacing: '0.5px',
+                            marginTop: 2,
+                          }}
+                        >
+                          {s.public_id}
+                        </div>
+                      )}
                     </div>
                     <div className={badgeClass(s.status)}>{s.status}</div>
                   </div>

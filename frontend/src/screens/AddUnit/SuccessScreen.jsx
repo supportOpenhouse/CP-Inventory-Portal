@@ -1,8 +1,11 @@
 /**
- * Shown after a successful submission. CP sees submission ID + button to return to dashboard.
- * When onDone is called, parent unmounts AddUnit → Dashboard remounts → fetches fresh submissions.
+ * Shown after a successful submission.
+ * Shows the new public_id (OHLGC0001 etc.) as the primary identifier.
+ * Falls back to the numeric submission ID if public_id is absent (for old data).
  */
-export default function SuccessScreen({ submissionId, onDone }) {
+export default function SuccessScreen({ submissionId, publicId, onDone }) {
+  const displayId = publicId || `#${submissionId}`;
+
   return (
     <div className="app-shell">
       <div style={{ padding: '80px 20px 40px', textAlign: 'center' }}>
@@ -34,12 +37,39 @@ export default function SuccessScreen({ submissionId, onDone }) {
         >
           Submitted!
         </h1>
-        <p style={{ fontSize: 14, color: 'var(--oh-gray)', lineHeight: 1.5, marginBottom: 6 }}>
+        <p style={{ fontSize: 14, color: 'var(--oh-gray)', lineHeight: 1.5, marginBottom: 20 }}>
           Your unit has been received for evaluation.<br />
           Our team will get back to you within 48 hours.
         </p>
-        <p style={{ fontSize: 13, color: 'var(--oh-gray)', marginTop: 16 }}>
-          Submission ID: <strong style={{ color: 'var(--oh-charcoal)' }}>#{submissionId}</strong>
+
+        <div
+          style={{
+            display: 'inline-block',
+            padding: '14px 22px',
+            background: 'var(--oh-bg-warm)',
+            border: '1.5px solid var(--oh-border)',
+            borderRadius: 12,
+            marginTop: 4,
+          }}
+        >
+          <div style={{ fontSize: 11, color: 'var(--oh-gray)', fontWeight: 600, letterSpacing: '0.5px', marginBottom: 4 }}>
+            LISTING ID
+          </div>
+          <div
+            style={{
+              fontSize: 24,
+              color: 'var(--oh-charcoal)',
+              fontFamily: 'monospace',
+              fontWeight: 700,
+              letterSpacing: '1px',
+            }}
+          >
+            {displayId}
+          </div>
+        </div>
+
+        <p style={{ fontSize: 12, color: 'var(--oh-gray)', marginTop: 14 }}>
+          Save this ID for your records.
         </p>
       </div>
 

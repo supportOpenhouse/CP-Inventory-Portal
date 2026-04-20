@@ -10,12 +10,12 @@ const STEP_LABELS = {
   1: 'Unit Details',
   2: 'More Details',
   3: 'Photos',
-  4: 'Pricing & Submit',
+  4: 'Registry & Pricing',
 };
 
 export default function AddUnit({ onDone }) {
   const [step, setStep] = useState(1);
-  const [submittedId, setSubmittedId] = useState(null);
+  const [submittedResult, setSubmittedResult] = useState(null); // { id, public_id }
   const [form, setForm] = useState({
     society: null,
     tower: '',
@@ -23,23 +23,31 @@ export default function AddUnit({ onDone }) {
     sqft: '',
     bhk: '',
     floor: '',
-    furnishing: '',
+    // Removed: furnishing (per new spec, not collected in Step 2 anymore)
     exitFacing: '',
     balconyFacing: '',
     view: '',
-    coveredParking: '',
-    openParking: '',
+    // Parking is now a single string choice rather than counts
+    parking: '',
     features: [],
     registryStatus: 'Registered',
     askPrice: '',
     closingPrice: '',
+    photos: [],
+    // Seller contact fields retained in form state for back-compat,
+    // even though they're no longer collected on Step 4.
     sellerName: '',
     sellerPhone: '',
-    photos: [],
   });
 
-  if (submittedId) {
-    return <SuccessScreen submissionId={submittedId} onDone={onDone} />;
+  if (submittedResult) {
+    return (
+      <SuccessScreen
+        submissionId={submittedResult.id}
+        publicId={submittedResult.public_id}
+        onDone={onDone}
+      />
+    );
   }
 
   const handleBack = () => {
@@ -71,7 +79,7 @@ export default function AddUnit({ onDone }) {
       <div className="step-label"><strong>{STEP_LABELS[step]}</strong></div>
 
       {step === 1 && (
-        <Step1 form={form} setForm={setForm} onNext={() => setStep(2)} />
+        <Step1 form={form} setForm={setForm} onNext={() => setStep(2)} onAbandon={onDone} />
       )}
       {step === 2 && (
         <Step2 form={form} setForm={setForm} onNext={() => setStep(3)} onBack={() => setStep(1)} />
@@ -84,7 +92,7 @@ export default function AddUnit({ onDone }) {
           form={form}
           setForm={setForm}
           onBack={() => setStep(3)}
-          onSubmitted={setSubmittedId}
+          onSubmitted={setSubmittedResult}
           onAbandon={onDone}
         />
       )}

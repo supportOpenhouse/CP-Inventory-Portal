@@ -1,4 +1,3 @@
-const FURNISHING_OPTIONS = ['Unfurnished', 'Semi-Furnished', 'Fully Furnished'];
 const FACING_OPTIONS = [
   'North', 'South', 'East', 'West',
   'North-East', 'North-West', 'South-East', 'South-West',
@@ -8,9 +7,16 @@ const VIEW_OPTIONS = [
   'Garden View', 'Pool View', 'External View',
 ];
 const FEATURE_OPTIONS = [
-  'Puja Room', 'Study Room', 'Servant Room', 'Store Room', 'Dry Balcony',
+  'Puja Room', 'Study Room', 'Servant Room', 'Store Room',
 ];
-const REGISTRY_OPTIONS = ['Registered', 'Unregistered'];
+const PARKING_OPTIONS = [
+  '1 Open',
+  '1 Closed',
+  '2 Open',
+  '2 Closed',
+  '1 Open & 1 Closed',
+  'No Parking',
+];
 
 export default function Step2({ form, setForm, onNext, onBack }) {
   const toggleFeature = (feat) => {
@@ -23,98 +29,9 @@ export default function Step2({ form, setForm, onNext, onBack }) {
 
   return (
     <div className="form-section">
+      {/* Card 1: Extra Rooms */}
       <div className="form-card">
-        <div className="form-card-title">Furnishing & Registry</div>
-        <div className="input-label">Furnishing</div>
-        <select
-          className="select-field"
-          value={form.furnishing}
-          onChange={(e) => setForm({ ...form, furnishing: e.target.value })}
-        >
-          <option value="">Select</option>
-          {FURNISHING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-
-        <div className="input-label" style={{ marginTop: 12 }}>Registry status</div>
-        <select
-          className="select-field"
-          value={form.registryStatus}
-          onChange={(e) => setForm({ ...form, registryStatus: e.target.value })}
-        >
-          {REGISTRY_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
-      </div>
-
-      <div className="form-card">
-        <div className="form-card-title">Facings & View</div>
-        <div className="form-row" style={{ marginBottom: 12 }}>
-          <div>
-            <div className="input-label">Exit facing</div>
-            <select
-              className="select-field"
-              value={form.exitFacing}
-              onChange={(e) => setForm({ ...form, exitFacing: e.target.value })}
-            >
-              <option value="">Select</option>
-              {FACING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-          <div>
-            <div className="input-label">Balcony facing</div>
-            <select
-              className="select-field"
-              value={form.balconyFacing}
-              onChange={(e) => setForm({ ...form, balconyFacing: e.target.value })}
-            >
-              <option value="">Select</option>
-              {FACING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="input-label">View from balcony</div>
-        <select
-          className="select-field"
-          value={form.view}
-          onChange={(e) => setForm({ ...form, view: e.target.value })}
-        >
-          <option value="">Select</option>
-          {VIEW_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-        </select>
-      </div>
-
-      <div className="form-card">
-        <div className="form-card-title">Parking</div>
-        <div className="form-row">
-          <div>
-            <div className="input-label">Covered</div>
-            <input
-              className="input-field"
-              inputMode="numeric"
-              placeholder="0"
-              value={form.coveredParking || ''}
-              onChange={(e) =>
-                setForm({ ...form, coveredParking: e.target.value.replace(/\D/g, '') })
-              }
-            />
-          </div>
-          <div>
-            <div className="input-label">Open</div>
-            <input
-              className="input-field"
-              inputMode="numeric"
-              placeholder="0"
-              value={form.openParking || ''}
-              onChange={(e) =>
-                setForm({ ...form, openParking: e.target.value.replace(/\D/g, '') })
-              }
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="form-card">
-        <div className="form-card-title">Extra rooms / features</div>
+        <div className="form-card-title">Extra Rooms</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {FEATURE_OPTIONS.map((feat) => {
             const active = (form.features || []).includes(feat);
@@ -140,7 +57,56 @@ export default function Step2({ form, setForm, onNext, onBack }) {
             );
           })}
         </div>
-        <div className="optional-hint">All fields on this step are optional.</div>
+      </div>
+
+      {/* Card 2: Orientation & View */}
+      <div className="form-card">
+        <div className="form-card-title">Orientation & View</div>
+        <div className="input-label">Exit Facing (Vastu)</div>
+        <select
+          className="select-field"
+          value={form.exitFacing}
+          onChange={(e) => setForm({ ...form, exitFacing: e.target.value })}
+        >
+          <option value="">Select</option>
+          {FACING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+        </select>
+
+        <div className="input-label" style={{ marginTop: 12 }}>
+          Balcony Facing (Sunlight)
+        </div>
+        <select
+          className="select-field"
+          value={form.balconyFacing}
+          onChange={(e) => setForm({ ...form, balconyFacing: e.target.value })}
+        >
+          <option value="">Select</option>
+          {FACING_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+        </select>
+
+        <div className="input-label" style={{ marginTop: 12 }}>Balcony View</div>
+        <select
+          className="select-field"
+          value={form.view}
+          onChange={(e) => setForm({ ...form, view: e.target.value })}
+        >
+          <option value="">Select</option>
+          {VIEW_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
+      </div>
+
+      {/* Card 3: Parking */}
+      <div className="form-card">
+        <div className="form-card-title">Parking</div>
+        <div className="input-label">Parking</div>
+        <select
+          className="select-field"
+          value={form.parking || ''}
+          onChange={(e) => setForm({ ...form, parking: e.target.value })}
+        >
+          <option value="">Select</option>
+          {PARKING_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
       </div>
 
       <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>

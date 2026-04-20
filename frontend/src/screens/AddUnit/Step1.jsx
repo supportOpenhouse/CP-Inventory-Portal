@@ -4,10 +4,13 @@ import { api, ApiError } from '../../api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import DuplicateCard from './DuplicateCard';
 
-const BHK_OPTIONS = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
+const BHK_OPTIONS = ['2 BHK', '3 BHK', '4 BHK'];
 
-export default function Step1({ form, setForm, onNext }) {
-  // ---- society search state ----
+// Keep floor options as free-text — different societies use different formats
+// (e.g. "G", "B1", "LG"). If you want dropdown later, spec can be added.
+
+export default function Step1({ form, setForm, onNext, onAbandon }) {
+  // ---- society search ----
   const [search, setSearch] = useState('');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
@@ -16,11 +19,10 @@ export default function Step1({ form, setForm, onNext }) {
 
   // ---- duplicate check state ----
   const [checking, setChecking] = useState(false);
-  const [dupResult, setDupResult] = useState(null);    // hard block (exact match)
-  const [dupWarning, setDupWarning] = useState(null);  // soft warning (partial match)
+  const [dupResult, setDupResult] = useState(null);    // block=true: "already exists"
+  const [dupWarning, setDupWarning] = useState(null);  // block=false: soft floor warning
   const [apiError, setApiError] = useState('');
 
-  // Society search (debounced). Fires only when dropdown is open + 2+ chars.
   useEffect(() => {
     if (!dropdownOpen || debouncedSearch.length < 2) {
       setSearchResults([]);
@@ -42,16 +44,18 @@ export default function Step1({ form, setForm, onNext }) {
     setForm({ ...form, society: s, tower: '', unitNo: '', sqft: '', bhk: '', floor: '' });
     setSearch('');
     setDropdownOpen(false);
+    setDupWarning(null);
+    setDupResult(null);
   };
 
-  // Required: society + bhk + floor (per product spec)
+  // Required: society + bhk + floor
   const canContinue =
     !!form.society?.id &&
     !!form.bhk &&
     !!(form.floor && form.floor.trim()) &&
     !checking;
 
-  const handleContinue = async () => {
+  const runDuplicateCheck = async () => {
     setApiError('');
     setDupResult(null);
     setDupWarning(null);
@@ -59,15 +63,15 @@ export default function Step1({ form, setForm, onNext }) {
     try {
       const result = await api.checkDuplicate({
         society_id: form.society.id,
+        bhk: form.bhk || null,
         tower: form.tower || null,
         unit_no: form.unitNo || null,
         floor: form.floor || null,
       });
       if (result.block) {
-        // Exact match — hard stop
+        // "Already exists" — hard stop with Contact RM + Edit
         setDupResult(result);
       } else if (result.match_level === 'partial') {
-        // Soft warning — show inline banner, CP decides whether to proceed
         setDupWarning(result);
       } else {
         onNext();
@@ -84,26 +88,31 @@ export default function Step1({ form, setForm, onNext }) {
     onNext();
   };
 
-  // If blocking duplicate, show just the card + back button
+  const handleEdit = () => {
+    // Dismiss dupResult, leave form filled so user can tweak
+    setDupResult(null);
+  };
+
+  // Hard block view — "already exists", no Continue Anyway
   if (dupResult) {
     return (
       <div className="form-section">
-        <DuplicateCard result={dupResult} onBack={() => setDupResult(null)} />
+        <DuplicateCard
+          result={dupResult}
+          onEdit={handleEdit}
+          onAbandon={onAbandon}
+        />
       </div>
     );
   }
 
   return (
     <div className="form-section">
-      {/* Soft duplicate warning (partial match) */}
+      {/* Soft warning for floor-level partial match */}
       {dupWarning && (
         <div className="dup-warning-card">
-          <div className="dup-warning-title">
-            ⚠ Possible duplicate
-          </div>
-          <div className="dup-warning-message">
-            {dupWarning.message}
-          </div>
+          <div className="dup-warning-title">⚠ Possible duplicate</div>
+          <div className="dup-warning-message">{dupWarning.message}</div>
           <div className="dup-warning-actions">
             <button
               className="secondary-btn"
@@ -166,7 +175,7 @@ export default function Step1({ form, setForm, onNext }) {
         )}
       </div>
 
-      {/* Unit Info — only show once a society is selected */}
+      {/* Unit Info — shown once society is selected */}
       {form.society && (
         <div className="form-card">
           <div className="form-card-title">Unit Info</div>
@@ -201,7 +210,7 @@ export default function Step1({ form, setForm, onNext }) {
             </div>
           </div>
 
-          {/* Row 2: Tower + Unit No (optional) */}
+          {/* Row 2: Tower + Unit No */}
           <div className="form-row" style={{ marginBottom: 12 }}>
             <div>
               <div className="input-label">Tower</div>
@@ -223,7 +232,7 @@ export default function Step1({ form, setForm, onNext }) {
             </div>
           </div>
 
-          {/* Row 3: Area (optional, full width) */}
+          {/* Row 3: Area */}
           <div>
             <div className="input-label">Area (sqft)</div>
             <input
@@ -236,7 +245,7 @@ export default function Step1({ form, setForm, onNext }) {
           </div>
 
           <div className="optional-hint">
-            <span className="required-star">*</span> are required. Tower, Unit No, and Area are optional but help us match against Openhouse inventory.
+            <span className="required-star">*</span> are required. Tower, Unit No, and Area help match against Openhouse inventory.
           </div>
         </div>
       )}
@@ -247,7 +256,7 @@ export default function Step1({ form, setForm, onNext }) {
 
       <button
         className="primary-btn"
-        onClick={handleContinue}
+        onClick={runDuplicateCheck}
         disabled={!canContinue}
         style={{ marginTop: 20 }}
       >

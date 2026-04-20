@@ -29,6 +29,7 @@ export default function TableView({
                 />
               </th>
             )}
+            <th>Listing ID</th>
             <th>Society</th>
             <th>City</th>
             <th>Unit</th>
@@ -66,6 +67,9 @@ export default function TableView({
                     />
                   </td>
                 )}
+                <td style={{ fontFamily: 'monospace', fontSize: 12, color: '#555', fontWeight: 600 }}>
+                  {s.public_id || '—'}
+                </td>
                 <td style={{ fontWeight: 600 }}>
                   {isWeakMatch && <span style={{ color: '#DC2626', marginRight: 6 }}>⚠</span>}
                   {s.society_name}

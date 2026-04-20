@@ -7,6 +7,7 @@ from flask import Blueprint, g, jsonify, request
 from auth import require_auth
 from db import get_app_conn, put_app_conn
 from duplicate_check import check_duplicate
+from public_id import generate_public_id, city_to_prefix
 from services_email import send_new_submission_alert_async
 from utils import to_int, to_str
 
@@ -23,7 +24,7 @@ def list_my_submissions():
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, society_id, society_name, tower, unit_no, floor,
+                SELECT id, public_id, society_id, society_name, tower, unit_no, floor,
                        sqft, bhk, furnishing, asking_price, closing_price,
                        status, photos, submitted_at
                 FROM submissions
@@ -61,16 +62,20 @@ def create_submission():
         return jsonify({"error": "society_id and society_name are required"}), 400
 
     conn = get_app_conn()
+    city_name = None
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT city_id FROM societies WHERE id = %s",
-                (society_id,),
-            )
+            cur.execute("""
+                SELECT s.city_id, c.name AS city_name
+                FROM societies s
+                JOIN cities c ON s.city_id = c.id
+                WHERE s.id = %s
+            """, (society_id,))
             soc_row = cur.fetchone()
             if not soc_row:
                 return jsonify({"error": "Invalid society_id"}), 400
             society_city_id = soc_row["city_id"]
+            city_name = soc_row["city_name"]
 
             if not g.user.get("is_admin", False):
                 cur.execute(
@@ -90,9 +95,18 @@ def create_submission():
     finally:
         put_app_conn(conn)
 
-    # Duplicate check
+    # Refuse to insert if city doesn't have a defined public_id prefix.
+    # (Prevents us from losing a submission — better to fail loud.)
+    if city_to_prefix(city_name) is None:
+        return jsonify({
+            "error": f"City {city_name!r} does not have a public_id prefix configured. "
+                     "Contact support.",
+        }), 500
+
+    # Duplicate check (now includes BHK)
     dup = check_duplicate(
         society_id=society_id,
+        bhk=to_str(data.get("bhk")),
         tower=to_str(data.get("tower")),
         unit_no=to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),
@@ -103,15 +117,19 @@ def create_submission():
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # Atomically grab the next public_id for this city.
+            # FOR UPDATE inside generate_public_id serializes concurrent inserts.
+            public_id = generate_public_id(cur, city_name)
+
             cur.execute("""
                 INSERT INTO submissions (
-                    cp_id, society_id, society_name, city_id,
+                    cp_id, society_id, society_name, city_id, public_id,
                     tower, unit_no, floor, sqft, bhk, furnishing,
                     exit_facing, balcony_facing, balcony_view,
                     parking, extra_rooms, registry_status,
                     asking_price, closing_price, seller_name, seller_phone, photos
                 ) VALUES (
-                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s::jsonb, %s,
@@ -123,6 +141,7 @@ def create_submission():
                 society_id,
                 society_name,
                 society_city_id,
+                public_id,
                 to_str(data.get("tower"), 50),
                 to_str(data.get("unit_no"), 50),
                 to_str(data.get("floor"), 20),
@@ -160,6 +179,7 @@ def create_submission():
     return jsonify({
         "success": True,
         "submission_id": new_id,
+        "public_id": public_id,
         "message": "Unit submitted for evaluation",
     }), 201
 
@@ -174,6 +194,7 @@ def check_duplicate_endpoint():
 
     result = check_duplicate(
         society_id=society_id,
+        bhk=to_str(data.get("bhk")),
         tower=to_str(data.get("tower")),
         unit_no=to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),

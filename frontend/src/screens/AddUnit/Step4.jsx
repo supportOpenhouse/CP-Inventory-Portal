@@ -4,15 +4,6 @@ import { api, ApiError } from '../../api';
 import { formatIndianNumber, formatPrice } from '../../format';
 import DuplicateCard from './DuplicateCard';
 
-function buildParkingString(form) {
-  const closed = parseInt(form.coveredParking) || 0;
-  const open = parseInt(form.openParking) || 0;
-  const parts = [];
-  if (closed > 0) parts.push(`${closed} Closed`);
-  if (open > 0) parts.push(`${open} Open`);
-  return parts.join(' & ') || null;
-}
-
 export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon }) {
   const [submitting, setSubmitting] = useState(false);
   const [dupResult, setDupResult] = useState(null);
@@ -36,7 +27,7 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
         exit_facing: form.exitFacing || null,
         balcony_facing: form.balconyFacing || null,
         balcony_view: form.view || null,
-        parking: buildParkingString(form),
+        parking: form.parking || null,
         extra_rooms: form.features || [],
         registry_status: form.registryStatus || null,
         asking_price: form.askPrice ? parseInt(form.askPrice) : null,
@@ -47,11 +38,9 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
       };
 
       const result = await api.createSubmission(payload);
-      onSubmitted(result.submission_id);
+      onSubmitted({ id: result.submission_id, public_id: result.public_id });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.data?.duplicate) {
-        // Server-side duplicate check caught a match we didn't catch at Step 1
-        // (e.g., floor-level partial match that only appears now)
         setDupResult(err.data.duplicate);
       } else {
         setApiError(err instanceof ApiError ? err.message : 'Submission failed. Please try again.');
@@ -66,8 +55,8 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
       <div className="form-section">
         <DuplicateCard
           result={dupResult}
-          onBack={onAbandon}
-          backLabel="Return to Dashboard"
+          onAbandon={onAbandon}
+          onEdit={() => setDupResult(null)}
         />
       </div>
     );
@@ -76,9 +65,37 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
   return (
     <div className="form-section">
       <div className="form-card">
-        <div className="form-card-title">Pricing</div>
+        <div className="form-card-title">Registry & Pricing</div>
 
-        <div className="input-label">Asking price (₹)</div>
+        <div className="input-label">Registry Status</div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+          {['Registered', 'Unregistered'].map((status) => {
+            const active = form.registryStatus === status;
+            return (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setForm({ ...form, registryStatus: status })}
+                style={{
+                  flex: 1,
+                  padding: '12px 14px',
+                  borderRadius: 10,
+                  border: `1.5px solid ${active ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
+                  background: active ? 'var(--oh-orange-light)' : '#fff',
+                  color: active ? 'var(--oh-orange)' : 'var(--oh-charcoal)',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {status}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="input-label">Asking Price (₹)</div>
         <input
           className="input-field"
           inputMode="numeric"
@@ -89,54 +106,16 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
         {form.askPrice && <div className="optional-hint">{formatPrice(form.askPrice)}</div>}
 
         <div className="input-label" style={{ marginTop: 14 }}>
-          Closing price (₹) — what seller will accept
+          Tentative Closing Price (₹)
         </div>
         <input
           className="input-field"
           inputMode="numeric"
-          placeholder="Optional"
+          placeholder="What seller will accept"
           value={formatIndianNumber(form.closingPrice)}
           onChange={(e) => setForm({ ...form, closingPrice: e.target.value.replace(/\D/g, '') })}
         />
         {form.closingPrice && <div className="optional-hint">{formatPrice(form.closingPrice)}</div>}
-      </div>
-
-      <div className="form-card">
-        <div className="form-card-title">Seller contact (optional)</div>
-        <div className="input-label">Name</div>
-        <input
-          className="input-field"
-          placeholder="Seller name"
-          value={form.sellerName}
-          onChange={(e) => setForm({ ...form, sellerName: e.target.value })}
-        />
-        <div className="input-label" style={{ marginTop: 12 }}>Phone</div>
-        <input
-          className="input-field"
-          type="tel"
-          inputMode="numeric"
-          placeholder="10-digit mobile"
-          value={form.sellerPhone}
-          maxLength={15}
-          onChange={(e) => setForm({ ...form, sellerPhone: e.target.value.replace(/\D/g, '').slice(0, 15) })}
-        />
-        {form.sellerPhone && form.sellerPhone.length > 0 && form.sellerPhone.length < 10 && (
-          <div className="optional-hint" style={{ color: 'var(--oh-red)' }}>
-            Phone must be 10 digits
-          </div>
-        )}
-      </div>
-
-      <div
-        className="form-card"
-        style={{ background: 'var(--oh-orange-light)', borderColor: 'var(--oh-orange)' }}
-      >
-        <div className="form-card-title" style={{ color: 'var(--oh-orange)' }}>
-          Ready to submit
-        </div>
-        <p style={{ fontSize: 13, color: 'var(--oh-charcoal)', lineHeight: 1.5 }}>
-          Our team will review this unit within 48 hours and share an offer.
-        </p>
       </div>
 
       {apiError && <div className="error-text" style={{ marginTop: 12 }}>{apiError}</div>}
