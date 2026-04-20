@@ -12,11 +12,15 @@ Usage in routes:
         put_app_conn(conn)
 """
 
+import logging
 from typing import Optional
+import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 
 from config import Config
+
+logger = logging.getLogger("db")
 
 
 _app_pool: Optional[pool.SimpleConnectionPool] = None
@@ -32,6 +36,11 @@ def init_pools() -> None:
         maxconn=10,
         dsn=Config.DATABASE_URL,
         cursor_factory=RealDictCursor,
+        # keepalives help Neon/Render keep idle connections warm
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5,
     )
 
     if Config.PROPERTIES_DATABASE_URL:
@@ -40,20 +49,53 @@ def init_pools() -> None:
             maxconn=5,
             dsn=Config.PROPERTIES_DATABASE_URL,
             cursor_factory=RealDictCursor,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
         )
+
+
+def _is_conn_alive(conn) -> bool:
+    """Ping the connection with SELECT 1. Return True if OK, False if dead."""
+    try:
+        if conn.closed:
+            return False
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 # ---------- App DB ----------
 
 def get_app_conn():
+    """Get a healthy connection from the pool. Retries once if dead."""
     if _app_pool is None:
         raise RuntimeError("App DB pool not initialized")
+
+    conn = _app_pool.getconn()
+    if _is_conn_alive(conn):
+        return conn
+
+    # Dead connection — discard and get a fresh one
+    logger.warning("[db] stale app connection detected; replacing")
+    try:
+        _app_pool.putconn(conn, close=True)
+    except Exception:  # noqa: BLE001
+        pass
     return _app_pool.getconn()
 
 
 def put_app_conn(conn) -> None:
     if _app_pool is not None:
-        _app_pool.putconn(conn)
+        try:
+            _app_pool.putconn(conn)
+        except psycopg2.pool.PoolError:
+            # Already returned — ignore
+            pass
 
 
 # ---------- Properties DB (optional) ----------
@@ -61,12 +103,25 @@ def put_app_conn(conn) -> None:
 def get_props_conn():
     if _props_pool is None:
         raise RuntimeError("Properties DB not configured (set PROPERTIES_DATABASE_URL)")
+
+    conn = _props_pool.getconn()
+    if _is_conn_alive(conn):
+        return conn
+
+    logger.warning("[db] stale props connection detected; replacing")
+    try:
+        _props_pool.putconn(conn, close=True)
+    except Exception:  # noqa: BLE001
+        pass
     return _props_pool.getconn()
 
 
 def put_props_conn(conn) -> None:
     if _props_pool is not None:
-        _props_pool.putconn(conn)
+        try:
+            _props_pool.putconn(conn)
+        except psycopg2.pool.PoolError:
+            pass
 
 
 def properties_configured() -> bool:

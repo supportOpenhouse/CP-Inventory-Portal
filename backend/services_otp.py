@@ -70,7 +70,7 @@ def _dev_mode_no_kaleyra() -> bool:
 
 def _send_sms_via_kaleyra(phone: str, code: str) -> tuple[bool, Optional[str]]:
     """
-    Send OTP via Kaleyra HTTP API.
+    Send OTP via Kaleyra HTTP API (India pod).
     Returns (success, error_message).
     """
     sid = Config.KALEYRA_SID
@@ -81,18 +81,21 @@ def _send_sms_via_kaleyra(phone: str, code: str) -> tuple[bool, Optional[str]]:
     if not api_key:
         return False, "Kaleyra API key not configured"
 
-    # Template for the DLT-approved content that matches template_id 1107173502114302174.
-    # Kaleyra auto-renders the template; we just pass the OTP as the variable.
-    # NOTE: this matches the template's expected format — 'OTP is {code} for Openhouse.'
+    # IMPORTANT: Your DLT-approved template body must contain the literal OTP digits.
+    # Most Indian DLT OTP templates look like:
+    #   "{#var#} is your OTP for login on Openhouse. Do not share. - Openhouse"
+    # Kaleyra fills {#var#} with whatever is in the 'body' field's first numeric token.
+    # Safest: just include the OTP as digits near the start of the body.
     body = (
         f"{code} is your OTP to sign in to the Openhouse Channel Partner Portal. "
-        f"Valid for 5 minutes. Do not share. — Openhouse"
+        f"Valid for 5 minutes. Do not share. - Openhouse"
     )
 
-    # Kaleyra expects the phone in international format with country code
+    # Phone must be in E.164 format (with +91 for India)
     to = phone if phone.startswith("+") else f"+91{phone}"
 
-    url = f"https://api.kaleyra.io/v1/{sid}/messages"
+    # India pod URL (required for SIDs ending in IN)
+    url = f"https://api.in.kaleyra.io/v1/{sid}/messages"
     headers = {
         "api-key": api_key,
         "Content-Type": "application/x-www-form-urlencoded",
@@ -105,15 +108,19 @@ def _send_sms_via_kaleyra(phone: str, code: str) -> tuple[bool, Optional[str]]:
         "template_id": template_id,
     }
 
+    logger.info("[OTP] sending to %s via Kaleyra (sender=%s, template=%s)",
+                to, sender_id, template_id)
+
     try:
         r = requests.post(url, headers=headers, data=data, timeout=8)
+        logger.info("[OTP] Kaleyra response status=%d body=%s",
+                    r.status_code, r.text[:500])
         if r.status_code >= 400:
-            logger.error("Kaleyra send failed %s: %s", r.status_code, r.text[:300])
-            return False, f"SMS provider error ({r.status_code})"
+            return False, f"SMS provider error {r.status_code}: {r.text[:200]}"
         return True, None
     except requests.RequestException as e:  # noqa: BLE001
-        logger.exception("Kaleyra request exception: %s", e)
-        return False, "SMS provider unreachable"
+        logger.exception("[OTP] Kaleyra request exception: %s", e)
+        return False, f"SMS provider unreachable: {e}"
 
 
 # ---------------------------------------------------------------------------
