@@ -11,6 +11,7 @@ export default function DuplicateCard({ result, onEdit, onAbandon }) {
   const d = result.details || {};
   const rmPhone = d.rm_phone;
   const rmName = d.rm_name;
+  const bannerTitle = result.banner_title || 'This unit is already\nwith Openhouse';
 
   return (
     <div className="dup-card dup-card-exact">
@@ -18,8 +19,8 @@ export default function DuplicateCard({ result, onEdit, onAbandon }) {
         <span className="dup-card-badge dup-card-badge-exact">
           ALREADY IN INVENTORY
         </span>
-        <div className="dup-card-banner-text">
-          This unit is already{'\n'}with Openhouse
+        <div className="dup-card-banner-text" style={{ whiteSpace: 'pre-line' }}>
+          {bannerTitle}
         </div>
       </div>
 

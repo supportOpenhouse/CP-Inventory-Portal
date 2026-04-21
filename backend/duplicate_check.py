@@ -187,10 +187,11 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                 hit = cur.fetchone()
 
                 if hit:
-                    rm_info = _fetch_rm(city)
+                    rm_info = _fetch_rm(city, cp_id=cp_id)
                     return {
                         "match_level": "exact",
                         "block": True,
+                        "banner_title": "This unit is already\nwith Openhouse",
                         "message": (
                             f"This unit ({unit_label}) is already with Openhouse. "
                             f"Please contact your Openhouse representative."
@@ -201,12 +202,6 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                 # (the tower/unit they gave rules out the existing records).
                 return _no_match()
 
-            # ---------- SOFT WARNING: society+bhk+floor only ----------
-            cur.execute(
-                f"SELECT COUNT(*) AS cnt FROM properties WHERE {base_where}",
-                base_params,
-            )
-            row = cur.fetchone()
             # ---------- HARD BLOCK: society+bhk+floor match (no tower/unit given) ----------
             # Per spec, this is treated the same as an exact match — "already in inventory"
             # with Contact RM + Edit buttons. No soft warning / Continue Anyway.
@@ -220,6 +215,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                 return {
                     "match_level": "exact",
                     "block": True,
+                    "banner_title": "A unit on this floor\nis already with Openhouse",
                     "message": (
                         f"A {bhk_n} BHK unit on floor {floor_n} at {society_name} "
                         f"is already with Openhouse. Please contact your Openhouse "
