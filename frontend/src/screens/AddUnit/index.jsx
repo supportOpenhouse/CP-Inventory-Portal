@@ -38,6 +38,8 @@ export default function AddUnit({ onDone }) {
     // even though they're no longer collected on Step 4.
     sellerName: '',
     sellerPhone: '',
+    // Flagged by Step1 when user opts to submit a duplicate for admin review
+    forceCreate: false,
   });
 
   if (submittedResult) {
@@ -45,6 +47,7 @@ export default function AddUnit({ onDone }) {
       <SuccessScreen
         submissionId={submittedResult.id}
         publicId={submittedResult.public_id}
+        status={submittedResult.status}
         onDone={onDone}
       />
     );

@@ -3,11 +3,11 @@
  * Soft-match warnings are rendered inline in Step1 as a yellow banner, not here.
  *
  * Props:
- *   result   — { match_level, block, message, details: { society, city, rm_name?, rm_phone? } }
- *   onEdit   — called when user wants to go back and modify their entry (e.g. change tower/unit)
- *   onAbandon — called when user wants to leave the Add Unit flow entirely
+ *   result       — { match_level, block, message, details: { society, city, rm_name?, rm_phone? } }
+ *   onEdit       — called when user wants to go back and modify their entry (e.g. change tower/unit)
+ *   onForceCreate — called when user wants to submit anyway (opens warning screen in parent)
  */
-export default function DuplicateCard({ result, onEdit, onAbandon }) {
+export default function DuplicateCard({ result, onEdit, onForceCreate }) {
   const d = result.details || {};
   const rmPhone = d.rm_phone;
   const rmName = d.rm_name;
@@ -61,14 +61,14 @@ export default function DuplicateCard({ result, onEdit, onAbandon }) {
               Edit details
             </button>
           )}
-          {onAbandon && (
+          {onForceCreate && (
             <button
               type="button"
               className="secondary-btn"
-              onClick={onAbandon}
+              onClick={onForceCreate}
               style={{ flex: 1 }}
             >
-              Back to Dashboard
+              Add anyway
             </button>
           )}
         </div>

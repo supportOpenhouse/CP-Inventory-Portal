@@ -60,6 +60,7 @@ export function validatePhone(raw) {
 }
 
 export const STAGES = [
+  { key: 'Unapproved',      color: '#B8860B', bg: '#FFF8E1', adminOnly: true },
   { key: 'Submitted',       color: '#6366F1', bg: '#EEF2FF' },
   { key: 'Evaluation',      color: '#E8A838', bg: '#FFF8EC' },
   { key: 'Offer Given',     color: '#FF6B2B', bg: '#FFF3ED' },

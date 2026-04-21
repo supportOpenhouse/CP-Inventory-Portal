@@ -3,6 +3,8 @@ import { formatPrice, stageMeta, timeAgo } from '../../format';
 export default function TableView({
   submissions, loading, selectedId, onSelect,
   bulkMode = false, selectedIds = new Set(), onToggleSelect, onToggleAll,
+  isAdmin = false,  // Unused in rendering (backend filters Unapproved for RMs),
+                    // accepted for API consistency with BoardView.
 }) {
   if (loading) {
     return <div className="admin-table-loading">Loading submissions…</div>;

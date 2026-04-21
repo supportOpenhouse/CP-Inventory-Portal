@@ -13,7 +13,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Rejected"]
 
 
 @bp.get("/submissions")
@@ -112,8 +112,14 @@ def create_submission():
         floor=to_str(data.get("floor")),
         cp_id=g.user["cp_id"],
     )
-    if dup["block"]:
+
+    # If CP explicitly chose "submit for admin review" after seeing duplicate,
+    # create as Unapproved (admin must approve before it enters active inventory).
+    force_create = bool(data.get("force_create"))
+    if dup["block"] and not force_create:
         return jsonify({"error": "Duplicate", "duplicate": dup}), 409
+
+    initial_status = "Unapproved" if (dup["block"] and force_create) else "Submitted"
 
     conn = get_app_conn()
     try:
@@ -128,13 +134,15 @@ def create_submission():
                     tower, unit_no, floor, sqft, bhk, furnishing,
                     exit_facing, balcony_facing, balcony_view,
                     parking, extra_rooms, registry_status,
-                    asking_price, closing_price, seller_name, seller_phone, photos
+                    asking_price, closing_price, seller_name, seller_phone, photos,
+                    status
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s::jsonb, %s,
-                    %s, %s, %s, %s, %s::jsonb
+                    %s, %s, %s, %s, %s::jsonb,
+                    %s
                 )
                 RETURNING id
             """, (
@@ -160,28 +168,40 @@ def create_submission():
                 to_str(data.get("seller_name"), 200),
                 to_str(data.get("seller_phone"), 20),
                 json.dumps(data.get("photos") or []),
+                initial_status,
             ))
             new_id = cur.fetchone()["id"]
 
-            # Seed the initial "Submitted" event
+            # Seed the initial status event
+            event_text = (
+                "Unit flagged as duplicate — pending admin review"
+                if initial_status == "Unapproved"
+                else "Unit submitted"
+            )
             cur.execute("""
                 INSERT INTO submission_events
                     (submission_id, actor_cp_id, kind, to_status, text)
-                VALUES (%s, %s, 'system', 'Submitted', 'Unit submitted')
-            """, (new_id, g.user["cp_id"]))
+                VALUES (%s, %s, 'system', %s, %s)
+            """, (new_id, g.user["cp_id"], initial_status, event_text))
 
             conn.commit()
     finally:
         put_app_conn(conn)
 
-    # Fire email alert to RM of the society's city (non-blocking background send)
-    send_new_submission_alert_async(new_id)
+    # Email alert only for normal submissions; Unapproved ones wait for admin approval
+    if initial_status == "Submitted":
+        send_new_submission_alert_async(new_id)
 
     return jsonify({
         "success": True,
         "submission_id": new_id,
         "public_id": public_id,
-        "message": "Unit submitted for evaluation",
+        "status": initial_status,
+        "message": (
+            "Unit submitted for admin review"
+            if initial_status == "Unapproved"
+            else "Unit submitted for evaluation"
+        ),
     }), 201
 
 

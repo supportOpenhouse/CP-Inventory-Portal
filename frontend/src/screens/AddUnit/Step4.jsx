@@ -35,10 +35,17 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
         seller_name: form.sellerName || null,
         seller_phone: form.sellerPhone || null,
         photos: form.photos || [],
+        // If CP confirmed the admin-review warning in Step1, pass through
+        // so the backend stores as 'Unapproved' instead of blocking.
+        force_create: !!form.forceCreate,
       };
 
       const result = await api.createSubmission(payload);
-      onSubmitted({ id: result.submission_id, public_id: result.public_id });
+      onSubmitted({
+        id: result.submission_id,
+        public_id: result.public_id,
+        status: result.status,
+      });
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.data?.duplicate) {
         setDupResult(err.data.duplicate);
@@ -50,12 +57,21 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
     }
   };
 
+  const handleForceCreateFromStep4 = async () => {
+    // Race-condition path: dup detected between Step1 and final submit.
+    // Set the flag and retry — will succeed as Unapproved.
+    setForm({ ...form, forceCreate: true });
+    setDupResult(null);
+    // Brief delay so state settles before retry
+    setTimeout(handleSubmit, 0);
+  };
+
   if (dupResult) {
     return (
       <div className="form-section">
         <DuplicateCard
           result={dupResult}
-          onAbandon={onAbandon}
+          onForceCreate={handleForceCreateFromStep4}
           onEdit={() => setDupResult(null)}
         />
       </div>

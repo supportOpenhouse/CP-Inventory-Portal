@@ -28,7 +28,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Rejected"]
 
 
 def require_admin_role(f):
@@ -46,6 +46,7 @@ def require_admin_role(f):
 def _scoped_city_filter(cur):
     """
     RM scope: city_id match OR assigned_rm_id match (both included).
+             Unapproved submissions are hidden from RMs (admin-only review queue).
     Admin: no restriction.
     """
     role = g.user.get("role", "cp")
@@ -55,8 +56,12 @@ def _scoped_city_filter(cur):
     cp_id = g.user.get("cp_id")
     if not city_id and not cp_id:
         return "AND FALSE", []
-    # Include rows in RM's city OR explicitly assigned to them
-    return "AND (s.city_id = %s OR s.assigned_rm_id = %s)", [city_id, cp_id]
+    # Include rows in RM's city OR explicitly assigned to them.
+    # Exclude Unapproved — those are in the admin review queue only.
+    return (
+        "AND (s.city_id = %s OR s.assigned_rm_id = %s) AND s.status != 'Unapproved'",
+        [city_id, cp_id],
+    )
 
 
 def _apply_filters(base_sql: str, params: list):
@@ -282,6 +287,11 @@ def change_status(sid: int):
             old_status = existing["status"]
             if old_status == new_status:
                 return jsonify({"ok": True, "unchanged": True}), 200
+
+            # Unapproved submissions can only be moved by admins (approve/reject)
+            is_admin = bool(g.user.get("is_admin", False))
+            if (old_status == "Unapproved" or new_status == "Unapproved") and not is_admin:
+                return jsonify({"error": "Only admins can approve or reject flagged submissions"}), 403
 
             cur.execute("UPDATE submissions SET status = %s WHERE id = %s", (new_status, sid))
             cur.execute("""
@@ -608,6 +618,11 @@ def bulk_status():
 
             for sid, old_status in in_scope.items():
                 if old_status == new_status:
+                    skipped += 1
+                    continue
+                # Unapproved transitions are admin-only
+                is_admin = bool(g.user.get("is_admin", False))
+                if (old_status == "Unapproved" or new_status == "Unapproved") and not is_admin:
                     skipped += 1
                     continue
                 cur.execute(

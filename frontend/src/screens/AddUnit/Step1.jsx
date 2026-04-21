@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import DuplicateCard from './DuplicateCard';
+import ForceCreateWarning from './ForceCreateWarning';
 
 const BHK_OPTIONS = ['2 BHK', '3 BHK', '4 BHK'];
 
@@ -20,6 +21,7 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
   // ---- duplicate check state ----
   const [checking, setChecking] = useState(false);
   const [dupResult, setDupResult] = useState(null);    // hard block — "already in inventory"
+  const [showForceWarning, setShowForceWarning] = useState(false); // admin-review warning screen
   const [apiError, setApiError] = useState('');
 
   useEffect(() => {
@@ -40,10 +42,11 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
   }, [debouncedSearch, dropdownOpen]);
 
   const selectSociety = (s) => {
-    setForm({ ...form, society: s, tower: '', unitNo: '', sqft: '', bhk: '', floor: '' });
+    setForm({ ...form, society: s, tower: '', unitNo: '', sqft: '', bhk: '', floor: '', forceCreate: false });
     setSearch('');
     setDropdownOpen(false);
     setDupResult(null);
+    setShowForceWarning(false);
   };
 
   // Required: society + bhk + floor
@@ -66,9 +69,11 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
         floor: form.floor || null,
       });
       if (result.block) {
-        // Any match — hard stop with Contact RM + Edit
+        // Any match — hard stop with Contact RM + Add anyway
         setDupResult(result);
       } else {
+        // Clear any stale forceCreate flag — user has a clean path
+        setForm({ ...form, forceCreate: false });
         onNext();
       }
     } catch (err) {
@@ -81,16 +86,45 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
   const handleEdit = () => {
     // Dismiss dupResult, leave form filled so user can tweak
     setDupResult(null);
+    setShowForceWarning(false);
   };
 
-  // Hard block view — "already exists", no Continue Anyway
+  const handleForceCreateClick = () => {
+    // User clicked "Add anyway" on DuplicateCard — show the admin-review warning
+    setShowForceWarning(true);
+  };
+
+  const handleForceCreateConfirm = () => {
+    // User confirmed the warning — set forceCreate flag and proceed to Step 2
+    setForm({ ...form, forceCreate: true });
+    setDupResult(null);
+    setShowForceWarning(false);
+    onNext();
+  };
+
+  const handleForceCreateCancel = () => {
+    // User backed out of the warning — go back to DuplicateCard
+    setShowForceWarning(false);
+  };
+
+  // Admin-review warning screen (after user clicks "Add anyway")
+  if (showForceWarning) {
+    return (
+      <ForceCreateWarning
+        onConfirm={handleForceCreateConfirm}
+        onCancel={handleForceCreateCancel}
+      />
+    );
+  }
+
+  // Hard block view — "already exists"
   if (dupResult) {
     return (
       <div className="form-section">
         <DuplicateCard
           result={dupResult}
           onEdit={handleEdit}
-          onAbandon={onAbandon}
+          onForceCreate={handleForceCreateClick}
         />
       </div>
     );

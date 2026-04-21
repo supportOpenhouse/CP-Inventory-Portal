@@ -2,9 +2,12 @@
  * Shown after a successful submission.
  * Shows the new public_id (OHLGC0001 etc.) as the primary identifier.
  * Falls back to the numeric submission ID if public_id is absent (for old data).
+ *
+ * When status is 'Unapproved', shows an admin-review message instead of the default.
  */
-export default function SuccessScreen({ submissionId, publicId, onDone }) {
+export default function SuccessScreen({ submissionId, publicId, status, onDone }) {
   const displayId = publicId || `#${submissionId}`;
+  const isUnapproved = status === 'Unapproved';
 
   return (
     <div className="app-shell">
@@ -14,7 +17,7 @@ export default function SuccessScreen({ submissionId, publicId, onDone }) {
             width: 80,
             height: 80,
             borderRadius: '50%',
-            background: 'var(--oh-green)',
+            background: isUnapproved ? '#b8860b' : 'var(--oh-green)',
             color: '#fff',
             fontSize: 42,
             fontWeight: 700,
@@ -22,10 +25,12 @@ export default function SuccessScreen({ submissionId, publicId, onDone }) {
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 20px',
-            boxShadow: '0 6px 20px rgba(16,185,129,0.3)',
+            boxShadow: isUnapproved
+              ? '0 6px 20px rgba(184,134,11,0.3)'
+              : '0 6px 20px rgba(16,185,129,0.3)',
           }}
         >
-          ✓
+          {isUnapproved ? '⏳' : '✓'}
         </div>
         <h1
           style={{
@@ -35,11 +40,20 @@ export default function SuccessScreen({ submissionId, publicId, onDone }) {
             marginBottom: 8,
           }}
         >
-          Submitted!
+          {isUnapproved ? 'Pending Review' : 'Submitted!'}
         </h1>
         <p style={{ fontSize: 14, color: 'var(--oh-gray)', lineHeight: 1.5, marginBottom: 20 }}>
-          Your unit has been received for evaluation.<br />
-          Our team will get back to you within 48 hours.
+          {isUnapproved ? (
+            <>
+              Your listing is being reviewed by our admin team.<br />
+              You'll be notified once approved.
+            </>
+          ) : (
+            <>
+              Your unit has been received for evaluation.<br />
+              Our team will get back to you within 48 hours.
+            </>
+          )}
         </p>
 
         <div

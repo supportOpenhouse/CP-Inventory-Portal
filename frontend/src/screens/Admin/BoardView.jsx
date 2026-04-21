@@ -3,11 +3,15 @@ import { formatPrice, STAGES, timeAgo } from '../../format';
 export default function BoardView({
   submissions, loading, selectedId, onSelect,
   bulkMode = false, selectedIds = new Set(), onToggleSelect,
+  isAdmin = false,
 }) {
+  // Hide admin-only stages (e.g. Unapproved) from non-admin users
+  const visibleStages = STAGES.filter((s) => isAdmin || !s.adminOnly);
+
   if (loading) {
     return (
       <div className="admin-board">
-        {STAGES.map((s) => (
+        {visibleStages.map((s) => (
           <div className="board-column" key={s.key}>
             <div className="col-header">
               <span className="col-dot" style={{ background: s.color }} />
@@ -23,7 +27,7 @@ export default function BoardView({
 
   return (
     <div className="admin-board">
-      {STAGES.map((stage) => {
+      {visibleStages.map((stage) => {
         const colSubs = submissions.filter((s) => s.status === stage.key);
         const isRejectedCol = stage.key === 'Rejected';
         return (

@@ -8,10 +8,28 @@ import { UnitCardSkeleton } from '../components/Skeleton';
 import Chatbot from './Chatbot';
 
 function badgeClass(status) {
+  if (status === 'Unapproved') return 'badge';
   if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Closed' || status === 'Visit Scheduled') return 'badge badge-closed';
   if (status === 'Rejected') return 'badge badge-rejected';
   return 'badge badge-submitted';
+}
+
+function badgeStyle(status) {
+  // Inline style for 'Unapproved' — no existing CSS class for amber
+  if (status === 'Unapproved') {
+    return {
+      background: '#FFF8E1',
+      color: '#B8860B',
+      border: '1px solid #E8C86A',
+    };
+  }
+  return undefined;
+}
+
+function badgeLabel(status) {
+  if (status === 'Unapproved') return 'Pending Review';
+  return status;
 }
 
 export default function Dashboard({ onAdd }) {
@@ -161,7 +179,12 @@ export default function Dashboard({ onAdd }) {
                         </div>
                       )}
                     </div>
-                    <div className={badgeClass(s.status)}>{s.status}</div>
+                    <div
+                      className={badgeClass(s.status)}
+                      style={badgeStyle(s.status)}
+                    >
+                      {badgeLabel(s.status)}
+                    </div>
                   </div>
                   <div className="unit-card-price">
                     {formatPrice(s.asking_price)}

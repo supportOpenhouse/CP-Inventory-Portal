@@ -308,6 +308,7 @@ export default function Admin() {
           bulkMode={bulkMode}
           selectedIds={selectedIds}
           onToggleSelect={toggleBulkSelect}
+          isAdmin={isAdmin}
         />
       ) : (
         <TableView
@@ -319,6 +320,7 @@ export default function Admin() {
           selectedIds={selectedIds}
           onToggleSelect={toggleBulkSelect}
           onToggleAll={toggleBulkAll}
+          isAdmin={isAdmin}
         />
       )}
 
