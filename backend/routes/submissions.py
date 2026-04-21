@@ -103,13 +103,14 @@ def create_submission():
                      "Contact support.",
         }), 500
 
-    # Duplicate check (now includes BHK)
+    # Duplicate check (now includes BHK + cp_id for RM lookup)
     dup = check_duplicate(
         society_id=society_id,
         bhk=to_str(data.get("bhk")),
         tower=to_str(data.get("tower")),
         unit_no=to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),
+        cp_id=g.user["cp_id"],
     )
     if dup["block"]:
         return jsonify({"error": "Duplicate", "duplicate": dup}), 409
@@ -198,5 +199,6 @@ def check_duplicate_endpoint():
         tower=to_str(data.get("tower")),
         unit_no=to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),
+        cp_id=g.user["cp_id"],
     )
     return jsonify(result), 200

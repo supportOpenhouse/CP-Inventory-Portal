@@ -6,7 +6,7 @@ Matching fields:
 Decision table:
   CP inputs                                     Match found?        Result
   ────────────────────────────────────────────  ─────────────────   ──────────────────
-  society+bhk+floor (no tower/unit)             soc+bhk+floor       BLOCK "already exists"
+  society+bhk+floor (no tower/unit)             soc+bhk+floor       partial warning ("Heads up: openhouse already has a unit on this floor")
   society+bhk+floor (no tower/unit)             no match            proceed
   society+bhk+floor+tower (no unit)             soc+bhk+floor+tower BLOCK "already exists"
   society+bhk+floor+tower (no unit)             no finer match      proceed
@@ -15,8 +15,8 @@ Decision table:
   society+bhk+floor+tower+unit                  full exact match    BLOCK "already exists"
   society+bhk+floor+tower+unit                  partial only        proceed
 
-Every duplicate hit is a hard block with Contact RM + Edit buttons.
-There is no soft-warning / Continue Anyway path.
+Hard blocks return block=True with Contact RM / Edit buttons on the UI.
+Soft warnings return block=False with a "Continue anyway" option.
 
 BHK is normalized by stripping "BHK" and matching digits only:
   "2 BHK" -> "2", "2BHK" -> "2", "2" -> "2"
@@ -56,11 +56,34 @@ def _norm_floor(value):
         return None
 
 
-def _fetch_rm(city_name: str):
-    """Look up RM phone/name for a city. Returns {} if not found."""
+def _fetch_rm(city_name: str, cp_id=None):
+    """Look up RM contact info.
+
+    Priority:
+      1. If cp_id given and that CP has an assigned rm_id, return that RM.
+      2. Otherwise fall back to the city-level default RM.
+
+    Returns {} if nothing matches.
+    """
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # 1. Try CP's assigned RM from the rms table
+            if cp_id is not None:
+                cur.execute("""
+                    SELECT r.name AS rm_name, r.phone AS rm_phone
+                    FROM channel_partners cp
+                    JOIN rms r ON cp.rm_id = r.id AND r.is_active
+                    WHERE cp.id = %s
+                """, (cp_id,))
+                row = cur.fetchone()
+                if row and row.get("rm_phone"):
+                    return {
+                        "rm_name": row["rm_name"],
+                        "rm_phone": row["rm_phone"],
+                    }
+
+            # 2. Fall back to city-level RM
             cur.execute(
                 "SELECT rm_name, rm_phone FROM cities WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s))",
                 (city_name,),
@@ -81,7 +104,7 @@ def _no_match():
 
 
 def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
-                    floor=None, city_hint=None):
+                    floor=None, city_hint=None, cp_id=None):
     """
     Returns:
         {
@@ -179,6 +202,11 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                 return _no_match()
 
             # ---------- SOFT WARNING: society+bhk+floor only ----------
+            cur.execute(
+                f"SELECT COUNT(*) AS cnt FROM properties WHERE {base_where}",
+                base_params,
+            )
+            row = cur.fetchone()
             # ---------- HARD BLOCK: society+bhk+floor match (no tower/unit given) ----------
             # Per spec, this is treated the same as an exact match — "already in inventory"
             # with Contact RM + Edit buttons. No soft warning / Continue Anyway.
@@ -188,7 +216,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             )
             row = cur.fetchone()
             if row and row["cnt"] > 0:
-                rm_info = _fetch_rm(city)
+                rm_info = _fetch_rm(city, cp_id=cp_id)
                 return {
                     "match_level": "exact",
                     "block": True,
