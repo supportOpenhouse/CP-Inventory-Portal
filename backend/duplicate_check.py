@@ -1,26 +1,33 @@
-"""Duplicate check against the properties DB.
+"""Duplicate check against the properties DB and the submissions table.
+
+Matching sources (both checked, either match blocks):
+  1. properties (ground truth from LSQ + legacy — in Properties DB)
+  2. submissions (active CP portal submissions — in app DB, status != 'Rejected')
 
 Matching fields:
   society (required) + bhk + floor + optionally tower + optionally unit_no
 
-Decision table:
+Decision table (applies to BOTH sources):
   CP inputs                                     Match found?        Result
   ────────────────────────────────────────────  ─────────────────   ──────────────────
-  society+bhk+floor (no tower/unit)             soc+bhk+floor       partial warning ("Heads up: openhouse already has a unit on this floor")
+  society+bhk+floor (no tower/unit)             soc+bhk+floor       BLOCK "floor already has unit"
   society+bhk+floor (no tower/unit)             no match            proceed
-  society+bhk+floor+tower (no unit)             soc+bhk+floor+tower BLOCK "already exists"
+  society+bhk+floor+tower (no unit)             soc+bhk+floor+tower BLOCK "unit already exists"
   society+bhk+floor+tower (no unit)             no finer match      proceed
-  society+bhk+floor+unit (no tower)             soc+bhk+floor+unit  BLOCK "already exists"
+  society+bhk+floor+unit (no tower)             soc+bhk+floor+unit  BLOCK "unit already exists"
   society+bhk+floor+unit (no tower)             no finer match      proceed
-  society+bhk+floor+tower+unit                  full exact match    BLOCK "already exists"
+  society+bhk+floor+tower+unit                  full exact match    BLOCK "unit already exists"
   society+bhk+floor+tower+unit                  partial only        proceed
 
-Hard blocks return block=True with Contact RM / Edit buttons on the UI.
-Soft warnings return block=False with a "Continue anyway" option.
+Every duplicate hit is a hard block with Contact RM + Edit buttons.
+There is no soft-warning / Continue Anyway path.
 
 BHK is normalized by stripping "BHK" and matching digits only:
   "2 BHK" -> "2", "2BHK" -> "2", "2" -> "2"
-Properties DB stores config as e.g. "2 BHK" or "2BHK" — we normalize both sides.
+Properties DB stores config as "2 BHK" etc; submissions stores bhk as "2 BHK" etc.
+We normalize both sides.
+
+Submissions with status 'Rejected' are ignored (freed up for other CPs).
 
 If properties DB isn't configured, we fail open (no match).
 """
@@ -101,6 +108,48 @@ def _fetch_rm(city_name: str, cp_id=None):
 
 def _no_match():
     return {"match_level": "none", "block": False, "message": "", "details": {}}
+
+
+# Statuses that still occupy a unit in inventory. Rejected submissions free it up.
+_ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Evaluation", "Offer Given", "Visit Scheduled")
+
+
+def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
+    """Query the app DB submissions table for a matching active submission.
+
+    Mirrors the properties-table matching logic: matches require society +
+    bhk (digit-normalized) + floor, plus optionally tower/unit when given.
+
+    Returns True if any active, non-rejected submission matches; False otherwise.
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            conditions = [
+                "society_id = %s",
+                "REGEXP_REPLACE(COALESCE(bhk, ''), '[^0-9]', '', 'g') = %s",
+                "floor = %s",
+                "status = ANY(%s)",
+            ]
+            params = [
+                society_id,
+                bhk_n,
+                floor_n,
+                list(_ACTIVE_SUBMISSION_STATUSES),
+            ]
+
+            if tower:
+                conditions.append("UPPER(TRIM(COALESCE(tower, ''))) = UPPER(TRIM(%s))")
+                params.append(tower)
+            if unit_no:
+                conditions.append("UPPER(TRIM(COALESCE(unit_no, ''))) = UPPER(TRIM(%s))")
+                params.append(unit_no)
+
+            sql = f"SELECT 1 FROM submissions WHERE {' AND '.join(conditions)} LIMIT 1"
+            cur.execute(sql, params)
+            return cur.fetchone() is not None
+    finally:
+        put_app_conn(conn)
 
 
 def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
@@ -198,8 +247,22 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         ),
                         "details": {**hard_block_details, **rm_info},
                     }
-                # No narrower match — CP proceeds even if society+bhk+floor matches
-                # (the tower/unit they gave rules out the existing records).
+
+                # Not in properties — also check pending submissions from all CPs
+                if _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
+                    rm_info = _fetch_rm(city, cp_id=cp_id)
+                    return {
+                        "match_level": "exact",
+                        "block": True,
+                        "banner_title": "This unit is already\nwith Openhouse",
+                        "message": (
+                            f"This unit ({unit_label}) is already with Openhouse. "
+                            f"Please contact your Openhouse representative."
+                        ),
+                        "details": {**hard_block_details, **rm_info},
+                    }
+
+                # No narrower match in either source — CP proceeds
                 return _no_match()
 
             # ---------- HARD BLOCK: society+bhk+floor match (no tower/unit given) ----------
@@ -210,7 +273,12 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                 base_params,
             )
             row = cur.fetchone()
-            if row and row["cnt"] > 0:
+            properties_hit = bool(row and row["cnt"] > 0)
+
+            # Also check pending submissions from all CPs
+            submissions_hit = _check_submissions(society_id, bhk_n, floor_n, None, None)
+
+            if properties_hit or submissions_hit:
                 rm_info = _fetch_rm(city, cp_id=cp_id)
                 return {
                     "match_level": "exact",
