@@ -9,6 +9,7 @@ export function AuthProvider({ children }) {
   const [user, setUserState] = useState(() => getUser());
   const [loading, setLoading] = useState(false);
 
+
   useEffect(() => {
     const token = getToken();
     if (token && !user) {
