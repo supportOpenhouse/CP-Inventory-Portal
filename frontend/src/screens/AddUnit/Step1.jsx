@@ -19,8 +19,7 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
 
   // ---- duplicate check state ----
   const [checking, setChecking] = useState(false);
-  const [dupResult, setDupResult] = useState(null);    // block=true: "already exists"
-  const [dupWarning, setDupWarning] = useState(null);  // block=false: soft floor warning
+  const [dupResult, setDupResult] = useState(null);    // hard block — "already in inventory"
   const [apiError, setApiError] = useState('');
 
   useEffect(() => {
@@ -44,7 +43,6 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
     setForm({ ...form, society: s, tower: '', unitNo: '', sqft: '', bhk: '', floor: '' });
     setSearch('');
     setDropdownOpen(false);
-    setDupWarning(null);
     setDupResult(null);
   };
 
@@ -58,7 +56,6 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
   const runDuplicateCheck = async () => {
     setApiError('');
     setDupResult(null);
-    setDupWarning(null);
     setChecking(true);
     try {
       const result = await api.checkDuplicate({
@@ -69,10 +66,8 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
         floor: form.floor || null,
       });
       if (result.block) {
-        // "Already exists" — hard stop with Contact RM + Edit
+        // Any match — hard stop with Contact RM + Edit
         setDupResult(result);
-      } else if (result.match_level === 'partial') {
-        setDupWarning(result);
       } else {
         onNext();
       }
@@ -81,11 +76,6 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
     } finally {
       setChecking(false);
     }
-  };
-
-  const handleProceedAnyway = () => {
-    setDupWarning(null);
-    onNext();
   };
 
   const handleEdit = () => {
@@ -108,30 +98,6 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
 
   return (
     <div className="form-section">
-      {/* Soft warning for floor-level partial match */}
-      {dupWarning && (
-        <div className="dup-warning-card">
-          <div className="dup-warning-title">⚠ Possible duplicate</div>
-          <div className="dup-warning-message">{dupWarning.message}</div>
-          <div className="dup-warning-actions">
-            <button
-              className="secondary-btn"
-              onClick={() => setDupWarning(null)}
-              type="button"
-            >
-              Edit details
-            </button>
-            <button
-              className="primary-btn"
-              onClick={handleProceedAnyway}
-              type="button"
-            >
-              Continue anyway
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Society */}
       <div className="form-card">
         <div className="form-card-title">
