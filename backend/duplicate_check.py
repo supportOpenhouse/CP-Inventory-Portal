@@ -122,21 +122,22 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
 
     Returns True if any active, non-rejected submission matches; False otherwise.
     """
+    import logging
+    log = logging.getLogger(__name__)
+
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # Explicit IN placeholders (safer than ANY(array) across psycopg2 versions)
+            status_placeholders = ",".join(["%s"] * len(_ACTIVE_SUBMISSION_STATUSES))
+
             conditions = [
                 "society_id = %s",
                 "REGEXP_REPLACE(COALESCE(bhk, ''), '[^0-9]', '', 'g') = %s",
-                "floor = %s",
-                "status = ANY(%s)",
+                "COALESCE(floor, '') = %s",
+                f"status IN ({status_placeholders})",
             ]
-            params = [
-                society_id,
-                bhk_n,
-                floor_n,
-                list(_ACTIVE_SUBMISSION_STATUSES),
-            ]
+            params = [society_id, bhk_n, floor_n, *_ACTIVE_SUBMISSION_STATUSES]
 
             if tower:
                 conditions.append("UPPER(TRIM(COALESCE(tower, ''))) = UPPER(TRIM(%s))")
@@ -146,8 +147,15 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
                 params.append(unit_no)
 
             sql = f"SELECT 1 FROM submissions WHERE {' AND '.join(conditions)} LIMIT 1"
-            cur.execute(sql, params)
-            return cur.fetchone() is not None
+
+            try:
+                cur.execute(sql, params)
+                return cur.fetchone() is not None
+            except Exception as e:
+                # Don't crash the whole dup-check if submissions query fails —
+                # fall back to properties-only behavior.
+                log.exception("[dup-check] _check_submissions failed: %s", e)
+                return False
     finally:
         put_app_conn(conn)
 
