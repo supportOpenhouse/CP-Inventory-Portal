@@ -160,6 +160,58 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
         put_app_conn(conn)
 
 
+def _check_collated_data(society_name, bhk_n, floor_n, tower, unit_no):
+    """Query the collated_data table (external-source scraper listings) for a match.
+
+    Matches on society name (case-insensitive), BHK (digit-normalized), and floor.
+    Tower/unit are optional filters — and only apply if the collated row actually
+    has those values populated (they're nullable; scrapers may not have them).
+
+    Returns True if any collated row matches; False otherwise.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            conditions = [
+                "LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))",
+                "REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s",
+                "COALESCE(floor, '') = %s",
+            ]
+            params = [society_name, bhk_n, floor_n]
+
+            # Only apply tower/unit filter if CP provided them AND collated row has them.
+            # If collated row's tower/unit is NULL, we pessimistically still match —
+            # i.e. a scraper listing without tower info matches a CP's Tower J entry,
+            # because we can't prove otherwise. This errs on blocking for safety
+            # (CP can still "Add anyway" for admin review).
+            if tower:
+                conditions.append(
+                    "(tower IS NULL OR UPPER(TRIM(tower)) = UPPER(TRIM(%s)))"
+                )
+                params.append(tower)
+            if unit_no:
+                conditions.append(
+                    "(unit_no IS NULL OR UPPER(TRIM(unit_no)) = UPPER(TRIM(%s)))"
+                )
+                params.append(unit_no)
+
+            sql = f"SELECT 1 FROM collated_data WHERE {' AND '.join(conditions)} LIMIT 1"
+
+            try:
+                cur.execute(sql, params)
+                return cur.fetchone() is not None
+            except Exception as e:
+                # Likely cause: collated_data table doesn't exist yet.
+                # Fail closed (return False) so we don't break dup-check entirely.
+                log.exception("[dup-check] _check_collated_data failed: %s", e)
+                return False
+    finally:
+        put_app_conn(conn)
+
+
 def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                     floor=None, city_hint=None, cp_id=None):
     """
@@ -270,7 +322,21 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         "details": {**hard_block_details, **rm_info},
                     }
 
-                # No narrower match in either source — CP proceeds
+                # Also check external scrapers (99acres etc. via collated_data)
+                if _check_collated_data(society_name, bhk_n, floor_n, tower, unit_no):
+                    rm_info = _fetch_rm(city, cp_id=cp_id)
+                    return {
+                        "match_level": "exact",
+                        "block": True,
+                        "banner_title": "This unit is already\nwith Openhouse",
+                        "message": (
+                            f"This unit ({unit_label}) is already with Openhouse. "
+                            f"Please contact your Openhouse representative."
+                        ),
+                        "details": {**hard_block_details, **rm_info},
+                    }
+
+                # No narrower match in any source — CP proceeds
                 return _no_match()
 
             # ---------- HARD BLOCK: society+bhk+floor match (no tower/unit given) ----------
@@ -286,7 +352,10 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             # Also check pending submissions from all CPs
             submissions_hit = _check_submissions(society_id, bhk_n, floor_n, None, None)
 
-            if properties_hit or submissions_hit:
+            # Also check external scrapers (99acres etc. via collated_data)
+            collated_hit = _check_collated_data(society_name, bhk_n, floor_n, None, None)
+
+            if properties_hit or submissions_hit or collated_hit:
                 rm_info = _fetch_rm(city, cp_id=cp_id)
                 return {
                     "match_level": "exact",

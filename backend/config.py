@@ -39,6 +39,11 @@ class Config:
     OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
     OTP_SEND_RATE_LIMIT = int(os.getenv("OTP_SEND_RATE_LIMIT", "3"))  # sends per 10 min
 
+    # -------- Sync endpoints (Apps Script / Cloud Function callers) --------
+    # Shared-secret token the caller must send as 'X-Sync-Token'.
+    # Generate a long random string (>= 48 chars). If unset, sync endpoints 503.
+    SYNC_SECRET_TOKEN = os.getenv("SYNC_SECRET_TOKEN") or None
+
     @classmethod
     def validate(cls) -> None:
         missing = []
