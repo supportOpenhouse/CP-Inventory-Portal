@@ -10,11 +10,12 @@ import Chatbot from './Chatbot';
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
 // Order: Submitted, Unapproved (Pending), Offers, Closures, Rejected.
 const FILTER_BOXES = [
-  { key: 'All',        label: 'All',            color: '#6366F1' },
-  { key: 'Submitted',  label: 'Submitted',      color: '#6366F1' },
-  { key: 'Unapproved', label: 'Pending Review', color: '#B8860B' },
-  { key: 'Offer Given', label: 'Offers',        color: '#FF6B2B' },
-  { key: 'Rejected',   label: 'Rejected',       color: '#DC2626' },
+  { key: 'All',         label: 'All',            color: '#6366F1' },
+  { key: 'Unapproved',  label: 'Pending Review', color: '#B8860B' },
+  { key: 'Submitted',   label: 'Submitted',      color: '#6366F1' },
+  { key: 'Offer Given', label: 'Offers',         color: '#FF6B2B' },
+  { key: 'Closed',      label: 'Closures',       color: '#10B981' },
+  { key: 'Rejected',    label: 'Rejected',       color: '#DC2626' },
 ];
 
 function badgeClass(status) {
@@ -83,18 +84,27 @@ export default function Dashboard({ onAdd }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.city]);
 
+  // Synthetic status used for filtering/counting only (actual DB status unchanged).
+  // A pending counter offer appears under the 'Offers' filter regardless of the real
+  // stage, so CPs can find listings awaiting their accept/reject in one place.
+  const syntheticStatus = (s) => {
+    if (s.counter_offer_status === 'pending') return 'Offer Given';
+    return s.status;
+  };
+
   // Per-stage counts (used by the boxes and empty-state messaging)
   const counts = useMemo(() => {
     const c = { All: state.submissions.length };
     for (const s of state.submissions) {
-      c[s.status] = (c[s.status] || 0) + 1;
+      const key = syntheticStatus(s);
+      c[key] = (c[key] || 0) + 1;
     }
     return c;
   }, [state.submissions]);
 
   const visibleSubmissions = useMemo(() => {
     if (filter === 'All') return state.submissions;
-    return state.submissions.filter((s) => s.status === filter);
+    return state.submissions.filter((s) => syntheticStatus(s) === filter);
   }, [state.submissions, filter]);
 
   const handleCounterResponse = async (submissionId, action) => {
@@ -152,7 +162,7 @@ export default function Dashboard({ onAdd }) {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
+          gridTemplateColumns: 'repeat(6, 1fr)',
           gap: 8,
           padding: '12px 16px 8px',
         }}

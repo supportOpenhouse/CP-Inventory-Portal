@@ -28,7 +28,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Rejected"]
 
 
 def require_admin_role(f):

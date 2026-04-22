@@ -13,7 +13,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Rejected"]
 
 
 @bp.get("/submissions")
@@ -46,7 +46,7 @@ def list_my_submissions():
     # Legacy fields for existing frontend (still displayed on dashboard)
     stats["submitted"] = stats["Submitted"]
     stats["offers"] = stats["Offer Given"]
-    stats["closures"] = 0  # no "Closed" stage anymore; left at 0 for backwards compat
+    stats["closures"] = stats["Closed"]
     return jsonify({"submissions": subs, "stats": stats}), 200
 
 

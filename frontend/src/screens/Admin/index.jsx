@@ -37,6 +37,7 @@ export default function Admin() {
   const [bhk, setBhk] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');  // '' = All
 
   const activeFilterCount = [bhk, dateFrom, dateTo].filter(Boolean).length;
 
@@ -47,8 +48,9 @@ export default function Admin() {
     if (bhk) f.bhk = bhk;
     if (dateFrom) f.date_from = dateFrom;
     if (dateTo) f.date_to = dateTo;
+    if (statusFilter) f.status = statusFilter;
     return f;
-  }, [city, search, bhk, dateFrom, dateTo]);
+  }, [city, search, bhk, dateFrom, dateTo, statusFilter]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -250,20 +252,44 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Stats row */}
+      {/* Stats row — clickable as filters */}
       <div className="admin-stats">
-        {STAGES.map((s) => (
-          <div className="stat-card" key={s.key}>
-            <div className="stat-num" style={{ color: s.color }}>
-              {counts[s.key] ?? 0}
-            </div>
-            <div className="stat-label">{s.key}</div>
-          </div>
-        ))}
-        <div className="stat-card">
+        <button
+          className={`stat-card ${statusFilter === '' ? 'is-active' : ''}`}
+          onClick={() => setStatusFilter('')}
+          style={{
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            border: statusFilter === '' ? '2px solid #222' : undefined,
+            background: statusFilter === '' ? '#f5f5f5' : undefined,
+          }}
+          type="button"
+        >
           <div className="stat-num" style={{ color: '#222' }}>{counts.Total ?? 0}</div>
-          <div className="stat-label">Total</div>
-        </div>
+          <div className="stat-label">All</div>
+        </button>
+        {STAGES.filter((s) => isAdmin || !s.adminOnly).map((s) => {
+          const active = statusFilter === s.key;
+          return (
+            <button
+              key={s.key}
+              className={`stat-card ${active ? 'is-active' : ''}`}
+              onClick={() => setStatusFilter(active ? '' : s.key)}
+              style={{
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                border: active ? `2px solid ${s.color}` : undefined,
+                background: active ? s.bg : undefined,
+              }}
+              type="button"
+            >
+              <div className="stat-num" style={{ color: s.color }}>
+                {counts[s.key] ?? 0}
+              </div>
+              <div className="stat-label">{s.key}</div>
+            </button>
+          );
+        })}
       </div>
 
       {error && (
