@@ -65,8 +65,13 @@ export const api = {
   getFaqs: () => request('/faqs', { auth: false }),
 
   // Societies
-  searchSocieties: (search = '', limit = 20) =>
-    request(`/societies?search=${encodeURIComponent(search)}&limit=${limit}`),
+  searchSocieties: (search = '', limit = 20, city = '') => {
+    const qs = new URLSearchParams();
+    if (search) qs.set('search', search);
+    qs.set('limit', String(limit));
+    if (city) qs.set('city', city);
+    return request(`/societies?${qs.toString()}`);
+  },
   getSocietyInventory: (id) => request(`/societies/${id}/inventory`),
 
   // Submissions (CP side)
@@ -75,6 +80,11 @@ export const api = {
     request('/submissions', { method: 'POST', body: payload }),
   checkDuplicate: (payload) =>
     request('/check-duplicate', { method: 'POST', body: payload }),
+  // CP accepts or rejects a pending counter offer
+  counterOfferResponse: (submissionId, action /* 'accept' | 'reject' */) =>
+    request(`/submissions/${submissionId}/counter-offer-response`, {
+      method: 'POST', body: { action },
+    }),
 
   // Admin (staff only)
   adminListSubmissions: (filters = {}) =>
@@ -98,6 +108,11 @@ export const api = {
     request(`/admin/cp/${cpId}/notes`, { method: 'POST', body: { text } }),
   adminDeleteCpNote: (noteId) =>
     request(`/admin/cp/notes/${noteId}`, { method: 'DELETE' }),
+  // Admin sends a counter offer; price is in LAKHS (converted server-side)
+  adminSendCounterOffer: (submissionId, priceLakhs) =>
+    request(`/admin/submissions/${submissionId}/counter-offer`, {
+      method: 'POST', body: { price_lakhs: priceLakhs },
+    }),
 
   // Health
   health: () => request('/health', { auth: false }),

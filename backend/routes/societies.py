@@ -17,8 +17,14 @@ bp = Blueprint("societies", __name__, url_prefix="/api/societies")
 @bp.get("")
 @require_auth
 def list_societies():
-    """Search/list societies. Admin sees all cities; others only their own city."""
+    """Search/list societies.
+
+    Admin sees all cities by default. CPs see their own city by default
+    UNLESS a `city` query param is provided (e.g. 'Gurgaon', 'Noida', 'Ghaziabad').
+    This supports the Step 1 city dropdown where CPs can pick any serviceable city.
+    """
     search = (request.args.get("search") or "").strip()
+    city_override = (request.args.get("city") or "").strip()
     try:
         limit = min(max(int(request.args.get("limit", 20)), 1), 50)
     except (ValueError, TypeError):
@@ -28,8 +34,19 @@ def list_societies():
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            city_ids = None  # None = no filter (admin)
-            if not user["is_admin"]:
+            city_ids = None  # None = no filter
+            if city_override:
+                # Explicit city pick (from the Step 1 dropdown) — applies to everyone
+                cur.execute(
+                    "SELECT id FROM cities WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s))",
+                    (city_override,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return jsonify({"societies": []}), 200
+                city_ids = [row["id"]]
+            elif not user["is_admin"]:
+                # Fallback for non-admins with no explicit pick: their own city
                 cur.execute(
                     "SELECT city_id FROM channel_partners WHERE id = %s",
                     (user["cp_id"],),

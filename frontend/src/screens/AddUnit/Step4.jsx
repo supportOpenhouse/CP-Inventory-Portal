@@ -1,13 +1,33 @@
 import { useState } from 'react';
 
 import { api, ApiError } from '../../api';
-import { formatIndianNumber, formatPrice } from '../../format';
+import { formatPrice } from '../../format';
 import DuplicateCard from './DuplicateCard';
+
+/**
+ * Pricing inputs are in LAKHS. The user types "95" meaning ₹95 lakhs.
+ * We store as rupees (multiply by 1,00,000) in the payload.
+ * The hint below the input shows the formatted Cr/Lakh representation.
+ */
+function lakhsToRupees(lakhs) {
+  const n = parseFloat(lakhs);
+  if (!isFinite(n)) return null;
+  return Math.round(n * 100000);
+}
 
 export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon }) {
   const [submitting, setSubmitting] = useState(false);
   const [dupResult, setDupResult] = useState(null);
   const [apiError, setApiError] = useState('');
+
+  // Has CP provided tower + unit_no? If yes, submit as normal (Submitted). If no, Unapproved.
+  const hasUnitDetails =
+    !!(form.tower && form.tower.trim()) &&
+    !!(form.unitNo && form.unitNo.trim()) &&
+    !form.skipUnitDetails;
+
+  // Submit button label reflects the destination status
+  const submitLabel = hasUnitDetails ? 'Submit' : 'Submit for approval';
 
   const handleSubmit = async () => {
     setApiError('');
@@ -30,14 +50,15 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
         parking: form.parking || null,
         extra_rooms: form.features || [],
         registry_status: form.registryStatus || null,
-        asking_price: form.askPrice ? parseInt(form.askPrice) : null,
-        closing_price: form.closingPrice ? parseInt(form.closingPrice) : null,
+        // Convert lakhs input -> rupees before sending
+        asking_price: lakhsToRupees(form.askPrice),
+        closing_price: lakhsToRupees(form.closingPrice),
         seller_name: form.sellerName || null,
         seller_phone: form.sellerPhone || null,
         photos: form.photos || [],
-        // If CP confirmed the admin-review warning in Step1, pass through
-        // so the backend stores as 'Unapproved' instead of blocking.
+        // Step1 flags
         force_create: !!form.forceCreate,
+        skip_unit_details: !!form.skipUnitDetails,
       };
 
       const result = await api.createSubmission(payload);
@@ -58,11 +79,8 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
   };
 
   const handleForceCreateFromStep4 = async () => {
-    // Race-condition path: dup detected between Step1 and final submit.
-    // Set the flag and retry — will succeed as Unapproved.
     setForm({ ...form, forceCreate: true });
     setDupResult(null);
-    // Brief delay so state settles before retry
     setTimeout(handleSubmit, 0);
   };
 
@@ -77,6 +95,9 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
       </div>
     );
   }
+
+  const askPriceRupees = lakhsToRupees(form.askPrice);
+  const closingPriceRupees = lakhsToRupees(form.closingPrice);
 
   return (
     <div className="form-section">
@@ -111,27 +132,39 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
           })}
         </div>
 
-        <div className="input-label">Asking Price (₹)</div>
+        <div className="input-label">Asking Price (in lakhs)</div>
         <input
           className="input-field"
-          inputMode="numeric"
-          placeholder="e.g. 95,00,000"
-          value={formatIndianNumber(form.askPrice)}
-          onChange={(e) => setForm({ ...form, askPrice: e.target.value.replace(/\D/g, '') })}
+          inputMode="decimal"
+          placeholder="e.g. 95"
+          value={form.askPrice}
+          onChange={(e) => setForm({ ...form, askPrice: e.target.value.replace(/[^0-9.]/g, '') })}
         />
-        {form.askPrice && <div className="optional-hint">{formatPrice(form.askPrice)}</div>}
+        {askPriceRupees ? (
+          <div className="optional-hint">{formatPrice(askPriceRupees)}</div>
+        ) : (
+          <div className="optional-hint" style={{ color: 'var(--oh-gray)' }}>
+            Enter in lakhs (e.g. 95 = ₹95 lakhs; 150 = ₹1.5 Cr)
+          </div>
+        )}
 
         <div className="input-label" style={{ marginTop: 14 }}>
-          Tentative Closing Price (₹)
+          Tentative Closing Price (in lakhs)
         </div>
         <input
           className="input-field"
-          inputMode="numeric"
-          placeholder="What seller will accept"
-          value={formatIndianNumber(form.closingPrice)}
-          onChange={(e) => setForm({ ...form, closingPrice: e.target.value.replace(/\D/g, '') })}
+          inputMode="decimal"
+          placeholder="e.g. 92"
+          value={form.closingPrice}
+          onChange={(e) => setForm({ ...form, closingPrice: e.target.value.replace(/[^0-9.]/g, '') })}
         />
-        {form.closingPrice && <div className="optional-hint">{formatPrice(form.closingPrice)}</div>}
+        {closingPriceRupees ? (
+          <div className="optional-hint">{formatPrice(closingPriceRupees)}</div>
+        ) : (
+          <div className="optional-hint" style={{ color: 'var(--oh-gray)' }}>
+            What seller will accept
+          </div>
+        )}
       </div>
 
       {apiError && <div className="error-text" style={{ marginTop: 12 }}>{apiError}</div>}
@@ -139,7 +172,7 @@ export default function Step4({ form, setForm, onBack, onSubmitted, onAbandon })
       <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
         <button className="secondary-btn" onClick={onBack} disabled={submitting}>Back</button>
         <button className="primary-btn" onClick={handleSubmit} disabled={submitting}>
-          {submitting ? <><span className="spinner" />Submitting…</> : 'Submit Unit'}
+          {submitting ? <><span className="spinner" />Submitting…</> : submitLabel}
         </button>
       </div>
     </div>

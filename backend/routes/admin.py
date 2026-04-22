@@ -305,6 +305,84 @@ def change_status(sid: int):
     return jsonify({"ok": True, "from": old_status, "to": new_status}), 200
 
 
+@bp.post("/submissions/<int:sid>/counter-offer")
+@require_staff
+def send_counter_offer(sid: int):
+    """Admin sends a counter offer. Submission stays in 'Evaluation'.
+
+    Payload: { "price_rupees": 9500000 }  (integer, in rupees)
+    OR       { "price_lakhs":  95 }        (integer, in lakhs — converted server-side)
+
+    Stage does NOT change here — stays 'Evaluation'. CP responds via
+    /api/submissions/<id>/counter-offer-response, which moves to
+    'Offer Given' (accept) or 'Rejected' (reject).
+    """
+    data = request.get_json(silent=True) or {}
+    price_rupees = data.get("price_rupees")
+    price_lakhs = data.get("price_lakhs")
+
+    # Accept either format
+    if price_rupees is None and price_lakhs is not None:
+        try:
+            price_rupees = int(float(price_lakhs) * 100000)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid price_lakhs"}), 400
+
+    try:
+        price_rupees = int(price_rupees)
+    except (ValueError, TypeError):
+        return jsonify({"error": "price_rupees (or price_lakhs) is required"}), 400
+
+    if price_rupees <= 0:
+        return jsonify({"error": "Counter offer price must be > 0"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, status, counter_offer_status
+                FROM submissions
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (sid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Submission not found"}), 404
+            if row["status"] != "Evaluation":
+                return jsonify({
+                    "error": "Counter offer only allowed when status is 'Evaluation'",
+                    "current_status": row["status"],
+                }), 409
+
+            cur.execute(
+                """
+                UPDATE submissions
+                SET counter_offer_price  = %s,
+                    counter_offer_status = 'pending',
+                    counter_offer_at     = NOW(),
+                    counter_offer_by     = %s
+                WHERE id = %s
+                """,
+                (price_rupees, g.user["cp_id"], sid),
+            )
+            cur.execute(
+                """
+                INSERT INTO submission_events
+                    (submission_id, actor_cp_id, kind, text)
+                VALUES (%s, %s, 'counter_offer', %s)
+                """,
+                (sid, g.user["cp_id"], f"Counter offer sent: ₹{price_rupees:,}"),
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"ok": True, "counter_offer_price": price_rupees}), 200
+
+
 @bp.post("/submissions/<int:sid>/comment")
 @require_staff
 def add_comment(sid: int):

@@ -38,6 +38,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   const [editForm, setEditForm] = useState({});
   const [rms, setRms] = useState([]);
   const [uploadingPct, setUploadingPct] = useState(null);
+  // Counter offer inputs
+  const [counterOfferLakhs, setCounterOfferLakhs] = useState('');
+  const [sendingCounter, setSendingCounter] = useState(false);
   const [lightboxId, setLightboxId] = useState(null);
   const fileInputRef = useRef(null);
   const eventsEndRef = useRef(null);
@@ -81,6 +84,28 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
       alert(err.message || 'Failed to change status');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleSendCounterOffer = async () => {
+    const lakhs = parseFloat(counterOfferLakhs);
+    if (!isFinite(lakhs) || lakhs <= 0) {
+      alert('Enter a valid counter offer in lakhs');
+      return;
+    }
+    if (!window.confirm(
+      `Send counter offer of ₹${lakhs} lakhs to the CP?\n\nThe CP will see this on their dashboard and can accept (moves to 'Offer Given') or reject (moves to 'Rejected').`
+    )) return;
+    setSendingCounter(true);
+    try {
+      await api.adminSendCounterOffer(submissionId, lakhs);
+      setCounterOfferLakhs('');
+      await load();
+      onChanged?.();
+    } catch (err) {
+      alert(err.message || 'Failed to send counter offer');
+    } finally {
+      setSendingCounter(false);
     }
   };
 
@@ -343,6 +368,87 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   ) : null}
                 </div>
               </div>
+
+              {/* Counter offer — visible when Evaluation or when one exists */}
+              {(s.status === 'Evaluation' || s.counter_offer_status) && (
+                <div className="admin-panel-section">
+                  <div className="admin-panel-section-title">Counter Offer</div>
+
+                  {/* Show current counter offer state if any */}
+                  {s.counter_offer_status && (
+                    <div
+                      style={{
+                        padding: '10px 12px',
+                        background:
+                          s.counter_offer_status === 'pending' ? '#FFF8EC' :
+                          s.counter_offer_status === 'accepted' ? '#ECFDF5' : '#FEE2E2',
+                        border: `1px solid ${
+                          s.counter_offer_status === 'pending' ? '#E8A838' :
+                          s.counter_offer_status === 'accepted' ? '#10B981' : '#DC2626'
+                        }`,
+                        borderRadius: 8,
+                        marginBottom: 10,
+                        fontSize: 13,
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                        {formatPrice(s.counter_offer_price)} · {s.counter_offer_status.toUpperCase()}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--oh-gray)' }}>
+                        Sent {s.counter_offer_at ? formatDateTime(s.counter_offer_at) : '—'}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Input — only when Evaluation AND no pending counter already out */}
+                  {s.status === 'Evaluation' && s.counter_offer_status !== 'pending' && (
+                    <>
+                      <div className="admin-panel-label">Send counter offer (in lakhs)</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="e.g. 92"
+                          value={counterOfferLakhs}
+                          onChange={(e) => setCounterOfferLakhs(e.target.value.replace(/[^0-9.]/g, ''))}
+                          style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            border: '1.5px solid var(--oh-border)',
+                            borderRadius: 8,
+                            fontSize: 14,
+                            fontFamily: 'inherit',
+                          }}
+                          disabled={sendingCounter}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSendCounterOffer}
+                          disabled={sendingCounter || !counterOfferLakhs}
+                          className="primary-btn"
+                          style={{
+                            flex: 0,
+                            marginTop: 0,
+                            padding: '8px 16px',
+                            fontSize: 13,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {sendingCounter ? 'Sending…' : 'Send offer'}
+                        </button>
+                      </div>
+                      {counterOfferLakhs && parseFloat(counterOfferLakhs) > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--oh-gray)', marginTop: 4 }}>
+                          = {formatPrice(parseFloat(counterOfferLakhs) * 100000)}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: 'var(--oh-gray)', marginTop: 6 }}>
+                        CP will accept/reject from their dashboard. Status auto-updates on response.
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* People */}
               <div className="admin-panel-section">

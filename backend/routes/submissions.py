@@ -26,7 +26,8 @@ def list_my_submissions():
             cur.execute("""
                 SELECT id, public_id, society_id, society_name, tower, unit_no, floor,
                        sqft, bhk, furnishing, asking_price, closing_price,
-                       status, photos, submitted_at
+                       status, photos, submitted_at,
+                       counter_offer_price, counter_offer_status, counter_offer_at
                 FROM submissions
                 WHERE cp_id = %s
                 ORDER BY submitted_at DESC
@@ -103,23 +104,28 @@ def create_submission():
                      "Contact support.",
         }), 500
 
-    # Duplicate check (now includes BHK + cp_id for RM lookup)
-    dup = check_duplicate(
-        society_id=society_id,
-        bhk=to_str(data.get("bhk")),
-        tower=to_str(data.get("tower")),
-        unit_no=to_str(data.get("unit_no")),
-        floor=to_str(data.get("floor")),
-        cp_id=g.user["cp_id"],
-    )
+    # ---- Branch: "Submit without unit details" ----
+    # CP didn't provide tower/unit and explicitly chose to skip. No dup check;
+    # goes straight into Unapproved queue for admin review.
+    skip_unit_details = bool(data.get("skip_unit_details"))
 
-    # If CP explicitly chose "submit for admin review" after seeing duplicate,
-    # create as Unapproved (admin must approve before it enters active inventory).
-    force_create = bool(data.get("force_create"))
-    if dup["block"] and not force_create:
-        return jsonify({"error": "Duplicate", "duplicate": dup}), 409
-
-    initial_status = "Unapproved" if (dup["block"] and force_create) else "Submitted"
+    if skip_unit_details:
+        initial_status = "Unapproved"
+        dup = {"block": False, "match_level": "none", "details": {}}
+    else:
+        # Normal flow — run dup check; allow force_create bypass if CP chose "Add anyway"
+        dup = check_duplicate(
+            society_id=society_id,
+            bhk=to_str(data.get("bhk")),
+            tower=to_str(data.get("tower")),
+            unit_no=to_str(data.get("unit_no")),
+            floor=to_str(data.get("floor")),
+            cp_id=g.user["cp_id"],
+        )
+        force_create = bool(data.get("force_create"))
+        if dup["block"] and not force_create:
+            return jsonify({"error": "Duplicate", "duplicate": dup}), 409
+        initial_status = "Unapproved" if (dup["block"] and force_create) else "Submitted"
 
     conn = get_app_conn()
     try:
@@ -222,3 +228,69 @@ def check_duplicate_endpoint():
         cp_id=g.user["cp_id"],
     )
     return jsonify(result), 200
+
+
+@bp.post("/<int:sid>/counter-offer-response")
+@require_auth
+def counter_offer_response(sid):
+    """CP accepts or rejects a pending counter offer from the admin.
+
+    On accept: status -> 'Offer Given', counter_offer_status -> 'accepted'
+    On reject: status -> 'Rejected',  counter_offer_status -> 'rejected'
+    """
+    data = request.get_json(silent=True) or {}
+    action = (data.get("action") or "").strip().lower()
+    if action not in ("accept", "reject"):
+        return jsonify({"error": "action must be 'accept' or 'reject'"}), 400
+
+    new_status = "Offer Given" if action == "accept" else "Rejected"
+    new_co_status = "accepted" if action == "accept" else "rejected"
+    event_text = (
+        "CP accepted counter offer"
+        if action == "accept"
+        else "CP rejected counter offer"
+    )
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Lock the row + verify it belongs to this CP and has a pending offer
+            cur.execute(
+                """
+                SELECT id, cp_id, counter_offer_status, status
+                FROM submissions
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (sid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Submission not found"}), 404
+            if row["cp_id"] != g.user["cp_id"]:
+                return jsonify({"error": "Not your submission"}), 403
+            if row["counter_offer_status"] != "pending":
+                return jsonify({"error": "No pending counter offer"}), 409
+
+            cur.execute(
+                """
+                UPDATE submissions
+                SET status = %s,
+                    counter_offer_status = %s
+                WHERE id = %s
+                """,
+                (new_status, new_co_status, sid),
+            )
+            cur.execute(
+                """
+                INSERT INTO submission_events
+                    (submission_id, actor_cp_id, kind, to_status, text)
+                VALUES (%s, %s, 'system', %s, %s)
+                """,
+                (sid, g.user["cp_id"], new_status, event_text),
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"ok": True, "new_status": new_status}), 200
