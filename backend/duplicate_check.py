@@ -107,7 +107,13 @@ def _fetch_rm(city_name: str, cp_id=None):
 
 
 def _no_match():
-    return {"match_level": "none", "block": False, "message": "", "details": {}}
+    return {
+        "match_level": "none",
+        "block": False,
+        "message": "",
+        "details": {},
+        "collated_match": False,
+    }
 
 
 # Statuses that still occupy a unit in inventory. Rejected submissions free it up.
@@ -244,6 +250,13 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     if bhk_n is None or floor_n is None:
         return _no_match()
 
+    # Compute collated_data match up-front and surface it on every response.
+    # collated_data has no tower/unit columns, so it can only match at the
+    # society+bhk+floor level. We expose this flag even when the final block
+    # decision is "no" — the admin UI uses it to highlight Unapproved
+    # submissions that came through the "submit without unit details" path.
+    collated_match_flag = _check_collated_data(city, society_name, bhk_n, floor_n)
+
     # Shared base WHERE clause — society + bhk (digit-normalized) + floor
     base_where = (
         "LOWER(TRIM(city))         = LOWER(TRIM(%s)) "
@@ -295,6 +308,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                             f"Please contact your Openhouse representative."
                         ),
                         "details": {**hard_block_details, **rm_info},
+                        "collated_match": collated_match_flag,
                     }
 
                 # Not in properties — also check pending submissions from all CPs
@@ -309,13 +323,13 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                             f"Please contact your Openhouse representative."
                         ),
                         "details": {**hard_block_details, **rm_info},
+                        "collated_match": collated_match_flag,
                     }
 
-                # Also check external scrapers (99acres etc. via collated_data).
-                # collated_data has no tower/unit, so we match at the society+bhk+floor
-                # level. This pessimistically blocks — a scraped listing for the same
-                # floor could be the same unit the CP is submitting.
-                if _check_collated_data(city, society_name, bhk_n, floor_n):
+                # External-scraper match (99acres etc.) — collated_data has no tower/unit,
+                # so this match is at society+bhk+floor only. Pessimistically blocks:
+                # a scraped listing on the same floor could be the same unit.
+                if collated_match_flag:
                     rm_info = _fetch_rm(city, cp_id=cp_id)
                     return {
                         "match_level": "exact",
@@ -326,10 +340,13 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                             f"Please contact your Openhouse representative."
                         ),
                         "details": {**hard_block_details, **rm_info},
+                        "collated_match": True,
                     }
 
                 # No narrower match in any source — CP proceeds
-                return _no_match()
+                result = _no_match()
+                result["collated_match"] = collated_match_flag
+                return result
 
             # ---------- HARD BLOCK: society+bhk+floor match (no tower/unit given) ----------
             # Per spec, this is treated the same as an exact match — "already in inventory"
@@ -344,10 +361,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             # Also check pending submissions from all CPs
             submissions_hit = _check_submissions(society_id, bhk_n, floor_n, None, None)
 
-            # Also check external scrapers (99acres etc. via collated_data)
-            collated_hit = _check_collated_data(city, society_name, bhk_n, floor_n)
-
-            if properties_hit or submissions_hit or collated_hit:
+            if properties_hit or submissions_hit or collated_match_flag:
                 rm_info = _fetch_rm(city, cp_id=cp_id)
                 return {
                     "match_level": "exact",
@@ -359,8 +373,11 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         f"representative."
                     ),
                     "details": {**hard_block_details, **rm_info},
+                    "collated_match": collated_match_flag,
                 }
     finally:
         put_props_conn(pconn)
 
-    return _no_match()
+    result = _no_match()
+    result["collated_match"] = collated_match_flag
+    return result

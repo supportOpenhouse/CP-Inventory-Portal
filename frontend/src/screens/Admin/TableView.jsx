@@ -49,6 +49,7 @@ export default function TableView({
             const isWeakMatch = s.weak_match === true;
             const isRejected = s.status === 'Rejected';
             const isChecked = selectedIds.has(s.id);
+            const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
             const handleClick = () => {
               if (bulkMode) onToggleSelect?.(s.id);
               else onSelect(s.id);
@@ -95,6 +96,24 @@ export default function TableView({
                   >
                     {s.status}
                   </span>
+                  {isCollatedPartial && (
+                    <span
+                      title="Partial match from collated_data — society + BHK + floor matched an external-scraper listing; tower/unit couldn't be verified"
+                      style={{
+                        marginLeft: 6,
+                        padding: '2px 8px',
+                        borderRadius: 10,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        background: '#FEF3C7',
+                        color: '#92400E',
+                        border: '1px solid #FCD34D',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Collated match
+                    </span>
+                  )}
                 </td>
                 <td style={{ color: '#999' }}>{timeAgo(s.submitted_at)}</td>
               </tr>

@@ -96,13 +96,21 @@ def create_submission():
         }), 500
 
     # ---- Branch: "Submit without unit details" ----
-    # CP didn't provide tower/unit and explicitly chose to skip. No dup check;
-    # goes straight into Unapproved queue for admin review.
+    # CP didn't provide tower/unit and explicitly chose to skip. Goes straight into
+    # Unapproved queue, but we still run the dup check (without tower/unit) so we can
+    # capture a collated_data match for the admin's Unapproved-queue highlight.
     skip_unit_details = bool(data.get("skip_unit_details"))
 
     if skip_unit_details:
         initial_status = "Unapproved"
-        dup = {"block": False, "match_level": "none", "details": {}}
+        dup = check_duplicate(
+            society_id=society_id,
+            bhk=to_str(data.get("bhk")),
+            tower=None,
+            unit_no=None,
+            floor=to_str(data.get("floor")),
+            cp_id=g.user["cp_id"],
+        )
     else:
         # Normal flow — run dup check; allow force_create bypass if CP chose "Add anyway"
         dup = check_duplicate(
@@ -118,6 +126,10 @@ def create_submission():
             return jsonify({"error": "Duplicate", "duplicate": dup}), 409
         initial_status = "Unapproved" if (dup["block"] and force_create) else "Submitted"
 
+    # Flag for admin UI: only persisted for rows landing in Unapproved, since that's
+    # where the "partial match from collated_data" highlight is meaningful.
+    collated_match = bool(dup.get("collated_match")) and initial_status == "Unapproved"
+
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
@@ -132,14 +144,14 @@ def create_submission():
                     exit_facing, balcony_facing, balcony_view,
                     parking, extra_rooms, registry_status,
                     asking_price, closing_price, seller_name, seller_phone, photos,
-                    status
+                    status, collated_match
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s::jsonb, %s,
                     %s, %s, %s, %s, %s::jsonb,
-                    %s
+                    %s, %s
                 )
                 RETURNING id
             """, (
@@ -166,6 +178,7 @@ def create_submission():
                 to_str(data.get("seller_phone"), 20),
                 json.dumps(data.get("photos") or []),
                 initial_status,
+                collated_match,
             ))
             new_id = cur.fetchone()["id"]
 

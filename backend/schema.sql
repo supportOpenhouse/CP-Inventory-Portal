@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     seller_name      VARCHAR(200),
     seller_phone     VARCHAR(20),
     status           VARCHAR(30) DEFAULT 'Submitted',
+    collated_match   BOOLEAN     DEFAULT FALSE NOT NULL,  -- partial match from external-scraper collated_data; admin UI highlights this in Unapproved queue
     submitted_at     TIMESTAMPTZ DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
