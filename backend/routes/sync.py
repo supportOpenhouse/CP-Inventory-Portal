@@ -35,8 +35,6 @@ COLLATED_FIELDS = (
     "seller_name",
     "posting_date",
     "listing_link",
-    "tower",
-    "unit_no",
 )
 
 # Max rows per batch to prevent runaway payloads. Apps Script chunks on its side.

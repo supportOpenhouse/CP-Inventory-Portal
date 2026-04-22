@@ -160,12 +160,11 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
         put_app_conn(conn)
 
 
-def _check_collated_data(society_name, bhk_n, floor_n, tower, unit_no):
+def _check_collated_data(city, society_name, bhk_n, floor_n):
     """Query the collated_data table (external-source scraper listings) for a match.
 
-    Matching is ONLY on: society name (case-insensitive), bedrooms (digit-normalized),
-    and floor. The `tower` and `unit_no` arguments are ignored because scraper rows
-    do not have those fields populated (all NULL).
+    Schema has no tower/unit_no columns, so matching is on city + society + bedrooms
+    + floor only — the same narrowest scope shared with properties/submissions.
 
     Returns True if any collated row matches; False otherwise.
     """
@@ -177,19 +176,20 @@ def _check_collated_data(society_name, bhk_n, floor_n, tower, unit_no):
         with conn.cursor() as cur:
             sql = """
                 SELECT 1 FROM collated_data
-                WHERE LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))
+                WHERE LOWER(TRIM(COALESCE(city, '')))    = LOWER(TRIM(%s))
+                  AND LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))
                   AND REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s
                   AND COALESCE(floor, '') = %s
                 LIMIT 1
             """
-            params = [society_name, bhk_n, floor_n]
+            params = [city, society_name, bhk_n, str(floor_n)]
 
             try:
                 cur.execute(sql, params)
                 hit = cur.fetchone() is not None
                 log.info(
-                    "[dup-check] collated_data query: society=%r bhk=%r floor=%r -> match=%s",
-                    society_name, bhk_n, floor_n, hit,
+                    "[dup-check] collated_data query: city=%r society=%r bhk=%r floor=%r -> match=%s",
+                    city, society_name, bhk_n, floor_n, hit,
                 )
                 return hit
             except Exception as e:
@@ -311,8 +311,11 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         "details": {**hard_block_details, **rm_info},
                     }
 
-                # Also check external scrapers (99acres etc. via collated_data)
-                if _check_collated_data(society_name, bhk_n, floor_n, tower, unit_no):
+                # Also check external scrapers (99acres etc. via collated_data).
+                # collated_data has no tower/unit, so we match at the society+bhk+floor
+                # level. This pessimistically blocks — a scraped listing for the same
+                # floor could be the same unit the CP is submitting.
+                if _check_collated_data(city, society_name, bhk_n, floor_n):
                     rm_info = _fetch_rm(city, cp_id=cp_id)
                     return {
                         "match_level": "exact",
@@ -342,7 +345,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             submissions_hit = _check_submissions(society_id, bhk_n, floor_n, None, None)
 
             # Also check external scrapers (99acres etc. via collated_data)
-            collated_hit = _check_collated_data(society_name, bhk_n, floor_n, None, None)
+            collated_hit = _check_collated_data(city, society_name, bhk_n, floor_n)
 
             if properties_hit or submissions_hit or collated_hit:
                 rm_info = _fetch_rm(city, cp_id=cp_id)
