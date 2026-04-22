@@ -47,6 +47,7 @@ export default function BoardView({
               const missingCore = !s.asking_price || !s.seller_name;
               const isWeakMatch = s.weak_match === true;
               const isChecked = selectedIds.has(s.id);
+              const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
               const handleClick = (e) => {
                 if (bulkMode) {
                   e.stopPropagation();
@@ -93,6 +94,19 @@ export default function BoardView({
                       <span className="board-chip" style={{ background: stage.bg, color: stage.color }}>{s.bhk}</span>
                     )}
                     {s.sqft ? <span className="board-chip board-chip-plain">{s.sqft} sqft</span> : null}
+                    {isCollatedPartial && (
+                      <span
+                        className="board-chip"
+                        title="Partial match from collated_data — society + BHK + floor matched an external-scraper listing; tower/unit couldn't be verified"
+                        style={{
+                          background: '#FEF3C7',
+                          color: '#92400E',
+                          border: '1px solid #FCD34D',
+                        }}
+                      >
+                        Collated match
+                      </span>
+                    )}
                   </div>
                   <div className="board-card-bottom">
                     <span className="board-card-price">{formatPrice(s.asking_price)}</span>

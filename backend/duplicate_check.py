@@ -180,15 +180,22 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # City filter is tolerant of NULL/empty because scraped rows often
+            # don't populate city — match if they share the same city, OR if the
+            # collated row has no city at all. Society name is the primary anchor.
             sql = """
                 SELECT 1 FROM collated_data
-                WHERE LOWER(TRIM(COALESCE(city, '')))    = LOWER(TRIM(%s))
-                  AND LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))
+                WHERE LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))
                   AND REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s
                   AND COALESCE(floor, '') = %s
+                  AND (
+                        city IS NULL
+                     OR TRIM(city) = ''
+                     OR LOWER(TRIM(city)) = LOWER(TRIM(%s))
+                  )
                 LIMIT 1
             """
-            params = [city, society_name, bhk_n, str(floor_n)]
+            params = [society_name, bhk_n, str(floor_n), city]
 
             try:
                 cur.execute(sql, params)
