@@ -163,9 +163,9 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
 def _check_collated_data(society_name, bhk_n, floor_n, tower, unit_no):
     """Query the collated_data table (external-source scraper listings) for a match.
 
-    Matches on society name (case-insensitive), BHK (digit-normalized), and floor.
-    Tower/unit are optional filters — and only apply if the collated row actually
-    has those values populated (they're nullable; scrapers may not have them).
+    Matching is ONLY on: society name (case-insensitive), bedrooms (digit-normalized),
+    and floor. The `tower` and `unit_no` arguments are ignored because scraper rows
+    do not have those fields populated (all NULL).
 
     Returns True if any collated row matches; False otherwise.
     """
@@ -175,34 +175,23 @@ def _check_collated_data(society_name, bhk_n, floor_n, tower, unit_no):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            conditions = [
-                "LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))",
-                "REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s",
-                "COALESCE(floor, '') = %s",
-            ]
+            sql = """
+                SELECT 1 FROM collated_data
+                WHERE LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))
+                  AND REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s
+                  AND COALESCE(floor, '') = %s
+                LIMIT 1
+            """
             params = [society_name, bhk_n, floor_n]
-
-            # Only apply tower/unit filter if CP provided them AND collated row has them.
-            # If collated row's tower/unit is NULL, we pessimistically still match —
-            # i.e. a scraper listing without tower info matches a CP's Tower J entry,
-            # because we can't prove otherwise. This errs on blocking for safety
-            # (CP can still "Add anyway" for admin review).
-            if tower:
-                conditions.append(
-                    "(tower IS NULL OR UPPER(TRIM(tower)) = UPPER(TRIM(%s)))"
-                )
-                params.append(tower)
-            if unit_no:
-                conditions.append(
-                    "(unit_no IS NULL OR UPPER(TRIM(unit_no)) = UPPER(TRIM(%s)))"
-                )
-                params.append(unit_no)
-
-            sql = f"SELECT 1 FROM collated_data WHERE {' AND '.join(conditions)} LIMIT 1"
 
             try:
                 cur.execute(sql, params)
-                return cur.fetchone() is not None
+                hit = cur.fetchone() is not None
+                log.info(
+                    "[dup-check] collated_data query: society=%r bhk=%r floor=%r -> match=%s",
+                    society_name, bhk_n, floor_n, hit,
+                )
+                return hit
             except Exception as e:
                 # Likely cause: collated_data table doesn't exist yet.
                 # Fail closed (return False) so we don't break dup-check entirely.
