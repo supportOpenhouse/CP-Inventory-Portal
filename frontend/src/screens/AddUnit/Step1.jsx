@@ -186,37 +186,43 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
         </div>
         <div className="society-search-wrap">
           <input
-            type="text"
             className="input-field"
-            placeholder={form.society ? form.society.name : `Search societies in ${city}...`}
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setDropdownOpen(true); }}
-            onFocus={() => setDropdownOpen(true)}
+            placeholder={`Search societies in ${city}...`}
+            value={form.society?.name || search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setDropdownOpen(true);
+              if (form.society) {
+                setForm({
+                  ...form, society: null, tower: '', unitNo: '',
+                  sqft: '', bhk: '', floor: '',
+                  forceCreate: false, skipUnitDetails: false,
+                });
+              }
+            }}
+            onFocus={() => {
+              if (!form.society) setDropdownOpen(true);
+            }}
           />
-          {dropdownOpen && (searchLoading || searchResults.length > 0) && (
+          {dropdownOpen && search.length >= 2 && (
             <div className="society-dropdown">
-              {searchLoading && <div className="society-dropdown-item">Searching…</div>}
-              {!searchLoading && searchResults.length === 0 && debouncedSearch.length >= 2 && (
-                <div className="society-dropdown-item" style={{ color: 'var(--oh-gray)' }}>
-                  No societies match
-                </div>
-              )}
-              {!searchLoading && searchResults.map((s) => (
-                <div key={s.id} className="society-dropdown-item" onClick={() => selectSociety(s)}>
-                  <div style={{ fontWeight: 600 }}>{s.name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--oh-gray)' }}>
-                    {s.locality ? `${s.locality} · ` : ''}{s.city}
+              {searchLoading ? (
+                <div className="society-loading">Searching…</div>
+              ) : searchResults.length === 0 ? (
+                <div className="society-loading">No matches</div>
+              ) : (
+                searchResults.map((s) => (
+                  <div key={s.id} className="society-option" onClick={() => selectSociety(s)}>
+                    <span>{s.name}</span>
+                    <span className="society-sector">{s.locality || s.city}</span>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           )}
         </div>
-        {form.society && (
-          <div className="optional-hint" style={{ marginTop: 8, color: 'var(--oh-charcoal)' }}>
-            📍 Selected: <strong>{form.society.name}</strong>
-            {form.society.locality ? ` (${form.society.locality})` : ''}
-          </div>
+        {form.society?.locality && (
+          <div className="optional-hint">📍 {form.society.locality} · {form.society.city}</div>
         )}
       </div>
 

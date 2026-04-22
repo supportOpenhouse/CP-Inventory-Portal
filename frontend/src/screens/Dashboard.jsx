@@ -7,15 +7,14 @@ import { formatPrice } from '../format';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import Chatbot from './Chatbot';
 
-// Stages shown as filter pills. "All" is a special pseudo-filter.
-const FILTER_OPTIONS = [
-  'All',
-  'Submitted',
-  'Evaluation',
-  'Offer Given',
-  'Visit Scheduled',
-  'Unapproved',
-  'Rejected',
+// Stats / filter boxes shown at the top. Clicking a box filters the list.
+// Order: Submitted, Unapproved (Pending), Offers, Closures, Rejected.
+const FILTER_BOXES = [
+  { key: 'All',        label: 'All',            color: '#6366F1' },
+  { key: 'Submitted',  label: 'Submitted',      color: '#6366F1' },
+  { key: 'Unapproved', label: 'Pending Review', color: '#B8860B' },
+  { key: 'Offer Given', label: 'Offers',        color: '#FF6B2B' },
+  { key: 'Rejected',   label: 'Rejected',       color: '#DC2626' },
 ];
 
 function badgeClass(status) {
@@ -43,12 +42,11 @@ export default function Dashboard({ onAdd }) {
   const [state, setState] = useState({
     loading: true,
     submissions: [],
-    stats: { submitted: 0, offers: 0, closures: 0 },
     error: null,
   });
   const [rmPhone, setRmPhone] = useState(null);
   const [filter, setFilter] = useState('All');
-  const [counterBusy, setCounterBusy] = useState({});  // { [submissionId]: 'accepting' | 'rejecting' }
+  const [counterBusy, setCounterBusy] = useState({});
 
   const loadSubmissions = () => {
     setState((st) => ({ ...st, loading: true }));
@@ -56,14 +54,12 @@ export default function Dashboard({ onAdd }) {
       setState({
         loading: false,
         submissions: data.submissions || [],
-        stats: data.stats || { submitted: 0, offers: 0, closures: 0 },
         error: null,
       });
     }).catch((err) => {
       setState({
         loading: false,
         submissions: [],
-        stats: { submitted: 0, offers: 0, closures: 0 },
         error: err instanceof ApiError ? err.message : 'Failed to load your listings',
       });
     });
@@ -72,15 +68,30 @@ export default function Dashboard({ onAdd }) {
   useEffect(() => {
     let alive = true;
     loadSubmissions();
-    if (user?.city) {
-      // RM phone lookup logic retained from previous code
-      api.getFaqs?.();
-    }
+    // Resolve CP's RM phone for the chatbot fallback
+    api.getRmContacts()
+      .then((data) => {
+        if (!alive) return;
+        const contacts = data?.contacts || {};
+        const myRm = user.city && contacts[user.city];
+        setRmPhone(myRm?.phone || '+919555666059');
+      })
+      .catch(() => {
+        if (alive) setRmPhone('+919555666059');
+      });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.city]);
 
-  // Filter submissions by chosen stage
+  // Per-stage counts (used by the boxes and empty-state messaging)
+  const counts = useMemo(() => {
+    const c = { All: state.submissions.length };
+    for (const s of state.submissions) {
+      c[s.status] = (c[s.status] || 0) + 1;
+    }
+    return c;
+  }, [state.submissions]);
+
   const visibleSubmissions = useMemo(() => {
     if (filter === 'All') return state.submissions;
     return state.submissions.filter((s) => s.status === filter);
@@ -92,9 +103,7 @@ export default function Dashboard({ onAdd }) {
       await api.counterOfferResponse(submissionId, action);
       await loadSubmissions();
     } catch (err) {
-      alert(
-        err instanceof ApiError ? err.message : 'Could not record your response. Please try again.'
-      );
+      alert(err instanceof ApiError ? err.message : 'Could not record your response.');
     } finally {
       setCounterBusy((b) => {
         const next = { ...b };
@@ -106,81 +115,99 @@ export default function Dashboard({ onAdd }) {
 
   return (
     <div className="app-shell">
+      {/* Header: name + CP code on left; city + logout top-right */}
       <div className="header">
         <div>
           <div style={{ fontSize: 16, fontWeight: 700 }}>Hi, {user.name || 'there'}</div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-            {user.cp_code} · {user.company || '—'} · {user.city || 'All cities'}
+            {user.cp_code} · {user.company || '—'}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button className="add-btn" onClick={onAdd}>+</button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#fff',
+              background: 'rgba(255,255,255,0.15)',
+              padding: '3px 10px',
+              borderRadius: 999,
+              letterSpacing: '0.3px',
+            }}
+          >
+            📍 {user.city || 'All'}
+          </div>
           <button
             className="back-btn"
             onClick={logout}
             title="Log out"
-            style={{ fontSize: 12, padding: '6px 10px' }}
+            style={{ fontSize: 11, padding: '4px 10px' }}
           >
             Log out
           </button>
         </div>
       </div>
 
-      <div className="dash-stats">
-        <div className="dash-stat">
-          <div className="dash-stat-num">{state.stats.submitted}</div>
-          <div className="dash-stat-label">Submitted</div>
-        </div>
-        <div className="dash-stat">
-          <div className="dash-stat-num" style={{ color: 'var(--oh-orange)' }}>{state.stats.offers}</div>
-          <div className="dash-stat-label">Offers</div>
-        </div>
-        <div className="dash-stat">
-          <div className="dash-stat-num" style={{ color: 'var(--oh-green)' }}>{state.stats.closures}</div>
-          <div className="dash-stat-label">Closures</div>
-        </div>
-      </div>
-
-      {/* Status filter pills */}
+      {/* 5 clickable filter/stat boxes */}
       <div
         style={{
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5, 1fr)',
           gap: 8,
-          overflowX: 'auto',
-          padding: '8px 16px 12px',
-          whiteSpace: 'nowrap',
+          padding: '12px 16px 8px',
         }}
       >
-        {FILTER_OPTIONS.map((f) => {
-          const active = filter === f;
-          const count =
-            f === 'All'
-              ? state.submissions.length
-              : state.submissions.filter((s) => s.status === f).length;
+        {FILTER_BOXES.map((box) => {
+          const active = filter === box.key;
+          const count = counts[box.key] || 0;
           return (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
+              key={box.key}
+              onClick={() => setFilter(box.key)}
               style={{
-                padding: '6px 12px',
-                borderRadius: 999,
-                border: `1.5px solid ${active ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
-                background: active ? 'var(--oh-orange)' : '#fff',
+                padding: '10px 6px',
+                borderRadius: 10,
+                border: `1.5px solid ${active ? box.color : 'var(--oh-border)'}`,
+                background: active ? box.color : '#fff',
                 color: active ? '#fff' : 'var(--oh-charcoal)',
-                fontSize: 12,
-                fontWeight: 600,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
-                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 64,
+                transition: 'all 0.15s',
               }}
             >
-              {f === 'Unapproved' ? 'Pending Review' : f} {count > 0 && <span style={{ opacity: 0.7 }}>({count})</span>}
+              <div style={{
+                fontSize: 20,
+                fontWeight: 700,
+                color: active ? '#fff' : box.color,
+                lineHeight: 1,
+                marginBottom: 4,
+              }}>
+                {count}
+              </div>
+              <div style={{
+                fontSize: 10,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.3px',
+                textAlign: 'center',
+                lineHeight: 1.2,
+                opacity: active ? 0.95 : 0.7,
+              }}>
+                {box.label}
+              </div>
             </button>
           );
         })}
       </div>
 
-      <div className="section-title">Your Inventory</div>
+      <div className="section-title">
+        {filter === 'All' ? 'Your Inventory' : `${FILTER_BOXES.find(b => b.key === filter)?.label || filter}`}
+      </div>
 
       {state.loading ? (
         <>
@@ -198,7 +225,7 @@ export default function Dashboard({ onAdd }) {
           <p>
             {filter === 'All'
               ? <>No units submitted yet.<br />Tap + to add your first unit.</>
-              : <>No units in <strong>{filter === 'Unapproved' ? 'Pending Review' : filter}</strong>.</>}
+              : <>No units in this stage.</>}
           </p>
         </div>
       ) : (
@@ -250,7 +277,6 @@ export default function Dashboard({ onAdd }) {
                 </div>
               </div>
 
-              {/* Counter offer banner */}
               {hasPendingCounter && (
                 <div
                   style={{
@@ -261,7 +287,10 @@ export default function Dashboard({ onAdd }) {
                     borderRadius: 10,
                   }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--oh-orange)', letterSpacing: '0.5px', marginBottom: 4 }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, color: 'var(--oh-orange)',
+                    letterSpacing: '0.5px', marginBottom: 4,
+                  }}>
                     COUNTER OFFER FROM OPENHOUSE
                   </div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--oh-charcoal)' }}>
@@ -305,7 +334,9 @@ export default function Dashboard({ onAdd }) {
         })
       )}
 
-      <Chatbot />
+      {/* Floating-action-button — restored from pre-revamp UI */}
+      <button className="fab" onClick={onAdd} title="Add unit">+</button>
+      <Chatbot rmPhone={rmPhone} />
     </div>
   );
 }

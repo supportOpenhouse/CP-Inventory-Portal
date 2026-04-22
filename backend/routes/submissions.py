@@ -230,7 +230,7 @@ def check_duplicate_endpoint():
     return jsonify(result), 200
 
 
-@bp.post("/<int:sid>/counter-offer-response")
+@bp.post("/submissions/<int:sid>/counter-offer-response")
 @require_auth
 def counter_offer_response(sid):
     """CP accepts or rejects a pending counter offer from the admin.
