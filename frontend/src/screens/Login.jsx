@@ -113,7 +113,7 @@ export default function Login() {
     <div className="app-shell">
       <div className="login-hero">
         <img src="/logo_long.png" alt="Openhouse" className="login-logo-img" />
-        <div className="login-tagline">Channel Partner Portal</div>
+        <div className="login-tagline">Sourcing Portal</div>
       </div>
 
       {step === 'phone' && (
@@ -157,7 +157,7 @@ export default function Login() {
                 Phone not registered
               </div>
               <p style={{ fontSize: 13, color: 'var(--oh-gray)', lineHeight: 1.5 }}>
-                We couldn't find this phone in our channel partner list. Please reach
+                We couldn't find this phone in our sourcing partner list. Please reach
                 out to your Openhouse Relationship Manager to get onboarded.
               </p>
 
