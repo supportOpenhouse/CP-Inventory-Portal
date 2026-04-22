@@ -6,16 +6,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatPrice } from '../format';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import Chatbot from './Chatbot';
+import SubmissionDetailModal from './SubmissionDetailModal';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
-// Order: Submitted, Unapproved (Pending), Offers, Closures, Rejected.
+// Note: 'Rejected' is intentionally NOT in the filter row (still visible under 'All').
 const FILTER_BOXES = [
   { key: 'All',         label: 'All',            color: '#6366F1' },
   { key: 'Unapproved',  label: 'Pending Review', color: '#B8860B' },
   { key: 'Submitted',   label: 'Submitted',      color: '#6366F1' },
   { key: 'Offer Given', label: 'Offers',         color: '#FF6B2B' },
   { key: 'Closed',      label: 'Closures',       color: '#10B981' },
-  { key: 'Rejected',    label: 'Rejected',       color: '#DC2626' },
 ];
 
 function badgeClass(status) {
@@ -48,6 +48,10 @@ export default function Dashboard({ onAdd }) {
   const [rmPhone, setRmPhone] = useState(null);
   const [filter, setFilter] = useState('All');
   const [counterBusy, setCounterBusy] = useState({});
+  // Per-submission counter-offer comment text (optional CP note)
+  const [counterComment, setCounterComment] = useState({});
+  // Submission opened in the full-detail modal (null = modal closed)
+  const [expandedSubmission, setExpandedSubmission] = useState(null);
 
   const loadSubmissions = () => {
     setState((st) => ({ ...st, loading: true }));
@@ -85,10 +89,12 @@ export default function Dashboard({ onAdd }) {
   }, [user.city]);
 
   // Synthetic status used for filtering/counting only (actual DB status unchanged).
-  // A pending counter offer appears under the 'Offers' filter regardless of the real
-  // stage, so CPs can find listings awaiting their accept/reject in one place.
+  // While admin has a submission in 'Evaluation' AND/OR there's a pending counter offer,
+  // the CP sees it in the 'Submitted' filter. The counter offer banner still appears on
+  // the card itself. Once the CP accepts or admin moves to Offer Given, it moves.
   const syntheticStatus = (s) => {
-    if (s.counter_offer_status === 'pending') return 'Offer Given';
+    if (s.counter_offer_status === 'pending') return 'Submitted';
+    if (s.status === 'Evaluation') return 'Submitted';
     return s.status;
   };
 
@@ -109,8 +115,14 @@ export default function Dashboard({ onAdd }) {
 
   const handleCounterResponse = async (submissionId, action) => {
     setCounterBusy((b) => ({ ...b, [submissionId]: action }));
+    const comment = counterComment[submissionId] || '';
     try {
-      await api.counterOfferResponse(submissionId, action);
+      await api.counterOfferResponse(submissionId, action, comment);
+      setCounterComment((c) => {
+        const next = { ...c };
+        delete next[submissionId];
+        return next;
+      });
       await loadSubmissions();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Could not record your response.');
@@ -162,7 +174,7 @@ export default function Dashboard({ onAdd }) {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(6, 1fr)',
+          gridTemplateColumns: 'repeat(5, 1fr)',
           gap: 8,
           padding: '12px 16px 8px',
         }}
@@ -245,7 +257,19 @@ export default function Dashboard({ onAdd }) {
           const busy = counterBusy[s.id];
           return (
             <div className="unit-card" key={s.id}>
-              <div className="unit-card-body" style={{ display: 'flex', gap: 14 }}>
+              <div
+                className="unit-card-body"
+                style={{ display: 'flex', gap: 14, cursor: 'pointer' }}
+                onClick={() => setExpandedSubmission(s)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setExpandedSubmission(s);
+                  }
+                }}
+              >
                 {thumbId && (
                   <img
                     src={thumbnailUrl(thumbId, 80)}
@@ -306,7 +330,32 @@ export default function Dashboard({ onAdd }) {
                   <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--oh-charcoal)' }}>
                     {formatPrice(s.counter_offer_price)}
                   </div>
-                  <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+
+                  {/* Optional CP comment */}
+                  <textarea
+                    placeholder="Add a note (optional)"
+                    rows={2}
+                    value={counterComment[s.id] || ''}
+                    onChange={(e) =>
+                      setCounterComment((c) => ({ ...c, [s.id]: e.target.value }))
+                    }
+                    onClick={(e) => e.stopPropagation()}
+                    disabled={!!busy}
+                    maxLength={500}
+                    style={{
+                      width: '100%',
+                      marginTop: 10,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--oh-border)',
+                      fontFamily: 'inherit',
+                      fontSize: 13,
+                      resize: 'none',
+                      background: '#fff',
+                    }}
+                  />
+
+                  <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                     <button
                       type="button"
                       onClick={() => handleCounterResponse(s.id, 'reject')}
@@ -347,6 +396,13 @@ export default function Dashboard({ onAdd }) {
       {/* Floating-action-button — restored from pre-revamp UI */}
       <button className="fab" onClick={onAdd} title="Add unit">+</button>
       <Chatbot rmPhone={rmPhone} />
+
+      {expandedSubmission && (
+        <SubmissionDetailModal
+          submission={expandedSubmission}
+          onClose={() => setExpandedSubmission(null)}
+        />
+      )}
     </div>
   );
 }

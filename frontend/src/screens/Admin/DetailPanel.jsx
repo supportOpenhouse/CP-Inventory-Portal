@@ -176,21 +176,6 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
     }
   };
 
-  const handleDelete = async () => {
-    if (busy) return;
-    if (!confirm('Archive this submission? It will be hidden from lists but kept in DB.')) return;
-    setBusy(true);
-    try {
-      await api.adminDeleteSubmission(submissionId);
-      onChanged?.();
-      onClose?.();
-    } catch (err) {
-      alert(err.message || 'Failed to archive');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const assignToRm = async (rmIdRaw) => {
     if (busy) return;
     const rmId = rmIdRaw ? parseInt(rmIdRaw, 10) : null;
@@ -303,7 +288,6 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
         {s && isAdmin && !editMode && (
           <div className="admin-panel-actions">
             <button className="btn-secondary-sm" onClick={startEdit} disabled={busy}>✏ Edit</button>
-            <button className="btn-danger-sm" onClick={handleDelete} disabled={busy}>🗑 Archive</button>
           </div>
         )}
 
@@ -397,6 +381,27 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       <div style={{ fontSize: 11, color: 'var(--oh-gray)' }}>
                         Sent {s.counter_offer_at ? formatDateTime(s.counter_offer_at) : '—'}
                       </div>
+                      {s.counter_offer_response_text && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            padding: '8px 10px',
+                            background: 'rgba(255,255,255,0.7)',
+                            border: '1px solid rgba(0,0,0,0.08)',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            color: 'var(--oh-charcoal)',
+                          }}
+                        >
+                          <div style={{
+                            fontSize: 10, fontWeight: 700, color: 'var(--oh-gray)',
+                            letterSpacing: '0.5px', marginBottom: 2, textTransform: 'uppercase',
+                          }}>
+                            CP note
+                          </div>
+                          "{s.counter_offer_response_text}"
+                        </div>
+                      )}
                     </div>
                   )}
 

@@ -25,9 +25,12 @@ def list_my_submissions():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, public_id, society_id, society_name, tower, unit_no, floor,
-                       sqft, bhk, furnishing, asking_price, closing_price,
+                       sqft, bhk, furnishing, registry_status, parking, extra_rooms,
+                       exit_facing, balcony_facing, balcony_view,
+                       asking_price, closing_price,
                        status, photos, submitted_at,
-                       counter_offer_price, counter_offer_status, counter_offer_at
+                       counter_offer_price, counter_offer_status, counter_offer_at,
+                       counter_offer_response_text
                 FROM submissions
                 WHERE cp_id = %s
                 ORDER BY submitted_at DESC
@@ -243,6 +246,12 @@ def counter_offer_response(sid):
     if action not in ("accept", "reject"):
         return jsonify({"error": "action must be 'accept' or 'reject'"}), 400
 
+    # Optional comment from CP (e.g. "counter too low", "price is fine")
+    comment = (data.get("comment") or "").strip()
+    if len(comment) > 2000:
+        comment = comment[:2000]
+    comment_or_none = comment or None
+
     new_status = "Offer Given" if action == "accept" else "Rejected"
     new_co_status = "accepted" if action == "accept" else "rejected"
     event_text = (
@@ -250,6 +259,8 @@ def counter_offer_response(sid):
         if action == "accept"
         else "CP rejected counter offer"
     )
+    if comment:
+        event_text = f'{event_text} — "{comment}"'
 
     conn = get_app_conn()
     try:
@@ -276,10 +287,11 @@ def counter_offer_response(sid):
                 """
                 UPDATE submissions
                 SET status = %s,
-                    counter_offer_status = %s
+                    counter_offer_status = %s,
+                    counter_offer_response_text = %s
                 WHERE id = %s
                 """,
-                (new_status, new_co_status, sid),
+                (new_status, new_co_status, comment_or_none, sid),
             )
             cur.execute(
                 """
@@ -294,3 +306,39 @@ def counter_offer_response(sid):
         put_app_conn(conn)
 
     return jsonify({"ok": True, "new_status": new_status}), 200
+
+@bp.get("/submissions/<int:sid>/events")
+@require_auth
+def list_my_submission_events(sid: int):
+    """Return the event timeline for one of the CP's own submissions.
+
+    Used by the CP dashboard's expand-modal "Timeline" section.
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Verify this submission belongs to this CP
+            cur.execute(
+                "SELECT cp_id FROM submissions WHERE id = %s",
+                (sid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Submission not found"}), 404
+            if row["cp_id"] != g.user["cp_id"]:
+                return jsonify({"error": "Not your submission"}), 403
+
+            cur.execute(
+                """
+                SELECT id, kind, from_status, to_status, text, created_at
+                FROM submission_events
+                WHERE submission_id = %s
+                ORDER BY created_at ASC
+                """,
+                (sid,),
+            )
+            events = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"events": events}), 200

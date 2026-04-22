@@ -80,11 +80,14 @@ export const api = {
     request('/submissions', { method: 'POST', body: payload }),
   checkDuplicate: (payload) =>
     request('/check-duplicate', { method: 'POST', body: payload }),
-  // CP accepts or rejects a pending counter offer
-  counterOfferResponse: (submissionId, action /* 'accept' | 'reject' */) =>
+  // CP accepts or rejects a pending counter offer (optional comment)
+  counterOfferResponse: (submissionId, action /* 'accept' | 'reject' */, comment = '') =>
     request(`/submissions/${submissionId}/counter-offer-response`, {
-      method: 'POST', body: { action },
+      method: 'POST', body: { action, comment },
     }),
+  // Timeline for a CP's own submission (detail modal)
+  listMySubmissionEvents: (submissionId) =>
+    request(`/submissions/${submissionId}/events`),
 
   // Admin (staff only)
   adminListSubmissions: (filters = {}) =>
