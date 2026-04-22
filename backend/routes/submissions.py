@@ -130,6 +130,15 @@ def create_submission():
     # where the "partial match from collated_data" highlight is meaningful.
     collated_match = bool(dup.get("collated_match")) and initial_status == "Unapproved"
 
+    import logging
+    logging.getLogger(__name__).info(
+        "[submission] cp_id=%s society=%r bhk=%r floor=%r skip_unit_details=%s "
+        "dup.block=%s dup.collated_match=%s -> initial_status=%s collated_match_to_persist=%s",
+        g.user.get("cp_id"), society_name, data.get("bhk"), data.get("floor"),
+        skip_unit_details, dup.get("block"), dup.get("collated_match"),
+        initial_status, collated_match,
+    )
+
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:

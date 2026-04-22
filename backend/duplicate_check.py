@@ -180,14 +180,17 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # Both sides get digit-only normalization for floor and bedrooms, and
+            # whitespace-collapsed lower-case for society, to absorb scraper-side
+            # formatting quirks ("18 ", "F18", "  Antriksh  Heights  ", etc.).
             # City filter is tolerant of NULL/empty because scraped rows often
-            # don't populate city — match if they share the same city, OR if the
-            # collated row has no city at all. Society name is the primary anchor.
+            # don't populate city.
             sql = """
                 SELECT 1 FROM collated_data
-                WHERE LOWER(TRIM(COALESCE(society, ''))) = LOWER(TRIM(%s))
+                WHERE REGEXP_REPLACE(LOWER(TRIM(COALESCE(society, ''))), '\\s+', ' ', 'g')
+                      = REGEXP_REPLACE(LOWER(TRIM(%s)), '\\s+', ' ', 'g')
                   AND REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s
-                  AND COALESCE(floor, '') = %s
+                  AND REGEXP_REPLACE(COALESCE(floor, ''),    '[^0-9]', '', 'g') = %s
                   AND (
                         city IS NULL
                      OR TRIM(city) = ''
