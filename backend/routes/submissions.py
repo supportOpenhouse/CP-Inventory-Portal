@@ -67,6 +67,7 @@ def create_submission():
 
     conn = get_app_conn()
     city_name = None
+    society_city_id = None
     try:
         with conn.cursor() as cur:
             cur.execute("""
@@ -80,22 +81,9 @@ def create_submission():
                 return jsonify({"error": "Invalid society_id"}), 400
             society_city_id = soc_row["city_id"]
             city_name = soc_row["city_name"]
-
-            if not g.user.get("is_admin", False):
-                cur.execute(
-                    "SELECT city_id FROM channel_partners WHERE id = %s",
-                    (g.user["cp_id"],),
-                )
-                cp_row = cur.fetchone()
-                if (
-                    not cp_row
-                    or cp_row["city_id"] is None
-                    or cp_row["city_id"] != society_city_id
-                ):
-                    return (
-                        jsonify({"error": "This society is not in your service area"}),
-                        403,
-                    )
+            # Service-area restriction intentionally removed: the Step 1 city dropdown
+            # lets CPs pick any of the serviceable cities (Gurgaon, Noida, Ghaziabad),
+            # so they can legitimately submit outside their registered city.
     finally:
         put_app_conn(conn)
 

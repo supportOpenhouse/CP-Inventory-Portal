@@ -145,7 +145,7 @@ export default function Dashboard({ onAdd }) {
             {user.cp_code} · {user.company || '—'}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
           <div
             style={{
               fontSize: 11,
@@ -160,10 +160,20 @@ export default function Dashboard({ onAdd }) {
             📍 {user.city || 'All'}
           </div>
           <button
-            className="back-btn"
             onClick={logout}
             title="Log out"
-            style={{ fontSize: 11, padding: '4px 10px' }}
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#fff',
+              background: 'rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.3)',
+              padding: '4px 12px',
+              borderRadius: 999,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              letterSpacing: '0.3px',
+            }}
           >
             Log out
           </button>

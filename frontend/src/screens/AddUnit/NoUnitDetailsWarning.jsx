@@ -21,16 +21,12 @@ export default function NoUnitDetailsWarning({ onContinue, onBack }) {
             className="dup-card-banner-text"
             style={{ whiteSpace: 'pre-line' }}
           >
-            Providing unit details{'\n'}helps register it in your name
+            Add unit details to register it in your name,{'\n'}if not already registered.
           </div>
         </div>
 
         <div className="dup-card-body">
-          <div className="dup-card-message" style={{ lineHeight: 1.5 }}>
-            Without tower and unit number, this listing will be flagged for admin review before it enters active inventory. Providing exact details helps register this unit in your name faster.
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
             <button
               type="button"
               onClick={onContinue}

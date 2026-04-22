@@ -45,8 +45,8 @@ export default function SuccessScreen({ submissionId, publicId, status, onDone }
         <p style={{ fontSize: 14, color: 'var(--oh-gray)', lineHeight: 1.5, marginBottom: 20 }}>
           {isUnapproved ? (
             <>
-              Your listing is being reviewed by our admin team.<br />
-              You'll be notified once approved.
+              Your listing is being reviewed.<br />
+              You'll be notified in next 24 hours.
             </>
           ) : (
             <>
@@ -81,10 +81,6 @@ export default function SuccessScreen({ submissionId, publicId, status, onDone }
             {displayId}
           </div>
         </div>
-
-        <p style={{ fontSize: 12, color: 'var(--oh-gray)', marginTop: 14 }}>
-          Save this ID for your records.
-        </p>
       </div>
 
       <div style={{ padding: '0 20px' }}>
