@@ -1,56 +1,103 @@
 """Public lookup endpoints: RM contacts, FAQs."""
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, g, jsonify
 
 from db import get_app_conn, put_app_conn
+from auth import require_auth
 
 bp = Blueprint("meta", __name__, url_prefix="/api")
 
 
-@bp.get("/rm-contacts")
-def rm_contacts():
-    """Returns { 'contacts': { cityName: { name, phone } } }.
+@bp.get("/my-rm")
+@require_auth
+def my_rm():
+    """Returns { name, phone } for the logged-in CP's assigned RM.
 
-    Data source: `channel_partners` rows with role='rm' and is_active=TRUE,
-    grouped by their city. For each city we return the first active RM
-    (by name ASC, tie-broken by id ASC). If a city has no active RM, we
-    fall back to the legacy `cities.rm_name / cities.rm_phone` default
-    so the endpoint never returns a city without any contact.
+    Schema: channel_partners.rm_id (FK) -> rms.id. The `rms` table carries
+    the RM's actual contact details (id, name, phone, email, is_active).
+
+    Fallback order:
+      1. CP's assigned RM from rms table (via channel_partners.rm_id FK)
+      2. First active RM in the CP's city (channel_partners role='rm')
+      3. Legacy cities.rm_name / rm_phone default
+      4. null — caller should handle gracefully
     """
+    cp_id = g.user["cp_id"]
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            # DISTINCT ON (city) picks the first RM per city per our ORDER BY.
-            cur.execute("""
-                SELECT DISTINCT ON (c.id)
-                       c.name AS city_name,
-                       cp.name AS rm_name,
-                       cp.phone AS rm_phone
-                FROM cities c
-                JOIN channel_partners cp
-                  ON cp.city_id = c.id
-                 AND cp.role = 'rm'
-                 AND cp.is_active = TRUE
-                ORDER BY c.id, cp.name ASC, cp.id ASC
-            """)
-            from_rms = {
-                r["city_name"]: {"name": r["rm_name"], "phone": r["rm_phone"]}
-                for r in cur.fetchall()
-            }
+            # 1. Direct lookup via channel_partners.rm_id -> rms.id
+            try:
+                cur.execute(
+                    """
+                    SELECT r.name AS name, r.phone AS phone
+                    FROM channel_partners cp
+                    JOIN rms r ON r.id = cp.rm_id
+                    WHERE cp.id = %s AND cp.rm_id IS NOT NULL
+                    """,
+                    (cp_id,),
+                )
+                row = cur.fetchone()
+                if row and row.get("phone"):
+                    return jsonify({"rm": {"name": row["name"], "phone": row["phone"]}}), 200
+            except Exception:
+                # Table or column might not exist yet — fall through to fallbacks
+                conn.rollback()
 
-            # Fallback: any city without an RM in the join above uses
-            # the legacy default (cities.rm_name / cities.rm_phone).
+            # 2. First active RM in the CP's city (from channel_partners role='rm')
+            cur.execute(
+                """
+                SELECT rm.name AS name, rm.phone AS phone
+                FROM channel_partners me
+                JOIN channel_partners rm
+                  ON rm.city_id = me.city_id
+                 AND rm.role = 'rm'
+                 AND rm.is_active = TRUE
+                WHERE me.id = %s
+                ORDER BY rm.name ASC, rm.id ASC
+                LIMIT 1
+                """,
+                (cp_id,),
+            )
+            row = cur.fetchone()
+            if row and row.get("phone"):
+                return jsonify({"rm": {"name": row["name"], "phone": row["phone"]}}), 200
+
+            # 3. Legacy cities.rm_name / rm_phone default
+            cur.execute(
+                """
+                SELECT c.rm_name AS name, c.rm_phone AS phone
+                FROM channel_partners cp
+                LEFT JOIN cities c ON c.id = cp.city_id
+                WHERE cp.id = %s
+                """,
+                (cp_id,),
+            )
+            row = cur.fetchone()
+            if row and row.get("phone"):
+                return jsonify({"rm": {"name": row["name"], "phone": row["phone"]}}), 200
+
+            return jsonify({"rm": None}), 200
+    finally:
+        put_app_conn(conn)
+
+
+@bp.get("/rm-contacts")
+def rm_contacts():
+    """Returns { 'contacts': { cityName: { name, phone } } }."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
             cur.execute(
                 "SELECT name, rm_name, rm_phone FROM cities ORDER BY name"
             )
-            result = {}
-            for r in cur.fetchall():
-                city = r["name"]
-                if city in from_rms:
-                    result[city] = from_rms[city]
-                elif r["rm_name"]:
-                    result[city] = {"name": r["rm_name"], "phone": r["rm_phone"]}
-        return jsonify({"contacts": result}), 200
+            rows = cur.fetchall()
+        return jsonify({
+            "contacts": {
+                r["name"]: {"name": r["rm_name"], "phone": r["rm_phone"]}
+                for r in rows
+            }
+        }), 200
     finally:
         put_app_conn(conn)
 
