@@ -45,6 +45,7 @@ export default function Dashboard({ onAdd }) {
     error: null,
   });
   const [rmPhone, setRmPhone] = useState(null);
+  const [rmName, setRmName] = useState(null);
   const [filter, setFilter] = useState('All');
   const [counterBusy, setCounterBusy] = useState({});
   // Per-submission counter-offer comment text (optional CP note)
@@ -72,16 +73,20 @@ export default function Dashboard({ onAdd }) {
   useEffect(() => {
     let alive = true;
     loadSubmissions();
-    // Resolve CP's RM phone for the chatbot fallback
+    // Resolve CP's RM phone + name (used by WhatsApp FAB + Contact RM buttons)
     api.getRmContacts()
       .then((data) => {
         if (!alive) return;
         const contacts = data?.contacts || {};
         const myRm = user.city && contacts[user.city];
         setRmPhone(myRm?.phone || '+919555666059');
+        setRmName(myRm?.name || 'Openhouse RM');
       })
       .catch(() => {
-        if (alive) setRmPhone('+919555666059');
+        if (alive) {
+          setRmPhone('+919555666059');
+          setRmName('Openhouse RM');
+        }
       });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -439,6 +444,8 @@ export default function Dashboard({ onAdd }) {
       {expandedSubmission && (
         <SubmissionDetailModal
           submission={expandedSubmission}
+          rmPhone={rmPhone}
+          rmName={rmName}
           onClose={() => setExpandedSubmission(null)}
         />
       )}
