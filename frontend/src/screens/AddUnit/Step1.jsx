@@ -11,12 +11,12 @@ import NoUnitDetailsWarning from './NoUnitDetailsWarning';
 const BHK_OPTIONS = ['2 BHK', '3 BHK', '4 BHK'];
 const CITY_OPTIONS = ['Gurgaon', 'Noida', 'Ghaziabad'];
 
-// Floor dropdown: Ground, 1..50, Top. Stored as VARCHAR — legacy values ("B1", "LG", etc.)
-// remain valid in the DB; new submissions always pick from this list.
+// Floor dropdown order: Ground, Top, 1..50. Stored as VARCHAR — legacy values
+// ("B1", "LG", etc.) remain valid in the DB; new submissions pick from this list.
 const FLOOR_OPTIONS = [
   'Ground',
-  ...Array.from({ length: 50 }, (_, i) => String(i + 1)),
   'Top',
+  ...Array.from({ length: 50 }, (_, i) => String(i + 1)),
 ];
 
 function lakhsToRupees(lakhs) {

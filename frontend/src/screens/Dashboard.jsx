@@ -73,14 +73,19 @@ export default function Dashboard({ onAdd }) {
   useEffect(() => {
     let alive = true;
     loadSubmissions();
-    // Resolve CP's RM phone + name (used by WhatsApp FAB + Contact RM buttons)
-    api.getRmContacts()
+    // Resolve CP's assigned RM (via channel_partners.rm -> rms table).
+    // Falls back server-side to city-level RM / legacy cities.rm_phone.
+    api.getMyRm()
       .then((data) => {
         if (!alive) return;
-        const contacts = data?.contacts || {};
-        const myRm = user.city && contacts[user.city];
-        setRmPhone(myRm?.phone || '+919555666059');
-        setRmName(myRm?.name || 'Openhouse RM');
+        const rm = data?.rm;
+        if (rm?.phone) {
+          setRmPhone(rm.phone);
+          setRmName(rm.name || 'Openhouse RM');
+        } else {
+          setRmPhone('+919555666059');
+          setRmName('Openhouse RM');
+        }
       })
       .catch(() => {
         if (alive) {
@@ -410,7 +415,7 @@ export default function Dashboard({ onAdd }) {
       {/* Floating-action-button — restored from pre-revamp UI */}
       <button className="fab" onClick={onAdd} title="Add unit">+</button>
 
-      {/* WhatsApp RM — floating, bottom-left */}
+      {/* WhatsApp RM — stacked above the + FAB, same right edge */}
       {rmPhone && (
         <a
           href={`https://wa.me/${rmPhone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(
@@ -421,8 +426,8 @@ export default function Dashboard({ onAdd }) {
           title={`WhatsApp ${rmName || 'your RM'}`}
           style={{
             position: 'fixed',
-            bottom: 24,
-            left: 16,
+            bottom: 88,      // sits 8px above the +FAB (FAB is ~56px tall at bottom:24)
+            right: 16,
             width: 52, height: 52,
             borderRadius: '50%',
             background: '#25D366',
@@ -444,8 +449,6 @@ export default function Dashboard({ onAdd }) {
       {expandedSubmission && (
         <SubmissionDetailModal
           submission={expandedSubmission}
-          rmPhone={rmPhone}
-          rmName={rmName}
           onClose={() => setExpandedSubmission(null)}
         />
       )}
