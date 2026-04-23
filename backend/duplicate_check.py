@@ -146,10 +146,18 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
             params = [society_id, bhk_n, floor_n, *_ACTIVE_SUBMISSION_STATUSES]
 
             if tower:
-                conditions.append("UPPER(TRIM(COALESCE(tower, ''))) = UPPER(TRIM(%s))")
+                # Strip leading zeros from both sides so "02" matches "2", "0A2" matches "A2" etc.
+                conditions.append(
+                    "UPPER(TRIM(REGEXP_REPLACE(COALESCE(tower, ''), '^0+', ''))) "
+                    "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))"
+                )
                 params.append(tower)
             if unit_no:
-                conditions.append("UPPER(TRIM(COALESCE(unit_no, ''))) = UPPER(TRIM(%s))")
+                # Same: leading-zero insensitive match. "071" == "71", "071A" == "71A".
+                conditions.append(
+                    "UPPER(TRIM(REGEXP_REPLACE(COALESCE(unit_no, ''), '^0+', ''))) "
+                    "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))"
+                )
                 params.append(unit_no)
 
             sql = f"SELECT 1 FROM submissions WHERE {' AND '.join(conditions)} LIMIT 1"
@@ -293,10 +301,16 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                 params = list(base_params)
 
                 if tower:
-                    conditions.append("UPPER(TRIM(tower_no)) = UPPER(TRIM(%s))")
+                    conditions.append(
+                        "UPPER(TRIM(REGEXP_REPLACE(COALESCE(tower_no, ''), '^0+', ''))) "
+                        "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))"
+                    )
                     params.append(tower)
                 if unit_no:
-                    conditions.append("UPPER(TRIM(unit_no)) = UPPER(TRIM(%s))")
+                    conditions.append(
+                        "UPPER(TRIM(REGEXP_REPLACE(COALESCE(unit_no, ''), '^0+', ''))) "
+                        "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))"
+                    )
                     params.append(unit_no)
 
                 sql = (

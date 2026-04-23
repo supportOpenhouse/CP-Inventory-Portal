@@ -1,4 +1,52 @@
+import { useMemo, useState } from 'react';
+
 import { formatPrice, stageMeta, timeAgo } from '../../format';
+
+// How to extract the sort key for each column.
+// Values that don't exist sort to the end for ASC and start for DESC
+// (via the NUL char trick for strings / +/-Infinity for numbers).
+const SORT_ACCESSORS = {
+  listing_id: (s) => (s.public_id || '').toString(),
+  society:    (s) => (s.society_name || '').toString().toLowerCase(),
+  city:       (s) => (s.city || '').toString().toLowerCase(),
+  unit:       (s) => {
+    const t = (s.tower || '').toString();
+    const u = (s.unit_no || '').toString();
+    return `${t}-${u}`.toLowerCase();
+  },
+  config:     (s) => {
+    // Sort first by BHK number, then sqft
+    const bhkNum = parseInt(((s.bhk || '').match(/\d+/) || [0])[0], 10) || 0;
+    const sqft = parseInt(s.sqft, 10) || 0;
+    return bhkNum * 100000 + sqft;
+  },
+  asking:     (s) => parseInt(s.asking_price, 10) || 0,
+  cp:         (s) => (s.cp_name || '').toString().toLowerCase(),
+  status:     (s) => (s.status || '').toString(),
+  submitted:  (s) => {
+    const t = s.submitted_at ? new Date(s.submitted_at).getTime() : 0;
+    return isNaN(t) ? 0 : t;
+  },
+};
+
+function SortIcon({ state }) {
+  // state: 'asc' | 'desc' | null
+  const active = !!state;
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: 'inline-block',
+        marginLeft: 4,
+        fontSize: 10,
+        color: active ? '#222' : '#BBB',
+        lineHeight: 1,
+      }}
+    >
+      {state === 'asc' ? '▲' : state === 'desc' ? '▼' : '↕'}
+    </span>
+  );
+}
 
 export default function TableView({
   submissions, loading, selectedId, onSelect,
@@ -6,6 +54,34 @@ export default function TableView({
   isAdmin = false,  // Unused in rendering (backend filters Unapproved for RMs),
                     // accepted for API consistency with BoardView.
 }) {
+  // { key, dir }  dir = 'asc' | 'desc'. Default: newest submissions first.
+  const [sort, setSort] = useState({ key: 'submitted', dir: 'desc' });
+
+  const toggleSort = (key) => {
+    setSort((s) => {
+      if (s.key !== key) return { key, dir: 'asc' };
+      if (s.dir === 'asc') return { key, dir: 'desc' };
+      return { key: 'submitted', dir: 'desc' };  // third click = reset to default
+    });
+  };
+
+  const sorted = useMemo(() => {
+    const acc = SORT_ACCESSORS[sort.key] || SORT_ACCESSORS.submitted;
+    const copy = [...submissions];
+    copy.sort((a, b) => {
+      const av = acc(a);
+      const bv = acc(b);
+      let cmp = 0;
+      if (typeof av === 'number' && typeof bv === 'number') {
+        cmp = av - bv;
+      } else {
+        cmp = String(av).localeCompare(String(bv));
+      }
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+    return copy;
+  }, [submissions, sort]);
+
   if (loading) {
     return <div className="admin-table-loading">Loading submissions…</div>;
   }
@@ -15,6 +91,21 @@ export default function TableView({
 
   const allChecked = bulkMode && submissions.length > 0 && submissions.every((s) => selectedIds.has(s.id));
   const someChecked = bulkMode && submissions.some((s) => selectedIds.has(s.id));
+
+  // Reusable sortable header
+  const TH = ({ sortKey, children, style }) => {
+    const state = sort.key === sortKey ? sort.dir : null;
+    return (
+      <th
+        onClick={() => toggleSort(sortKey)}
+        style={{ cursor: 'pointer', userSelect: 'none', ...style }}
+        title={`Sort by ${typeof children === 'string' ? children : sortKey}`}
+      >
+        {children}
+        <SortIcon state={state} />
+      </th>
+    );
+  };
 
   return (
     <div className="admin-table-wrap">
@@ -31,19 +122,19 @@ export default function TableView({
                 />
               </th>
             )}
-            <th>Listing ID</th>
-            <th>Society</th>
-            <th>City</th>
-            <th>Unit</th>
-            <th>Config</th>
-            <th>Asking</th>
-            <th>CP</th>
-            <th>Status</th>
-            <th>Submitted</th>
+            <TH sortKey="listing_id">Listing ID</TH>
+            <TH sortKey="society">Society</TH>
+            <TH sortKey="city">City</TH>
+            <TH sortKey="unit">Unit</TH>
+            <TH sortKey="config">Config</TH>
+            <TH sortKey="asking">Asking</TH>
+            <TH sortKey="cp">CP</TH>
+            <TH sortKey="status">Status</TH>
+            <TH sortKey="submitted">Submitted</TH>
           </tr>
         </thead>
         <tbody>
-          {submissions.map((s) => {
+          {sorted.map((s) => {
             const stage = stageMeta(s.status);
             const isWeakMatch = s.weak_match === true;
             const isRejected = s.status === 'Rejected';

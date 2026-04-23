@@ -45,22 +45,37 @@ def require_admin_role(f):
 
 def _scoped_city_filter(cur):
     """
-    RM scope: city_id match OR assigned_rm_id match (both included).
-             Unapproved submissions are hidden from RMs (admin-only review queue).
-    Admin: no restriction.
+    Admin: no restriction (sees all cities).
+    RM from channel_partners: city_id match OR assigned to them (legacy path).
+    RM from rms table: city_id match only (new 'manager' login path).
+    In both RM cases: Unapproved hidden (admin review queue).
     """
     role = g.user.get("role", "cp")
     if role == "admin":
         return "", []
+
     city_id = g.user.get("city_id")
-    cp_id = g.user.get("cp_id")
-    if not city_id and not cp_id:
+    cp_id = g.user.get("cp_id")   # legacy RM in channel_partners
+    rm_id = g.user.get("rm_id")   # new RM from rms table
+
+    if not city_id and not cp_id and not rm_id:
         return "AND FALSE", []
-    # Include rows in RM's city OR explicitly assigned to them.
-    # Exclude Unapproved — those are in the admin review queue only.
+
+    clauses = []
+    params = []
+    if city_id:
+        clauses.append("s.city_id = %s")
+        params.append(city_id)
+    if cp_id:
+        clauses.append("s.assigned_rm_id = %s")
+        params.append(cp_id)
+    # s.assigned_rm_id historically points to channel_partners.id, so rm_id
+    # from the `rms` table doesn't share that keyspace — city_id scope covers it.
+
+    where = " OR ".join(clauses)
     return (
-        "AND (s.city_id = %s OR s.assigned_rm_id = %s) AND s.status != 'Unapproved'",
-        [city_id, cp_id],
+        f"AND ({where}) AND s.status != 'Unapproved'",
+        params,
     )
 
 

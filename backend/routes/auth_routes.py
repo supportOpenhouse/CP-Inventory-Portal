@@ -47,6 +47,66 @@ def _fetch_active_cp(cur, phone: str):
     return cur.fetchone()
 
 
+def _fetch_active_rm(cur, phone: str):
+    """Look up an active RM in the `rms` table by phone.
+    Returns a dict with keys matching the RM login shape, or None.
+    rms table is expected to have: id, name, phone, email, is_active, city_id.
+    """
+    try:
+        cur.execute("""
+            SELECT r.id, r.name, r.phone, r.email, r.city_id, c.name AS city
+            FROM rms r
+            LEFT JOIN cities c ON r.city_id = c.id
+            WHERE r.phone = %s AND COALESCE(r.is_active, TRUE) = TRUE
+        """, (phone,))
+        return cur.fetchone()
+    except Exception:
+        # Table may be missing city_id column until migration runs — fall through gracefully
+        return None
+
+
+def _rm_user_response(rm: dict) -> dict:
+    """Shape returned to the frontend for an RM login."""
+    return {
+        "id": f"rm-{rm['id']}",
+        "cp_code": f"RM{rm['id']:04d}",
+        "name": rm.get("name") or "RM",
+        "phone": rm["phone"],
+        "company": "Openhouse",
+        "city": rm.get("city"),
+        "isAdmin": False,
+        "role": "rm",
+        "microMarkets": [],
+    }
+
+
+def _generate_rm_token(rm: dict) -> str:
+    """Issue a JWT for an RM logged in via rms table.
+    Uses the same auth.generate_token but with rm_id + role='rm' + city_id.
+    """
+    # Reuse generate_token shape: pass a synthetic dict it understands.
+    fake_cp = {
+        "id": None,                 # intentionally None — no cp_id
+        "cp_code": f"RM{rm['id']:04d}",
+        "phone": rm["phone"],
+        "is_admin": False,
+        "role": "rm",
+        "city_id": rm.get("city_id"),
+    }
+    import jwt
+    from datetime import datetime, timedelta, timezone
+    payload = {
+        "rm_id": rm["id"],
+        "cp_code": fake_cp["cp_code"],
+        "phone": fake_cp["phone"],
+        "is_admin": False,
+        "role": "rm",
+        "city_id": fake_cp["city_id"],
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+    }
+    return jwt.encode(payload, Config.JWT_SECRET, algorithm="HS256")
+
+
 def _not_registered_response(cur):
     cur.execute("SELECT name, rm_name, rm_phone FROM cities ORDER BY name")
     cities = cur.fetchall()
@@ -77,8 +137,10 @@ def send_otp_route():
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # Try channel_partners first, then rms table
             cp = _fetch_active_cp(cur, phone)
-            if not cp:
+            rm = None if cp else _fetch_active_rm(cur, phone)
+            if not cp and not rm:
                 return jsonify(_not_registered_response(cur)), 200
     finally:
         put_app_conn(conn)
@@ -120,22 +182,40 @@ def verify_otp_route():
     try:
         with conn.cursor() as cur:
             cp = _fetch_active_cp(cur, phone)
-            if not cp:
-                return jsonify(_not_registered_response(cur)), 200
-            cur.execute(
-                "UPDATE channel_partners SET last_login = NOW() WHERE id = %s",
-                (cp["id"],),
-            )
-            conn.commit()
+            if cp:
+                cur.execute(
+                    "UPDATE channel_partners SET last_login = NOW() WHERE id = %s",
+                    (cp["id"],),
+                )
+                conn.commit()
+                token = generate_token(cp)
+                return jsonify({
+                    "success": True,
+                    "token": token,
+                    "user": _user_response(cp),
+                }), 200
+
+            # No CP match — try RMs table
+            rm = _fetch_active_rm(cur, phone)
+            if rm:
+                try:
+                    cur.execute(
+                        "UPDATE rms SET last_login = NOW() WHERE id = %s",
+                        (rm["id"],),
+                    )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                token = _generate_rm_token(rm)
+                return jsonify({
+                    "success": True,
+                    "token": token,
+                    "user": _rm_user_response(rm),
+                }), 200
+
+            return jsonify(_not_registered_response(cur)), 200
     finally:
         put_app_conn(conn)
-
-    token = generate_token(cp)
-    return jsonify({
-        "success": True,
-        "token": token,
-        "user": _user_response(cp),
-    }), 200
 
 
 # ------------------------------------------------------------------
@@ -184,6 +264,26 @@ def phone_login():
 @bp.get("/me")
 @require_auth
 def me():
+    # RM session (JWT has rm_id, not cp_id)
+    rm_id = g.user.get("rm_id")
+    if rm_id:
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT r.id, r.name, r.phone, r.email, r.city_id, c.name AS city
+                    FROM rms r
+                    LEFT JOIN cities c ON r.city_id = c.id
+                    WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
+                """, (rm_id,))
+                rm = cur.fetchone()
+        finally:
+            put_app_conn(conn)
+        if not rm:
+            return jsonify({"error": "User not found or inactive"}), 404
+        return jsonify({"user": _rm_user_response(rm)}), 200
+
+    # CP session (legacy path)
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:

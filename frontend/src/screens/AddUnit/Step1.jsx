@@ -373,26 +373,30 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon }) {
 
       {form.society && (
         <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
-          <button
-            type="button"
-            onClick={handleSubmitWithoutUnit}
-            disabled={!canSubmitWithoutUnit}
-            style={{
-              flex: 1,
-              padding: '14px 16px',
-              borderRadius: 12,
-              border: '1.5px solid var(--oh-orange)',
-              background: '#fff',
-              color: 'var(--oh-orange)',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: canSubmitWithoutUnit ? 'pointer' : 'not-allowed',
-              opacity: canSubmitWithoutUnit ? 1 : 0.5,
-              fontFamily: 'inherit',
-            }}
-          >
-            Submit without unit details
-          </button>
+          {/* "Submit without unit details" hidden once both tower AND unit_no are entered —
+              that path becomes pointless since a normal Submit will work. */}
+          {!hasUnitDetails && (
+            <button
+              type="button"
+              onClick={handleSubmitWithoutUnit}
+              disabled={!canSubmitWithoutUnit}
+              style={{
+                flex: 1,
+                padding: '14px 16px',
+                borderRadius: 12,
+                border: '1.5px solid var(--oh-orange)',
+                background: '#fff',
+                color: 'var(--oh-orange)',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: canSubmitWithoutUnit ? 'pointer' : 'not-allowed',
+                opacity: canSubmitWithoutUnit ? 1 : 0.5,
+                fontFamily: 'inherit',
+              }}
+            >
+              Submit without unit details
+            </button>
+          )}
           <button
             type="button"
             className="primary-btn"

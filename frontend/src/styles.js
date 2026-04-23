@@ -294,8 +294,11 @@ export const css = `
   .board-column.is-rejected .col-count { background: #FEE2E2; color: #DC2626; font-weight: 700; }
   .status-pill.is-rejected { background: #FEE2E2 !important; color: #DC2626 !important; font-weight: 700; }
   .board-card-flag { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: #D64045; }
-  .board-card-society { font-size: 14px; font-weight: 600; color: #222; margin-bottom: 2px; padding-right: 16px; }
-  .board-card-city { position: absolute; top: 14px; right: 22px; font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.4px; }
+  .board-card-society { font-size: 14px; font-weight: 600; color: #222; margin-bottom: 2px; padding-right: 96px; word-break: break-word; }
+  /* Top-right corner block: city (uppercase) on top, public_id (monospace) below */
+  .board-card-corner { position: absolute; top: 14px; right: 22px; text-align: right; max-width: 90px; }
+  .board-card-city-text { font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+  .board-card-pubid-text { font-size: 10px; font-weight: 600; color: #BBB; font-family: monospace; letter-spacing: 0.3px; margin-top: 2px; white-space: nowrap; }
   .board-card-meta { font-size: 12px; color: #888; margin-bottom: 8px; }
   .board-card-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
   .board-chip { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 500; }
