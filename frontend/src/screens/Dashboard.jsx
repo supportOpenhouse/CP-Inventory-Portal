@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatPrice } from '../format';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import SubmissionDetailModal from './SubmissionDetailModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
 // Note: 'Rejected' is intentionally NOT in the filter row (still visible under 'All').
@@ -50,6 +51,9 @@ export default function Dashboard({ onAdd }) {
   const [counterBusy, setCounterBusy] = useState({});
   // Submission opened in the full-detail modal (null = modal closed)
   const [expandedSubmission, setExpandedSubmission] = useState(null);
+  // Confirmation dialogs for destructive actions
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [pendingRejectId, setPendingRejectId] = useState(null);  // submission id awaiting reject confirmation
 
   const loadSubmissions = () => {
     setState((st) => ({ ...st, loading: true }));
@@ -161,7 +165,7 @@ export default function Dashboard({ onAdd }) {
             📍 {user.city || 'All'}
           </div>
           <button
-            onClick={logout}
+            onClick={() => setShowLogoutConfirm(true)}
             title="Log out"
             style={{
               fontSize: 11,
@@ -379,7 +383,7 @@ export default function Dashboard({ onAdd }) {
                   <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
                     <button
                       type="button"
-                      onClick={() => handleCounterResponse(s.id, 'reject')}
+                      onClick={() => setPendingRejectId(s.id)}
                       disabled={!!busy}
                       style={{
                         flex: 1,
@@ -443,6 +447,37 @@ export default function Dashboard({ onAdd }) {
           onClose={() => setExpandedSubmission(null)}
         />
       )}
+
+      {/* Logout confirmation */}
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="Log out?"
+        message="You'll need to sign in again to view or add your listings."
+        confirmLabel="Log out"
+        cancelLabel="Cancel"
+        destructive
+        onConfirm={() => { setShowLogoutConfirm(false); logout(); }}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
+
+      {/* Reject counter offer confirmation */}
+      <ConfirmDialog
+        open={pendingRejectId !== null}
+        title="Reject counter offer?"
+        message="Are you sure you want to reject the counter offer?"
+        confirmLabel="Reject"
+        cancelLabel="Cancel"
+        destructive
+        busy={pendingRejectId !== null && counterBusy[pendingRejectId] === 'reject'}
+        onConfirm={async () => {
+          const id = pendingRejectId;
+          if (id === null) return;
+          // close dialog BEFORE the network call so UI feels snappy; handler shows its own spinner on the card
+          setPendingRejectId(null);
+          await handleCounterResponse(id, 'reject');
+        }}
+        onCancel={() => setPendingRejectId(null)}
+      />
     </div>
   );
 }
