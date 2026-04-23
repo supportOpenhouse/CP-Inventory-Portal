@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { formatPrice } from '../../format';
 import DuplicateCard from './DuplicateCard';
 import ForceCreateWarning from './ForceCreateWarning';
 import NoUnitDetailsWarning from './NoUnitDetailsWarning';
@@ -10,7 +11,21 @@ import NoUnitDetailsWarning from './NoUnitDetailsWarning';
 const BHK_OPTIONS = ['2 BHK', '3 BHK', '4 BHK'];
 const CITY_OPTIONS = ['Gurgaon', 'Noida', 'Ghaziabad'];
 
-export default function Step1({ form, setForm, onNext, onAbandon }) {
+// Floor dropdown: Ground, 1..50, Top. Stored as VARCHAR — legacy values ("B1", "LG", etc.)
+// remain valid in the DB; new submissions always pick from this list.
+const FLOOR_OPTIONS = [
+  'Ground',
+  ...Array.from({ length: 50 }, (_, i) => String(i + 1)),
+  'Top',
+];
+
+function lakhsToRupees(lakhs) {
+  const n = parseFloat(lakhs);
+  if (!isFinite(n)) return null;
+  return Math.round(n * 100000);
+}
+
+export default function Step1({ form, setForm, onSubmitted, onAbandon }) {
   const { user } = useAuth();
 
   const defaultCity = CITY_OPTIONS.includes(user?.city) ? user.city : CITY_OPTIONS[0];
@@ -22,10 +37,12 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
   const [searchLoading, setSearchLoading] = useState(false);
   const debouncedSearch = useDebouncedValue(search, 300);
 
-  const [checking, setChecking] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [dupResult, setDupResult] = useState(null);
   const [showForceWarning, setShowForceWarning] = useState(false);
   const [showNoUnitWarning, setShowNoUnitWarning] = useState(false);
+  // If true, bypass dup check + tower/unit (set by NoUnitDetails popup)
+  const [skipMode, setSkipMode] = useState(false);
   const [apiError, setApiError] = useState('');
 
   useEffect(() => {
@@ -45,37 +62,21 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
     };
   }, [debouncedSearch, dropdownOpen, city]);
 
+  const resetDeps = () => ({
+    tower: '', unitNo: '', sqft: '', bhk: '', floor: '',
+    occupancyStatus: 'Vacant', askPrice: '',
+    forceCreate: false, skipUnitDetails: false,
+  });
+
   const handleCityChange = (newCity) => {
     setCity(newCity);
-    setForm({
-      ...form,
-      city: newCity,
-      society: null,
-      tower: '',
-      unitNo: '',
-      sqft: '',
-      bhk: '',
-      floor: '',
-      forceCreate: false,
-      skipUnitDetails: false,
-    });
+    setForm({ ...form, city: newCity, society: null, ...resetDeps() });
     setSearch('');
     setSearchResults([]);
   };
 
   const selectSociety = (s) => {
-    setForm({
-      ...form,
-      city,
-      society: s,
-      tower: '',
-      unitNo: '',
-      sqft: '',
-      bhk: '',
-      floor: '',
-      forceCreate: false,
-      skipUnitDetails: false,
-    });
+    setForm({ ...form, city, society: s, ...resetDeps() });
     setSearch('');
     setDropdownOpen(false);
     setDupResult(null);
@@ -83,69 +84,81 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
     setShowNoUnitWarning(false);
   };
 
-  const canSubmit =
+  // ----- validation -----
+  const hasBaseRequired =
     !!form.society?.id &&
     !!form.bhk &&
     !!(form.floor && form.floor.trim()) &&
+    !!form.sqft && form.sqft.length > 0 &&
+    !!form.askPrice;
+
+  const hasUnitDetails =
     !!(form.tower && form.tower.trim()) &&
-    !!(form.unitNo && form.unitNo.trim()) &&
-    !checking;
+    !!(form.unitNo && form.unitNo.trim());
 
-  const canSubmitWithoutUnit =
-    !!form.society?.id &&
-    !!form.bhk &&
-    !!(form.floor && form.floor.trim()) &&
-    !checking;
+  const canSubmit = hasBaseRequired && hasUnitDetails && !submitting;
+  const canSubmitWithoutUnit = hasBaseRequired && !submitting;
 
-  const handleSubmit = async () => {
+  const buildPayload = (opts = {}) => ({
+    society_id: form.society.id,
+    society_name: form.society.name,
+    tower: opts.skipUnit ? null : (form.tower || null),
+    unit_no: opts.skipUnit ? null : (form.unitNo || null),
+    floor: form.floor || null,
+    sqft: form.sqft ? parseInt(form.sqft) : null,
+    bhk: form.bhk || null,
+    occupancy_status: form.occupancyStatus || null,
+    asking_price: lakhsToRupees(form.askPrice),
+    force_create: !!opts.forceCreate,
+    skip_unit_details: !!opts.skipUnit,
+  });
+
+  // ---------- SUBMIT WITH unit details (runs dup check server-side) ----------
+  const handleSubmit = async ({ forceCreate = false, skipUnit = false } = {}) => {
     setApiError('');
     setDupResult(null);
-    setChecking(true);
+    setSubmitting(true);
     try {
-      const result = await api.checkDuplicate({
-        society_id: form.society.id,
-        bhk: form.bhk || null,
-        tower: form.tower || null,
-        unit_no: form.unitNo || null,
-        floor: form.floor || null,
+      const result = await api.createSubmission(buildPayload({ forceCreate, skipUnit }));
+      onSubmitted({
+        id: result.submission_id,
+        public_id: result.public_id,
+        status: result.status,
       });
-      if (result.block) {
-        setDupResult(result);
-      } else {
-        setForm({ ...form, city, forceCreate: false, skipUnitDetails: false });
-        onNext();
-      }
     } catch (err) {
-      setApiError(err instanceof ApiError ? err.message : 'Check failed. Try again.');
+      if (err instanceof ApiError && err.status === 409 && err.data?.duplicate) {
+        setDupResult(err.data.duplicate);
+      } else {
+        setApiError(err instanceof ApiError ? err.message : 'Submission failed. Please try again.');
+      }
     } finally {
-      setChecking(false);
+      setSubmitting(false);
     }
   };
 
+  // ---------- SUBMIT WITHOUT unit details — opens popup ----------
   const handleSubmitWithoutUnit = () => setShowNoUnitWarning(true);
-
   const handleNoUnitContinue = () => {
-    setForm({ ...form, city, skipUnitDetails: true, forceCreate: false });
     setShowNoUnitWarning(false);
-    onNext();
+    setSkipMode(true);
+    handleSubmit({ skipUnit: true });
   };
-
   const handleNoUnitBack = () => setShowNoUnitWarning(false);
 
+  // ---------- DUPLICATE -> Add anyway ----------
   const handleEdit = () => {
     setDupResult(null);
     setShowForceWarning(false);
   };
-
   const handleForceCreateClick = () => setShowForceWarning(true);
   const handleForceCreateConfirm = () => {
-    setForm({ ...form, city, forceCreate: true, skipUnitDetails: false });
-    setDupResult(null);
     setShowForceWarning(false);
-    onNext();
+    setDupResult(null);
+    handleSubmit({ forceCreate: true });
   };
   const handleForceCreateCancel = () => setShowForceWarning(false);
 
+  // ---------- Popups ----------
   if (showForceWarning) {
     return <ForceCreateWarning onConfirm={handleForceCreateConfirm} onCancel={handleForceCreateCancel} />;
   }
@@ -160,6 +173,9 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
     );
   }
 
+  const askPriceRupees = lakhsToRupees(form.askPrice);
+
+  // ---------- FORM ----------
   return (
     <div className="form-section">
       {/* City dropdown */}
@@ -173,18 +189,16 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
           className="input-field"
           style={{ padding: '10px 14px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
         >
-          {CITY_OPTIONS.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
+          {CITY_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
 
-      {/* Society search */}
+      {/* Society search with chevron affordance */}
       <div className="form-card">
         <div className="form-card-title">
           Society <span className="required-star">*</span>
         </div>
-        <div className="society-search-wrap">
+        <div className="society-search-wrap" style={{ position: 'relative' }}>
           <input
             className="input-field"
             placeholder={`Search societies in ${city}...`}
@@ -193,17 +207,26 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
               setSearch(e.target.value);
               setDropdownOpen(true);
               if (form.society) {
-                setForm({
-                  ...form, society: null, tower: '', unitNo: '',
-                  sqft: '', bhk: '', floor: '',
-                  forceCreate: false, skipUnitDetails: false,
-                });
+                setForm({ ...form, society: null, ...resetDeps() });
               }
             }}
-            onFocus={() => {
-              if (!form.society) setDropdownOpen(true);
-            }}
+            onFocus={() => { if (!form.society) setDropdownOpen(true); }}
+            style={{ paddingRight: 36 }}
           />
+          {/* Dropdown chevron */}
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute',
+              right: 12, top: '50%', transform: 'translateY(-50%)',
+              pointerEvents: 'none',
+              color: 'var(--oh-gray)',
+              fontSize: 12,
+              lineHeight: 1,
+            }}
+          >
+            ▾
+          </span>
           {dropdownOpen && search.length >= 2 && (
             <div className="society-dropdown">
               {searchLoading ? (
@@ -227,68 +250,123 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
       </div>
 
       {form.society && (
-        <div className="form-card">
-          <div className="form-card-title">Unit Info</div>
+        <>
+          {/* Unit Info: BHK/Floor, Area, Tower/Unit */}
+          <div className="form-card">
+            <div className="form-card-title">Unit Info</div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <div className="input-label">BHK <span className="required-star">*</span></div>
-              <select
-                className="input-field"
-                value={form.bhk}
-                onChange={(e) => setForm({ ...form, bhk: e.target.value })}
-              >
-                <option value="">Select...</option>
-                {BHK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <div className="input-label">BHK <span className="required-star">*</span></div>
+                <select
+                  className="input-field"
+                  value={form.bhk}
+                  onChange={(e) => setForm({ ...form, bhk: e.target.value })}
+                >
+                  <option value="">Select...</option>
+                  {BHK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="input-label">Floor <span className="required-star">*</span></div>
+                <select
+                  className="input-field"
+                  value={form.floor}
+                  onChange={(e) => setForm({ ...form, floor: e.target.value })}
+                >
+                  <option value="">Select...</option>
+                  {FLOOR_OPTIONS.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <div className="input-label">Floor <span className="required-star">*</span></div>
+
+            {/* Area moved up, now mandatory */}
+            <div style={{ marginTop: 12 }}>
+              <div className="input-label">Area (sqft) <span className="required-star">*</span></div>
               <input
                 className="input-field"
-                placeholder="e.g. 7"
-                value={form.floor}
-                onChange={(e) => setForm({ ...form, floor: e.target.value })}
+                inputMode="numeric"
+                placeholder="e.g. 1200"
+                value={form.sqft}
+                onChange={(e) => setForm({ ...form, sqft: e.target.value.replace(/\D/g, '') })}
               />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+              <div>
+                <div className="input-label">Tower <span className="required-star">*</span></div>
+                <input
+                  className="input-field"
+                  placeholder="e.g. A2"
+                  value={form.tower}
+                  onChange={(e) => setForm({ ...form, tower: e.target.value })}
+                />
+              </div>
+              <div>
+                <div className="input-label">Unit No <span className="required-star">*</span></div>
+                <input
+                  className="input-field"
+                  placeholder="e.g. 101"
+                  value={form.unitNo}
+                  onChange={(e) => setForm({ ...form, unitNo: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="optional-hint" style={{ marginTop: 10 }}>
+              <span className="required-star">*</span> are mandatory
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-            <div>
-              <div className="input-label">Tower <span className="required-star">*</span></div>
-              <input
-                className="input-field"
-                placeholder="e.g. A2"
-                value={form.tower}
-                onChange={(e) => setForm({ ...form, tower: e.target.value })}
-              />
-            </div>
-            <div>
-              <div className="input-label">Unit No <span className="required-star">*</span></div>
-              <input
-                className="input-field"
-                placeholder="e.g. 101"
-                value={form.unitNo}
-                onChange={(e) => setForm({ ...form, unitNo: e.target.value })}
-              />
-            </div>
-          </div>
+          {/* Occupancy & Pricing card */}
+          <div className="form-card">
+            <div className="form-card-title">Occupancy & Pricing</div>
 
-          <div style={{ marginTop: 12 }}>
-            <div className="input-label">Area (sqft)</div>
+            <div className="input-label">Occupancy Status <span className="required-star">*</span></div>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+              {['Vacant', 'Occupied'].map((status) => {
+                const active = form.occupancyStatus === status;
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setForm({ ...form, occupancyStatus: status })}
+                    style={{
+                      flex: 1,
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: `1.5px solid ${active ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
+                      background: active ? 'var(--oh-orange-light)' : '#fff',
+                      color: active ? 'var(--oh-orange)' : 'var(--oh-charcoal)',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {status}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="input-label">Asking Price (in lakhs) <span className="required-star">*</span></div>
             <input
               className="input-field"
-              inputMode="numeric"
-              placeholder="e.g. 1200"
-              value={form.sqft}
-              onChange={(e) => setForm({ ...form, sqft: e.target.value.replace(/\D/g, '') })}
+              inputMode="decimal"
+              placeholder="e.g. 95"
+              value={form.askPrice}
+              onChange={(e) => setForm({ ...form, askPrice: e.target.value.replace(/[^0-9.]/g, '') })}
             />
+            {askPriceRupees ? (
+              <div className="optional-hint">{formatPrice(askPriceRupees)}</div>
+            ) : (
+              <div className="optional-hint" style={{ color: 'var(--oh-gray)' }}>
+                Enter in lakhs (e.g. 95 = ₹95 lakhs; 150 = ₹1.5 Cr)
+              </div>
+            )}
           </div>
-
-          <div className="optional-hint" style={{ marginTop: 10 }}>
-            <span className="required-star">*</span> are mandatory
-          </div>
-        </div>
+        </>
       )}
 
       {apiError && <div className="error-text" style={{ marginTop: 12 }}>{apiError}</div>}
@@ -318,11 +396,11 @@ export default function Step1({ form, setForm, onNext, onAbandon }) {
           <button
             type="button"
             className="primary-btn"
-            onClick={handleSubmit}
+            onClick={() => handleSubmit()}
             disabled={!canSubmit}
             style={{ flex: 1, marginTop: 0 }}
           >
-            {checking ? <><span className="spinner" />Checking…</> : 'Submit'}
+            {submitting ? <><span className="spinner" />Submitting…</> : 'Submit'}
           </button>
         </div>
       )}

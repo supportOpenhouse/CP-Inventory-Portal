@@ -65,13 +65,12 @@ def _build_email(submission: dict, cp: dict, rm_name: str) -> tuple[str, str]:
         config_line.append(submission["bhk"])
     if submission.get("sqft"):
         config_line.append(f"{submission['sqft']} sqft")
-    if submission.get("registry_status"):
-        config_line.append(submission["registry_status"])
+    if submission.get("occupancy_status"):
+        config_line.append(submission["occupancy_status"])
     config = " · ".join(config_line) or "—"
 
     asking = _fmt_price(submission.get("asking_price"))
     rate = _fmt_rate(submission.get("asking_price"), submission.get("sqft"))
-    closing = _fmt_price(submission.get("closing_price"))
 
     seller_line = "Not provided"
     if submission.get("seller_name") or submission.get("seller_phone"):
@@ -90,7 +89,6 @@ Society: {society}
 {("Location: " + tower_unit) if tower_unit else ""}
 Config: {config}
 Asking price: {asking}{rate}
-Closing price: {closing}
 
 Submitted by: {cp.get('name', 'Unknown')} ({cp_code}) · {cp.get('company') or '—'}
 Phone: +91 {cp.get('phone', '')}
@@ -152,8 +150,8 @@ def _send_new_submission_alert_sync(submission_id: int) -> None:
                 cur.execute("""
                     SELECT
                         s.id, s.society_name, s.tower, s.unit_no, s.floor,
-                        s.sqft, s.bhk, s.asking_price, s.closing_price,
-                        s.registry_status, s.seller_name, s.seller_phone,
+                        s.sqft, s.bhk, s.asking_price,
+                        s.occupancy_status, s.seller_name, s.seller_phone,
                         c.name AS city,
                         cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
                         cp.company AS cp_company,
@@ -190,8 +188,7 @@ def _send_new_submission_alert_sync(submission_id: int) -> None:
             "sqft": row["sqft"],
             "bhk": row["bhk"],
             "asking_price": row["asking_price"],
-            "closing_price": row["closing_price"],
-            "registry_status": row["registry_status"],
+            "occupancy_status": row["occupancy_status"],
             "seller_name": row["seller_name"],
             "seller_phone": row["seller_phone"],
             "city": row["city"],

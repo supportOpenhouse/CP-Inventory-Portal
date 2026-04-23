@@ -137,7 +137,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             <Row label="Tower" value={s.tower} />
             <Row label="Unit No" value={s.unit_no} />
             <Row label="Area" value={s.sqft ? `${s.sqft} sqft` : null} />
-            <Row label="Registry" value={s.registry_status} />
+            <Row label="Occupancy" value={s.occupancy_status} />
             {s.furnishing && <Row label="Furnishing" value={s.furnishing} />}
             {s.parking && <Row label="Parking" value={s.parking} />}
             {s.exit_facing && <Row label="Exit facing" value={s.exit_facing} />}
@@ -152,7 +152,6 @@ export default function SubmissionDetailModal({ submission, onClose }) {
           <SectionTitle>Pricing</SectionTitle>
           <DetailGrid>
             <Row label="Asking" value={formatPrice(s.asking_price)} />
-            <Row label="Closing" value={formatPrice(s.closing_price)} />
           </DetailGrid>
 
           {/* Counter offer — if any */}

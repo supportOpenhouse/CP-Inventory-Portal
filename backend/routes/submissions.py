@@ -25,9 +25,9 @@ def list_my_submissions():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, public_id, society_id, society_name, tower, unit_no, floor,
-                       sqft, bhk, furnishing, registry_status, parking, extra_rooms,
+                       sqft, bhk, furnishing, occupancy_status, parking, extra_rooms,
                        exit_facing, balcony_facing, balcony_view,
-                       asking_price, closing_price,
+                       asking_price,
                        status, photos, submitted_at,
                        counter_offer_price, counter_offer_status, counter_offer_at,
                        counter_offer_response_text
@@ -151,15 +151,15 @@ def create_submission():
                     cp_id, society_id, society_name, city_id, public_id,
                     tower, unit_no, floor, sqft, bhk, furnishing,
                     exit_facing, balcony_facing, balcony_view,
-                    parking, extra_rooms, registry_status,
-                    asking_price, closing_price, seller_name, seller_phone, photos,
+                    parking, extra_rooms, occupancy_status,
+                    asking_price, seller_name, seller_phone, photos,
                     status, collated_match
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s::jsonb, %s,
-                    %s, %s, %s, %s, %s::jsonb,
+                    %s, %s, %s, %s::jsonb,
                     %s, %s
                 )
                 RETURNING id
@@ -180,9 +180,8 @@ def create_submission():
                 to_str(data.get("balcony_view"), 100),
                 to_str(data.get("parking"), 50),
                 json.dumps(data.get("extra_rooms") or []),
-                to_str(data.get("registry_status"), 20),
+                to_str(data.get("occupancy_status"), 20),
                 to_int(data.get("asking_price")),
-                to_int(data.get("closing_price")),
                 to_str(data.get("seller_name"), 200),
                 to_str(data.get("seller_phone"), 20),
                 json.dumps(data.get("photos") or []),

@@ -19,9 +19,8 @@ const EDITABLE_FIELDS = [
   { key: 'balcony_facing',       label: 'Balcony facing',   type: 'text'   },
   { key: 'balcony_view',         label: 'Balcony view',     type: 'text'   },
   { key: 'parking',              label: 'Parking',          type: 'text'   },
-  { key: 'registry_status',      label: 'Registry',         type: 'text'   },
+  { key: 'occupancy_status',     label: 'Occupancy',        type: 'text'   },
   { key: 'asking_price',         label: 'Asking price (₹)', type: 'number' },
-  { key: 'closing_price',        label: 'Closing price (₹)', type: 'number' },
   { key: 'seller_name',          label: 'Seller name',      type: 'text'   },
   { key: 'seller_phone',         label: 'Seller phone',     type: 'text'   },
   { key: 'drive_links',          label: 'Google Drive URLs (one per line)', type: 'textarea' },
@@ -316,7 +315,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   <Row label="BHK" value={s.bhk} />
                   <Row label="Area" value={s.sqft ? `${s.sqft} sqft` : null} />
                   <Row label="Floor" value={s.floor} />
-                  <Row label="Registry" value={s.registry_status} />
+                  <Row label="Occupancy" value={s.occupancy_status} />
                   <Row label="Parking" value={s.parking} optional />
                   <Row label="Furnishing" value={s.furnishing} optional />
                   <Row label="Exit facing" value={s.exit_facing} optional />
@@ -339,10 +338,6 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   <div>
                     <div className="admin-panel-label">Asking</div>
                     <div className="admin-panel-val" style={{ color: '#FF6B2B', fontWeight: 700 }}>{formatPrice(s.asking_price)}</div>
-                  </div>
-                  <div>
-                    <div className="admin-panel-label">Closing</div>
-                    <div className="admin-panel-val">{formatPrice(s.closing_price)}</div>
                   </div>
                   {s.asking_price && s.sqft ? (
                     <div>

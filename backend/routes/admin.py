@@ -127,9 +127,9 @@ def _list_submissions_core():
             base_sql = f"""
                 SELECT
                     s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
-                    s.sqft, s.bhk, s.furnishing, s.registry_status,
+                    s.sqft, s.bhk, s.furnishing, s.occupancy_status,
                     s.parking, s.exit_facing, s.balcony_facing, s.balcony_view,
-                    s.asking_price, s.closing_price,
+                    s.asking_price,
                     s.seller_name, s.seller_phone,
                     s.status, s.submitted_at, s.photos, s.weak_match, s.collated_match,
                     s.deleted_at, s.drive_links, s.assigned_rm_id,
@@ -431,9 +431,8 @@ EDITABLE_FIELDS = {
     "balcony_facing":      ("str", 50),
     "balcony_view":        ("str", 100),
     "parking":             ("str", 50),
-    "registry_status":     ("str", 20),
+    "occupancy_status":    ("str", 20),
     "asking_price":        ("int", None),
-    "closing_price":       ("int", None),
     "seller_name":         ("str", 200),
     "seller_phone":        ("str", 20),
     "extra_rooms":         ("json", None),
@@ -564,7 +563,7 @@ def cp_history(cp_id: int):
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
                 SELECT s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
-                       s.bhk, s.sqft, s.asking_price, s.closing_price,
+                       s.bhk, s.sqft, s.asking_price,
                        s.status, s.submitted_at, s.weak_match, s.deleted_at,
                        c.name AS city
                 FROM submissions s
@@ -595,9 +594,9 @@ def export_csv():
     writer.writerow([
         "Listing ID", "Internal ID", "Submitted at", "Status", "City", "Society",
         "Tower", "Unit", "Floor", "BHK", "Sqft",
-        "Registry", "Furnishing", "Parking",
+        "Occupancy", "Furnishing", "Parking",
         "Exit facing", "Balcony facing", "Balcony view",
-        "Asking", "Closing",
+        "Asking",
         "Seller name", "Seller phone",
         "CP name", "CP code", "CP phone", "CP company",
     ])
@@ -610,9 +609,9 @@ def export_csv():
             s["city"] or "", s["society_name"] or "",
             s["tower"] or "", s["unit_no"] or "", s["floor"] or "",
             s["bhk"] or "", s["sqft"] or "",
-            s["registry_status"] or "", s["furnishing"] or "", s["parking"] or "",
+            s["occupancy_status"] or "", s["furnishing"] or "", s["parking"] or "",
             s["exit_facing"] or "", s["balcony_facing"] or "", s["balcony_view"] or "",
-            s["asking_price"] or "", s["closing_price"] or "",
+            s["asking_price"] or "",
             s["seller_name"] or "", s["seller_phone"] or "",
             s["cp_name"] or "", s["cp_code"] or "", s["cp_phone"] or "", s["cp_company"] or "",
         ])

@@ -80,9 +80,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     balcony_view     VARCHAR(100),
     parking          VARCHAR(50),
     extra_rooms      JSONB DEFAULT '[]'::jsonb,  -- e.g. ["Puja Room", "Study Room"]
-    registry_status  VARCHAR(20),
+    occupancy_status VARCHAR(20),                  -- 'Vacant' | 'Occupied' (replaces legacy registry_status)
+    registry_status  VARCHAR(20),                  -- DEPRECATED; kept for back-compat, no longer written
     asking_price     BIGINT,
-    closing_price    BIGINT,
     seller_name      VARCHAR(200),
     seller_phone     VARCHAR(20),
     status           VARCHAR(30) DEFAULT 'Submitted',

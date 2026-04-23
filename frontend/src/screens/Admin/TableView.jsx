@@ -37,7 +37,6 @@ export default function TableView({
             <th>Unit</th>
             <th>Config</th>
             <th>Asking</th>
-            <th>Closing</th>
             <th>CP</th>
             <th>Status</th>
             <th>Submitted</th>
@@ -84,7 +83,6 @@ export default function TableView({
                 </td>
                 <td>{[s.bhk, s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={{ fontWeight: 600, color: '#FF6B2B' }}>{formatPrice(s.asking_price)}</td>
-                <td>{formatPrice(s.closing_price)}</td>
                 <td>
                   {s.cp_name}
                   <div style={{ fontSize: 11, color: '#999' }}>{s.cp_code}</div>
