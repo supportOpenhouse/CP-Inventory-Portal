@@ -48,20 +48,56 @@ def _fetch_active_cp(cur, phone: str):
 
 
 def _fetch_active_rm(cur, phone: str):
-    """Look up an active RM in the `rms` table by phone.
-    Returns a dict with keys matching the RM login shape, or None.
-    rms table is expected to have: id, name, phone, email, is_active, city_id.
+    """Look up an active RM in the `rms` table by normalized phone.
+
+    Phones in `rms` may be stored with +91 prefix and/or spaces (e.g.
+    '+91 9289500953') while `normalize_phone()` returns last-10-digits only
+    (e.g. '9289500953'). We normalize BOTH sides in SQL so the match works
+    regardless of how data is stored.
+
+    If the query errors (e.g. migration not run adding city_id), we roll
+    back the aborted transaction and fall back to a minimal query without
+    the city_id column, so at least login doesn't 500.
     """
+    import logging
+
+    # Primary query: normalizes both sides + joins cities for display name.
+    # RIGHT(REGEXP_REPLACE(r.phone, '\D', '', 'g'), 10) == stripped-digits last 10
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email, r.city_id, c.name AS city
             FROM rms r
             LEFT JOIN cities c ON r.city_id = c.id
-            WHERE r.phone = %s AND COALESCE(r.is_active, TRUE) = TRUE
+            WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
+              AND COALESCE(r.is_active, TRUE) = TRUE
+            LIMIT 1
         """, (phone,))
         return cur.fetchone()
-    except Exception:
-        # Table may be missing city_id column until migration runs — fall through gracefully
+    except Exception as e:
+        logging.warning("RM lookup (with city_id) failed, trying fallback. phone=%s err=%s", phone, e)
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+
+    # Fallback: schema doesn't yet have city_id. Login still succeeds, but
+    # admin scope will be empty until migration + data seeding happen.
+    try:
+        cur.execute("""
+            SELECT r.id, r.name, r.phone, r.email,
+                   NULL::integer AS city_id, NULL::varchar AS city
+            FROM rms r
+            WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
+              AND COALESCE(r.is_active, TRUE) = TRUE
+            LIMIT 1
+        """, (phone,))
+        return cur.fetchone()
+    except Exception as e:
+        logging.warning("RM lookup fallback also failed. phone=%s err=%s", phone, e)
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
         return None
 
 
