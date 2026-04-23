@@ -190,6 +190,11 @@ export const css = `
   .chatbot-fab:hover { transform: scale(1.08); border-color: var(--oh-orange); }
   @media (max-width: 520px) { .chatbot-fab { left: 20px; } }
 
+  /* WhatsApp RM button — same position as old .chatbot-fab (bottom-left, opposite the orange +FAB) */
+  .wa-fab { position: fixed; bottom: 24px; left: calc(50% - 240px + 24px); width: 52px; height: 52px; border-radius: 50%; background: #25D366; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(37, 211, 102, 0.4); cursor: pointer; z-index: 50; text-decoration: none; transition: transform 0.15s; }
+  .wa-fab:hover { transform: scale(1.08); }
+  @media (max-width: 520px) { .wa-fab { left: 20px; } }
+
   .chatbot-panel { position: fixed; bottom: 24px; left: calc(50% - 240px + 20px); width: 340px; max-width: calc(100vw - 40px); max-height: min(600px, calc(100vh - 48px)); background: #fff; border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.18); display: flex; flex-direction: column; overflow: hidden; z-index: 51; animation: chatbotSlideIn 0.2s ease; }
   @media (max-width: 520px) { .chatbot-panel { left: 20px; right: 20px; width: auto; } }
   @keyframes chatbotSlideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
@@ -719,6 +724,7 @@ export const css = `
   @media (max-width: 520px) {
     .fab { right: 18px; bottom: 88px; }
     .chatbot-fab { left: 18px; bottom: 88px; }
+    .wa-fab { left: 18px; bottom: 88px; }
     .chatbot-panel { left: 12px; right: 12px; width: auto; bottom: 88px; }
     .dash-stats { padding: 12px 16px 4px; gap: 8px; }
     .dash-stat { padding: 12px 6px; }
