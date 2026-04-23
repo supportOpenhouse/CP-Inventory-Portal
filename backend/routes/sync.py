@@ -362,6 +362,7 @@ def sync_channel_partners():
                         "cp_code": cp_sync_code,
                         "name": cp_sync_name,
                         "phone": cp_sync_phone_norm,
+                        "company": cp_sync_company,
                         "city": cp_sync_city_raw,
                     })
                     log.info(
