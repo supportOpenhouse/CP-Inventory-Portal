@@ -173,3 +173,227 @@ def collated_data_stats():
             })
     finally:
         put_app_conn(conn)
+
+
+# ==============================================================
+# Channel Partner sync from Google Sheet
+# ==============================================================
+
+# Sheet columns expected on the payload (from Apps Script):
+#   name, phone_number, cp_code, company_name, city, micro_markets
+# Sheet's `id` column is ignored — DB uses its own SERIAL.
+_CP_SYNC_MAX_BATCH = 1000
+
+
+def _cp_sync_normalize_phone(raw):
+    """Strip all non-digit chars, take last 10 digits. Matches utils.normalize_phone."""
+    if raw is None:
+        return None
+    s = str(raw)
+    digits = "".join(c for c in s if c.isdigit())
+    if len(digits) < 10:
+        return None
+    return digits[-10:]
+
+
+def _cp_sync_parse_micro_markets(raw):
+    """Accept either a JSON array string, a comma-separated string, or a list.
+    Return a Python list (empty if nothing usable).
+    """
+    import json
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    s = str(raw).strip()
+    if not s:
+        return []
+    # Try JSON first
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, list):
+                return [str(x).strip() for x in parsed if str(x).strip()]
+        except Exception:
+            pass
+    # Fallback: comma-separated
+    return [p.strip() for p in s.split(",") if p.strip()]
+
+
+@bp.post("/channel-partners")
+def sync_channel_partners():
+    """Append-only sync of CPs from Google Sheet.
+
+    Request body: {"rows": [ {name, phone_number, cp_code, company_name, city, micro_markets}, ... ]}
+    Response:
+      {
+        "ok": true,
+        "inserted": N,
+        "skipped_existing": M,
+        "skipped_invalid": K,
+        "total": N+M+K,
+        "added": [ {cp_code, name, phone, city}, ... ],   // sample of what was added
+        "invalid": [ {row_index, reason}, ... ]            // why rows were skipped
+      }
+
+    Dedup key: phone (normalized to 10 digits). If phone already exists in
+    channel_partners, we do NOT update the existing row — sheet edits are
+    ignored for existing CPs. Only new phones get INSERTed.
+    """
+    auth_err = _require_sync_auth()
+    if auth_err is not None:
+        return auth_err
+
+    data = request.get_json(silent=True) or {}
+    sheet_rows = data.get("rows")
+    if not isinstance(sheet_rows, list):
+        return jsonify({"error": "Missing or invalid 'rows' (expected list)"}), 400
+    if len(sheet_rows) == 0:
+        return jsonify({
+            "ok": True, "inserted": 0, "skipped_existing": 0,
+            "skipped_invalid": 0, "total": 0, "added": [], "invalid": [],
+        })
+    if len(sheet_rows) > _CP_SYNC_MAX_BATCH:
+        return jsonify({"error": f"Batch too large: {len(sheet_rows)} > {_CP_SYNC_MAX_BATCH}"}), 413
+
+    import json
+
+    cp_sync_inserted_count = 0
+    cp_sync_skipped_existing = 0
+    cp_sync_invalid_rows = []   # list of {row_index, reason}
+    cp_sync_added_samples = []  # list of inserted CPs for the response
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Build city name -> id map once (case-insensitive)
+            cur.execute("SELECT id, LOWER(name) AS lname FROM cities")
+            cp_sync_city_map = {r["lname"]: r["id"] for r in cur.fetchall()}
+
+            # Build existing phone set once, so we can dedup in O(1) per row
+            cur.execute("SELECT phone FROM channel_partners")
+            cp_sync_existing_phones = {
+                _cp_sync_normalize_phone(r["phone"])
+                for r in cur.fetchall()
+            }
+            cp_sync_existing_phones.discard(None)
+
+            # Also track cp_codes we've already claimed in this batch + DB
+            cur.execute("SELECT cp_code FROM channel_partners WHERE cp_code IS NOT NULL")
+            cp_sync_existing_codes = {r["cp_code"] for r in cur.fetchall() if r.get("cp_code")}
+
+            for cp_sync_idx, cp_sync_sheet_row in enumerate(sheet_rows):
+                if not isinstance(cp_sync_sheet_row, dict):
+                    cp_sync_invalid_rows.append({"row_index": cp_sync_idx, "reason": "row is not an object"})
+                    continue
+
+                cp_sync_name = (cp_sync_sheet_row.get("name") or "").strip()
+                cp_sync_phone_norm = _cp_sync_normalize_phone(cp_sync_sheet_row.get("phone_number"))
+                cp_sync_code = (cp_sync_sheet_row.get("cp_code") or "").strip() or None
+                cp_sync_company = (cp_sync_sheet_row.get("company_name") or "").strip() or None
+                cp_sync_city_raw = (cp_sync_sheet_row.get("city") or "").strip() or None
+                cp_sync_mm_list = _cp_sync_parse_micro_markets(cp_sync_sheet_row.get("micro_markets"))
+
+                # Validation
+                if not cp_sync_name:
+                    cp_sync_invalid_rows.append({"row_index": cp_sync_idx, "reason": "missing name"})
+                    continue
+                if not cp_sync_phone_norm:
+                    cp_sync_invalid_rows.append({
+                        "row_index": cp_sync_idx,
+                        "reason": f"invalid phone: {cp_sync_sheet_row.get('phone_number')!r}",
+                    })
+                    continue
+
+                # Dedup by phone
+                if cp_sync_phone_norm in cp_sync_existing_phones:
+                    cp_sync_skipped_existing += 1
+                    continue
+
+                # cp_code collision — reject so we don't violate UNIQUE constraint
+                if cp_sync_code and cp_sync_code in cp_sync_existing_codes:
+                    cp_sync_invalid_rows.append({
+                        "row_index": cp_sync_idx,
+                        "reason": f"cp_code already in use: {cp_sync_code}",
+                    })
+                    continue
+
+                # City resolution (optional — NULL if unmatched)
+                cp_sync_city_id = None
+                if cp_sync_city_raw:
+                    cp_sync_city_id = cp_sync_city_map.get(cp_sync_city_raw.lower())
+                    if cp_sync_city_id is None:
+                        log.warning(
+                            "[cp-sync] row %d: city %r not found in cities table, inserting with NULL",
+                            cp_sync_idx, cp_sync_city_raw,
+                        )
+
+                # INSERT — use savepoint so per-row failures don't lose the
+                # successful inserts from earlier rows in this batch.
+                cp_sync_savepoint = f"cp_sync_sp_{cp_sync_idx}"
+                try:
+                    cur.execute(f"SAVEPOINT {cp_sync_savepoint}")
+                    cur.execute("""
+                        INSERT INTO channel_partners
+                            (cp_code, name, phone, company, city_id, micro_markets,
+                             is_admin, is_active, role)
+                        VALUES
+                            (%s, %s, %s, %s, %s, %s::jsonb, FALSE, TRUE, 'cp')
+                        RETURNING id
+                    """, (
+                        cp_sync_code,
+                        cp_sync_name,
+                        cp_sync_phone_norm,
+                        cp_sync_company,
+                        cp_sync_city_id,
+                        json.dumps(cp_sync_mm_list),
+                    ))
+                    cp_sync_new_row_id = cur.fetchone()["id"]
+                    cur.execute(f"RELEASE SAVEPOINT {cp_sync_savepoint}")
+                    cp_sync_inserted_count += 1
+
+                    # Track in-batch so next row can see it
+                    cp_sync_existing_phones.add(cp_sync_phone_norm)
+                    if cp_sync_code:
+                        cp_sync_existing_codes.add(cp_sync_code)
+
+                    cp_sync_added_samples.append({
+                        "id": cp_sync_new_row_id,
+                        "cp_code": cp_sync_code,
+                        "name": cp_sync_name,
+                        "phone": cp_sync_phone_norm,
+                        "city": cp_sync_city_raw,
+                    })
+                    log.info(
+                        "[cp-sync] added CP id=%d cp_code=%r name=%r phone=%r city=%r",
+                        cp_sync_new_row_id, cp_sync_code, cp_sync_name, cp_sync_phone_norm, cp_sync_city_raw,
+                    )
+                except Exception as cp_sync_err:
+                    # Roll back just THIS row; earlier successful inserts stay.
+                    try:
+                        cur.execute(f"ROLLBACK TO SAVEPOINT {cp_sync_savepoint}")
+                    except Exception:
+                        pass
+                    log.exception("[cp-sync] row %d insert failed: %s", cp_sync_idx, cp_sync_err)
+                    cp_sync_invalid_rows.append({
+                        "row_index": cp_sync_idx,
+                        "reason": f"DB insert failed: {cp_sync_err}",
+                    })
+
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.exception("[cp-sync] batch failed: %s", e)
+        return jsonify({"error": "Sync failed", "detail": str(e)}), 500
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "inserted": cp_sync_inserted_count,
+        "skipped_existing": cp_sync_skipped_existing,
+        "skipped_invalid": len(cp_sync_invalid_rows),
+        "total": len(sheet_rows),
+        "added": cp_sync_added_samples,
+        "invalid": cp_sync_invalid_rows,
+    })
