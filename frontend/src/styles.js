@@ -136,10 +136,14 @@ export const css = `
   .badge-offer { background: #FEF3C7; color: var(--oh-yellow); }
   .badge-closed { background: #D1FAE5; color: var(--oh-green); }
 
-  /* ===== FAB (add unit) ===== */
-  .fab { position: fixed; bottom: 24px; right: calc(50% - 240px + 24px); width: 60px; height: 60px; border-radius: 50%; background: var(--oh-orange); color: #fff; border: none; font-size: 30px; font-weight: 400; cursor: pointer; box-shadow: 0 6px 20px rgba(255,107,43,0.3); transition: transform 0.15s; font-family: inherit; line-height: 1; z-index: 40; }
-  .fab:hover { transform: scale(1.08); }
-  @media (max-width: 520px) { .fab { right: 20px; } }
+  /* ===== Register Inventory pill (was .fab circle) =====
+     Sits bottom-right of the centered 480px container. Leaves space on the left
+     for the .wa-fab circle (52px wide + 16px gap = 68px reserved). Height 52px
+     exactly matches .wa-fab for a clean aligned footer row. */
+  .register-btn { position: fixed; bottom: 24px; left: calc(50% - 240px + 92px); right: calc(50% - 240px + 24px); height: 52px; padding: 0 18px; border-radius: 26px; background: var(--oh-orange); color: #fff; border: none; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 20px rgba(255,107,43,0.3); transition: transform 0.15s; font-family: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 8px; z-index: 40; white-space: nowrap; }
+  .register-btn:hover { transform: scale(1.03); }
+  .register-btn .plus { font-size: 22px; font-weight: 400; line-height: 1; }
+  @media (max-width: 520px) { .register-btn { left: 88px; right: 20px; } }
 
   /* ===== Add Unit: progress bar + step label ===== */
   .progress-bar { display: flex; gap: 6px; padding: 14px 20px 0; }
@@ -722,9 +726,7 @@ export const css = `
 
   /* ===== Mobile polish (< 520px) ===== */
   @media (max-width: 520px) {
-    .fab { right: 18px; bottom: 88px; }
     .chatbot-fab { left: 18px; bottom: 88px; }
-    .wa-fab { left: 18px; bottom: 88px; }
     .chatbot-panel { left: 12px; right: 12px; width: auto; bottom: 88px; }
     .dash-stats { padding: 12px 16px 4px; gap: 8px; }
     .dash-stat { padding: 12px 6px; }
