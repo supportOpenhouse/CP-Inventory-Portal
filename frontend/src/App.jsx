@@ -14,8 +14,8 @@ function Shell() {
 
   if (!user) return <Login />;
 
-  // Staff (RM + admin) go to admin dashboard
-  if (user.role === 'rm' || user.role === 'admin') {
+  // Staff (RM + manager + admin) all go to admin dashboard
+  if (user.role === 'rm' || user.role === 'manager' || user.role === 'admin') {
     return <Admin />;
   }
 
