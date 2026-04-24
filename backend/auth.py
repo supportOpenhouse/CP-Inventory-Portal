@@ -68,7 +68,7 @@ def require_staff(f):
         g.user = payload
 
         role = payload.get("role", "cp")
-        if role not in ("rm", "admin"):
+        if role not in ("rm", "manager", "admin"):
             return jsonify({"error": "Forbidden"}), 403
         return f(*args, **kwargs)
     return wrapper

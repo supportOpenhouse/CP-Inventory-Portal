@@ -87,7 +87,8 @@ def _scoped_city_filter(cur):
                 "s.cp_id IN (SELECT id FROM channel_partners WHERE rm_id = %s)"
             )
             params = [rm_id]
-        return f"AND {clause} AND s.status != 'Unapproved'", params
+        # Staff see all stages including Unapproved (full visibility into their CPs' funnel).
+        return f"AND {clause}", params
 
     # Legacy path — RM was a channel_partners row with role='rm'
     if city_id_legacy or cp_id_legacy:
@@ -100,7 +101,7 @@ def _scoped_city_filter(cur):
             clauses.append("s.assigned_rm_id = %s")
             params.append(cp_id_legacy)
         where = " OR ".join(clauses)
-        return f"AND ({where}) AND s.status != 'Unapproved'", params
+        return f"AND ({where})", params
 
     # No scope info at all — deny by default
     return "AND FALSE", []
@@ -332,11 +333,6 @@ def change_status(sid: int):
             old_status = existing["status"]
             if old_status == new_status:
                 return jsonify({"ok": True, "unchanged": True}), 200
-
-            # Unapproved submissions can only be moved by admins (approve/reject)
-            is_admin = bool(g.user.get("is_admin", False))
-            if (old_status == "Unapproved" or new_status == "Unapproved") and not is_admin:
-                return jsonify({"error": "Only admins can approve or reject flagged submissions"}), 403
 
             cur.execute("UPDATE submissions SET status = %s WHERE id = %s", (new_status, sid))
             cur.execute("""
@@ -822,11 +818,6 @@ def bulk_status():
 
             for sid, old_status in in_scope.items():
                 if old_status == new_status:
-                    skipped += 1
-                    continue
-                # Unapproved transitions are admin-only
-                is_admin = bool(g.user.get("is_admin", False))
-                if (old_status == "Unapproved" or new_status == "Unapproved") and not is_admin:
                     skipped += 1
                     continue
                 cur.execute(
