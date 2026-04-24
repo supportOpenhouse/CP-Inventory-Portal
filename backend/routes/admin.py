@@ -57,10 +57,11 @@ def _scoped_city_filter(cur):
       - Non-manager : s.cp_id IN (CPs where cp.rm_id = me)
       - Manager     : s.cp_id IN (CPs where cp.rm_id = me
                                   OR cp.rm_id IN my team)
-      Unapproved is hidden either way.
+      All statuses visible (including Unapproved) so RMs/managers can track
+      their CPs' submissions through the full admin review lifecycle.
 
     RM from channel_partners (legacy, cp_id in JWT with role='rm'):
-      Same as before (city_id OR assigned_rm_id).
+      Same as before (city_id OR assigned_rm_id), also including Unapproved.
     """
     role = g.user.get("role", "cp")
     if role == "admin":
@@ -87,7 +88,8 @@ def _scoped_city_filter(cur):
                 "s.cp_id IN (SELECT id FROM channel_partners WHERE rm_id = %s)"
             )
             params = [rm_id]
-        return f"AND {clause} AND s.status != 'Unapproved'", params
+        # Managers and RMs now see all stages for their CPs, including Unapproved.
+        return f"AND {clause}", params
 
     # Legacy path — RM was a channel_partners row with role='rm'
     if city_id_legacy or cp_id_legacy:
@@ -100,7 +102,8 @@ def _scoped_city_filter(cur):
             clauses.append("s.assigned_rm_id = %s")
             params.append(cp_id_legacy)
         where = " OR ".join(clauses)
-        return f"AND ({where}) AND s.status != 'Unapproved'", params
+        # Legacy RM path — also shows all stages including Unapproved now.
+        return f"AND ({where})", params
 
     # No scope info at all — deny by default
     return "AND FALSE", []
