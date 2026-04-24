@@ -50,22 +50,22 @@ def _fetch_active_cp(cur, phone: str):
 def _fetch_active_rm(cur, phone: str):
     """Look up an active RM in the `rms` table by normalized phone.
 
-    Phones in `rms` may be stored with +91 prefix and/or spaces (e.g.
-    '+91 9289500953') while `normalize_phone()` returns last-10-digits only
-    (e.g. '9289500953'). We normalize BOTH sides in SQL so the match works
-    regardless of how data is stored.
+    Phones in `rms` may have +91 prefix and/or spaces (e.g. '+91 9289500953')
+    while normalize_phone() returns last-10-digits only. Both sides are
+    normalized in SQL so the match works regardless of storage format.
 
-    If the query errors (e.g. migration not run adding city_id), we roll
-    back the aborted transaction and fall back to a minimal query without
-    the city_id column, so at least login doesn't 500.
+    Tries the fullest query first (city_id + manager columns). If that fails
+    (e.g. migration hasn't run yet), rolls back the aborted transaction and
+    tries simpler fallbacks so login doesn't 500 during partial migrations.
     """
     import logging
 
-    # Primary query: normalizes both sides + joins cities for display name.
-    # RIGHT(REGEXP_REPLACE(r.phone, '\D', '', 'g'), 10) == stripped-digits last 10
+    # Primary: full query with city + manager hierarchy
     try:
         cur.execute("""
-            SELECT r.id, r.name, r.phone, r.email, r.city_id, c.name AS city
+            SELECT r.id, r.name, r.phone, r.email,
+                   r.city_id, c.name AS city,
+                   r.is_manager, r.manager_id
             FROM rms r
             LEFT JOIN cities c ON r.city_id = c.id
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
@@ -74,18 +74,41 @@ def _fetch_active_rm(cur, phone: str):
         """, (phone,))
         return cur.fetchone()
     except Exception as e:
-        logging.warning("RM lookup (with city_id) failed, trying fallback. phone=%s err=%s", phone, e)
+        logging.warning("RM lookup (full) failed, trying fallback. phone=%s err=%s", phone, e)
         try:
             cur.connection.rollback()
         except Exception:
             pass
 
-    # Fallback: schema doesn't yet have city_id. Login still succeeds, but
-    # admin scope will be empty until migration + data seeding happen.
+    # Fallback 1: has city_id but no manager columns (migration_rms_city_id ran,
+    # migration_manager_role has not)
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
-                   NULL::integer AS city_id, NULL::varchar AS city
+                   r.city_id, c.name AS city,
+                   FALSE AS is_manager, NULL::integer AS manager_id
+            FROM rms r
+            LEFT JOIN cities c ON r.city_id = c.id
+            WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
+              AND COALESCE(r.is_active, TRUE) = TRUE
+            LIMIT 1
+        """, (phone,))
+        row = cur.fetchone()
+        if row is not None:
+            return row
+    except Exception as e:
+        logging.warning("RM lookup (no manager cols) failed. phone=%s err=%s", phone, e)
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+
+    # Fallback 2: neither migration ran (no city_id, no manager cols)
+    try:
+        cur.execute("""
+            SELECT r.id, r.name, r.phone, r.email,
+                   NULL::integer AS city_id, NULL::varchar AS city,
+                   FALSE AS is_manager, NULL::integer AS manager_id
             FROM rms r
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
               AND COALESCE(r.is_active, TRUE) = TRUE
@@ -93,7 +116,7 @@ def _fetch_active_rm(cur, phone: str):
         """, (phone,))
         return cur.fetchone()
     except Exception as e:
-        logging.warning("RM lookup fallback also failed. phone=%s err=%s", phone, e)
+        logging.warning("RM lookup (minimal) failed. phone=%s err=%s", phone, e)
         try:
             cur.connection.rollback()
         except Exception:
@@ -103,6 +126,7 @@ def _fetch_active_rm(cur, phone: str):
 
 def _rm_user_response(rm: dict) -> dict:
     """Shape returned to the frontend for an RM login."""
+    is_mgr = bool(rm.get("is_manager"))
     return {
         "id": f"rm-{rm['id']}",
         "cp_code": f"RM{rm['id']:04d}",
@@ -111,33 +135,38 @@ def _rm_user_response(rm: dict) -> dict:
         "company": "Openhouse",
         "city": rm.get("city"),
         "isAdmin": False,
-        "role": "rm",
+        # UI role: 'manager' if user is a manager (optionally also an RM with
+        # direct CPs); 'rm' otherwise. Scope enforcement still happens in the
+        # backend based on the raw manager_id / is_manager values in the JWT.
+        "role": "manager" if is_mgr else "rm",
+        "isManager": is_mgr,
+        "managerId": rm.get("manager_id"),
         "microMarkets": [],
     }
 
 
 def _generate_rm_token(rm: dict) -> str:
-    """Issue a JWT for an RM logged in via rms table.
-    Uses the same auth.generate_token but with rm_id + role='rm' + city_id.
+    """Issue a JWT for an RM/manager logged in via rms table.
+
+    JWT payload carries:
+      - rm_id       : this user's rms.id
+      - role        : 'rm' or 'manager' (informational; backend trusts is_manager)
+      - is_manager  : bool — true if user has direct reports
+      - manager_id  : this user's own manager (NULL if top of chain)
+      - city_id     : for legacy city-scoped queries (may be unused post-migration)
     """
-    # Reuse generate_token shape: pass a synthetic dict it understands.
-    fake_cp = {
-        "id": None,                 # intentionally None — no cp_id
+    import jwt
+    from datetime import datetime, timedelta, timezone
+    is_mgr = bool(rm.get("is_manager"))
+    payload = {
+        "rm_id": rm["id"],
         "cp_code": f"RM{rm['id']:04d}",
         "phone": rm["phone"],
         "is_admin": False,
-        "role": "rm",
+        "role": "manager" if is_mgr else "rm",
+        "is_manager": is_mgr,
+        "manager_id": rm.get("manager_id"),
         "city_id": rm.get("city_id"),
-    }
-    import jwt
-    from datetime import datetime, timedelta, timezone
-    payload = {
-        "rm_id": rm["id"],
-        "cp_code": fake_cp["cp_code"],
-        "phone": fake_cp["phone"],
-        "is_admin": False,
-        "role": "rm",
-        "city_id": fake_cp["city_id"],
         "exp": datetime.now(timezone.utc) + timedelta(hours=24),
     }
     return jwt.encode(payload, Config.JWT_SECRET, algorithm="HS256")
@@ -306,13 +335,29 @@ def me():
         conn = get_app_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT r.id, r.name, r.phone, r.email, r.city_id, c.name AS city
-                    FROM rms r
-                    LEFT JOIN cities c ON r.city_id = c.id
-                    WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
-                """, (rm_id,))
-                rm = cur.fetchone()
+                # Try full query first, fall back if columns missing
+                rm = None
+                try:
+                    cur.execute("""
+                        SELECT r.id, r.name, r.phone, r.email,
+                               r.city_id, c.name AS city,
+                               r.is_manager, r.manager_id
+                        FROM rms r
+                        LEFT JOIN cities c ON r.city_id = c.id
+                        WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
+                    """, (rm_id,))
+                    rm = cur.fetchone()
+                except Exception:
+                    conn.rollback()
+                    cur.execute("""
+                        SELECT r.id, r.name, r.phone, r.email,
+                               r.city_id, c.name AS city,
+                               FALSE AS is_manager, NULL::integer AS manager_id
+                        FROM rms r
+                        LEFT JOIN cities c ON r.city_id = c.id
+                        WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
+                    """, (rm_id,))
+                    rm = cur.fetchone()
         finally:
             put_app_conn(conn)
         if not rm:

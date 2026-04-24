@@ -45,38 +45,65 @@ def require_admin_role(f):
 
 def _scoped_city_filter(cur):
     """
-    Admin: no restriction (sees all cities).
-    RM from channel_partners: city_id match OR assigned to them (legacy path).
-    RM from rms table: city_id match only (new 'manager' login path).
-    In both RM cases: Unapproved hidden (admin review queue).
+    Scope filter applied to submissions list/count/detail queries.
+
+    IMPORTANT: returns SQL that references `s.cp_id` and uses a subquery
+    against channel_partners, so it works for queries that don't join
+    `channel_partners cp` directly. The `s` alias on submissions is assumed.
+
+    Admin (role='admin'): no restriction.
+
+    RM from rms table (rm_id in JWT):
+      - Non-manager : s.cp_id IN (CPs where cp.rm_id = me)
+      - Manager     : s.cp_id IN (CPs where cp.rm_id = me
+                                  OR cp.rm_id IN my team)
+      Unapproved is hidden either way.
+
+    RM from channel_partners (legacy, cp_id in JWT with role='rm'):
+      Same as before (city_id OR assigned_rm_id).
     """
     role = g.user.get("role", "cp")
     if role == "admin":
         return "", []
 
-    city_id = g.user.get("city_id")
-    cp_id = g.user.get("cp_id")   # legacy RM in channel_partners
-    rm_id = g.user.get("rm_id")   # new RM from rms table
+    rm_id = g.user.get("rm_id")              # new: RM from rms table
+    is_manager = bool(g.user.get("is_manager"))
+    cp_id_legacy = g.user.get("cp_id")       # legacy RM in channel_partners
+    city_id_legacy = g.user.get("city_id") if not rm_id else None
 
-    if not city_id and not cp_id and not rm_id:
-        return "AND FALSE", []
+    if rm_id:
+        # Subquery avoids needing a `cp` join alias in the outer query.
+        if is_manager:
+            clause = (
+                "s.cp_id IN ("
+                "  SELECT id FROM channel_partners "
+                "  WHERE rm_id = %s "
+                "     OR rm_id IN (SELECT id FROM rms WHERE manager_id = %s)"
+                ")"
+            )
+            params = [rm_id, rm_id]
+        else:
+            clause = (
+                "s.cp_id IN (SELECT id FROM channel_partners WHERE rm_id = %s)"
+            )
+            params = [rm_id]
+        return f"AND {clause} AND s.status != 'Unapproved'", params
 
-    clauses = []
-    params = []
-    if city_id:
-        clauses.append("s.city_id = %s")
-        params.append(city_id)
-    if cp_id:
-        clauses.append("s.assigned_rm_id = %s")
-        params.append(cp_id)
-    # s.assigned_rm_id historically points to channel_partners.id, so rm_id
-    # from the `rms` table doesn't share that keyspace — city_id scope covers it.
+    # Legacy path — RM was a channel_partners row with role='rm'
+    if city_id_legacy or cp_id_legacy:
+        clauses = []
+        params = []
+        if city_id_legacy:
+            clauses.append("s.city_id = %s")
+            params.append(city_id_legacy)
+        if cp_id_legacy:
+            clauses.append("s.assigned_rm_id = %s")
+            params.append(cp_id_legacy)
+        where = " OR ".join(clauses)
+        return f"AND ({where}) AND s.status != 'Unapproved'", params
 
-    where = " OR ".join(clauses)
-    return (
-        f"AND ({where}) AND s.status != 'Unapproved'",
-        params,
-    )
+    # No scope info at all — deny by default
+    return "AND FALSE", []
 
 
 def _apply_filters(base_sql: str, params: list):

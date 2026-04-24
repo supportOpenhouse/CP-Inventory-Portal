@@ -142,7 +142,10 @@ export default function Admin() {
           <span className="admin-topbar-sub">Supply Inventory</span>
         </div>
         <div className="admin-topbar-right">
-          <span className="admin-topbar-env">{isAdmin ? 'Admin' : 'RM'} · {user.city || 'All cities'}</span>
+          <span className="admin-topbar-env">
+            {isAdmin ? 'Admin' : (user.isManager ? 'Manager' : 'RM')}
+            {user.city ? ` · ${user.city}` : (isAdmin ? ' · All cities' : '')}
+          </span>
           <div className="admin-topbar-user">
             <div className="admin-topbar-avatar">{(user.name || '?')[0]}</div>
             <span>{(user.name || '').split(' ')[0]}</span>
