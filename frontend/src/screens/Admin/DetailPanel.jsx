@@ -46,6 +46,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
 
   const user = getUser();
   const isAdmin = user?.role === 'admin';
+  const isStaff = isAdmin || user?.role === 'manager' || user?.role === 'rm';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,9 +65,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (!isAdmin || rms.length > 0) return;
+    if (!isStaff || rms.length > 0) return;
     api.adminListRms().then((r) => setRms(r.rms || [])).catch(() => {});
-  }, [isAdmin, rms.length]);
+  }, [isStaff, rms.length]);
 
   useEffect(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -284,7 +285,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
         </div>
 
         {/* Admin action bar */}
-        {s && isAdmin && !editMode && (
+        {s && isStaff && !editMode && (
           <div className="admin-panel-actions">
             <button className="btn-secondary-sm" onClick={startEdit} disabled={busy}>✏ Edit</button>
           </div>
@@ -484,7 +485,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
               </div>
 
               {/* Assignment — admin only */}
-              {isAdmin && (
+              {isStaff && (
                 <div className="admin-panel-section">
                   <div className="admin-panel-section-title">Assigned RM</div>
                   <select
@@ -513,7 +514,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
               <div className="admin-panel-section">
                 <div className="admin-panel-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Attachments</span>
-                  {isAdmin && (
+                  {isStaff && (
                     <>
                       <input
                         ref={fileInputRef}
@@ -540,7 +541,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     {s.photos.map((pid) => (
                       <div key={pid} className="admin-photo-thumb">
                         <img src={thumbnailUrl(pid, 120)} alt="" onClick={() => setLightboxId(pid)} />
-                        {isAdmin && (
+                        {isStaff && (
                           <button
                             className="admin-photo-remove"
                             onClick={() => handleRemovePhoto(pid)}

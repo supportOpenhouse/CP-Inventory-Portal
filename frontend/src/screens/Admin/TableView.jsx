@@ -55,6 +55,7 @@ export default function TableView({
   submissions, loading, selectedId, onSelect,
   bulkMode = false, selectedIds = new Set(), onToggleSelect, onToggleAll,
   isAdmin = false,
+  isStaff = false,
 }) {
   // { key, dir }  dir = 'asc' | 'desc'. Default: newest submissions first.
   const [sort, setSort] = useState({ key: 'submitted', dir: 'desc' });

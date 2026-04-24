@@ -14,6 +14,10 @@ const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
 export default function Admin() {
   const { user, logout } = useAuth();
   const isAdmin = user.role === 'admin';
+  // Managers and RMs get the same UI powers as admin — only the scope differs
+  // (backend already enforces "CPs under you only"). `isAdmin` remains for the
+  // display label, `isStaff` is for feature-visibility gates.
+  const isStaff = isAdmin || user.role === 'manager' || user.role === 'rm';
 
   const defaultCity = isAdmin ? 'All' : user.city || 'All';
   const [city, setCity] = useState(defaultCity);
@@ -157,7 +161,7 @@ export default function Admin() {
       {/* Toolbar */}
       <div className="admin-toolbar">
         <div className="admin-toolbar-left">
-          {isAdmin ? (
+          {isStaff ? (
             <div className="city-tabs">
               {CITY_TABS.map((c) => (
                 <button
@@ -187,7 +191,7 @@ export default function Admin() {
           </button>
         </div>
         <div className="admin-toolbar-right">
-          {isAdmin && (
+          {isStaff && (
             <button
               className={`filter-toggle ${bulkMode ? 'active' : ''}`}
               onClick={toggleBulkMode}
@@ -271,7 +275,7 @@ export default function Admin() {
           <div className="stat-num" style={{ color: '#222' }}>{counts.Total ?? 0}</div>
           <div className="stat-label">All</div>
         </button>
-        {STAGES.filter((s) => isAdmin || !s.adminOnly).map((s) => {
+        {STAGES.filter((s) => isStaff || !s.adminOnly).map((s) => {
           const active = statusFilter === s.key;
           return (
             <button
@@ -337,7 +341,7 @@ export default function Admin() {
           bulkMode={bulkMode}
           selectedIds={selectedIds}
           onToggleSelect={toggleBulkSelect}
-          isAdmin={isAdmin}
+          isAdmin={isAdmin} isStaff={isStaff}
         />
       ) : (
         <TableView
@@ -349,7 +353,7 @@ export default function Admin() {
           selectedIds={selectedIds}
           onToggleSelect={toggleBulkSelect}
           onToggleAll={toggleBulkAll}
-          isAdmin={isAdmin}
+          isAdmin={isAdmin} isStaff={isStaff}
         />
       )}
 

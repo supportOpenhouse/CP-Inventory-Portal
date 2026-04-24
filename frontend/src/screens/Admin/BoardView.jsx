@@ -4,9 +4,10 @@ export default function BoardView({
   submissions, loading, selectedId, onSelect,
   bulkMode = false, selectedIds = new Set(), onToggleSelect,
   isAdmin = false,
+  isStaff = false,
 }) {
-  // Hide admin-only stages (e.g. Unapproved) from non-admin users
-  const visibleStages = STAGES.filter((s) => isAdmin || !s.adminOnly);
+  // Staff (admin + manager + RM) see all stages including Unapproved
+  const visibleStages = STAGES.filter((s) => isStaff || isAdmin || !s.adminOnly);
 
   if (loading) {
     return (

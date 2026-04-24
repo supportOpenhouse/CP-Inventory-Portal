@@ -14,6 +14,7 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
 
   const user = getUser();
   const isAdmin = user?.role === 'admin';
+  const isStaff = isAdmin || user?.role === 'manager' || user?.role === 'rm';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,7 +179,7 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
                 </div>
                 {notes.length === 0 && (
                   <div style={{ fontSize: 13, color: '#999', marginBottom: 8 }}>
-                    No notes yet{isAdmin ? ' — add one below.' : '.'}
+                    No notes yet{isStaff ? ' — add one below.' : '.'}
                   </div>
                 )}
                 {notes.map((n) => (
@@ -189,7 +190,7 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
                         <span className="admin-event-role">{n.actor_role}</span>
                       )}
                       <span className="admin-event-time">{formatDateTime(n.created_at)}</span>
-                      {isAdmin && (
+                      {isStaff && (
                         <button
                           className="cp-note-delete"
                           onClick={() => removeNote(n.id)}
@@ -206,7 +207,7 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
         </div>
 
         {/* Admin-only: add a note */}
-        {isAdmin && cp && (
+        {isStaff && cp && (
           <div className="admin-comment-input">
             <input
               placeholder="Add a note about this CP…"
