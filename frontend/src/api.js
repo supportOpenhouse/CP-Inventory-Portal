@@ -106,6 +106,13 @@ export const api = {
   adminGetCpHistory: (cpId) =>
     request(`/admin/cp/${cpId}/submissions`),
   adminListRms: () => request('/admin/rms'),
+  // Admin-only: change a CP's permanent RM (channel_partners.rm_id)
+  // rmId may be null to unassign.
+  adminSetCpRm: (cpId, rmId) =>
+    request(`/admin/channel-partners/${cpId}/rm`, {
+      method: 'PATCH',
+      body: { rm_id: rmId },
+    }),
   adminBulkStatus: (ids, status) =>
     request('/admin/submissions/bulk-status', { method: 'POST', body: { ids, status } }),
   adminListCpNotes: (cpId) => request(`/admin/cp/${cpId}/notes`),

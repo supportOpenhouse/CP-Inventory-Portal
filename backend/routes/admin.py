@@ -57,11 +57,10 @@ def _scoped_city_filter(cur):
       - Non-manager : s.cp_id IN (CPs where cp.rm_id = me)
       - Manager     : s.cp_id IN (CPs where cp.rm_id = me
                                   OR cp.rm_id IN my team)
-      All statuses visible (including Unapproved) so RMs/managers can track
-      their CPs' submissions through the full admin review lifecycle.
+      Unapproved is hidden either way.
 
     RM from channel_partners (legacy, cp_id in JWT with role='rm'):
-      Same as before (city_id OR assigned_rm_id), also including Unapproved.
+      Same as before (city_id OR assigned_rm_id).
     """
     role = g.user.get("role", "cp")
     if role == "admin":
@@ -88,8 +87,7 @@ def _scoped_city_filter(cur):
                 "s.cp_id IN (SELECT id FROM channel_partners WHERE rm_id = %s)"
             )
             params = [rm_id]
-        # Managers and RMs now see all stages for their CPs, including Unapproved.
-        return f"AND {clause}", params
+        return f"AND {clause} AND s.status != 'Unapproved'", params
 
     # Legacy path — RM was a channel_partners row with role='rm'
     if city_id_legacy or cp_id_legacy:
@@ -102,8 +100,7 @@ def _scoped_city_filter(cur):
             clauses.append("s.assigned_rm_id = %s")
             params.append(cp_id_legacy)
         where = " OR ".join(clauses)
-        # Legacy RM path — also shows all stages including Unapproved now.
-        return f"AND ({where})", params
+        return f"AND ({where}) AND s.status != 'Unapproved'", params
 
     # No scope info at all — deny by default
     return "AND FALSE", []
@@ -281,10 +278,13 @@ def get_submission(sid: int):
                 SELECT s.*, c.name AS city,
                        cp.id AS cp_id, cp.cp_code, cp.name AS cp_name,
                        cp.phone AS cp_phone, cp.company AS cp_company,
+                       cp.rm_id AS cp_rm_id,
+                       cp_rm.name AS cp_rm_name,
                        rm.name AS assigned_rm_name
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
+                LEFT JOIN rms cp_rm ON cp.rm_id = cp_rm.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
                 WHERE s.id = %s {scope_sql}
             """, [sid, *scope_params])
@@ -677,22 +677,104 @@ def export_csv():
 @bp.get("/rms")
 @require_staff
 def list_rms():
-    """All RMs and admins, for the assignment dropdown."""
+    """RMs from the `rms` table — used for the admin's CP\u2194RM assignment dropdown.
+
+    Returns: { rms: [ {id, name, phone, email, city_id, city, is_manager}, ... ] }
+    Active only, ordered by name. If city_id is present, joins to cities for display.
+    Defensive: falls back gracefully if city_id/is_manager columns aren't there yet.
+    """
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                SELECT cp.id, cp.name, cp.cp_code, cp.role,
-                       c.name AS city
-                FROM channel_partners cp
-                LEFT JOIN cities c ON cp.city_id = c.id
-                WHERE cp.role IN ('rm', 'admin') AND cp.is_active = TRUE
-                ORDER BY cp.role DESC, cp.name ASC
-            """)
-            rows = cur.fetchall()
+            try:
+                cur.execute("""
+                    SELECT r.id, r.name, r.phone, r.email,
+                           r.city_id, c.name AS city,
+                           COALESCE(r.is_manager, FALSE) AS is_manager
+                    FROM rms r
+                    LEFT JOIN cities c ON r.city_id = c.id
+                    WHERE COALESCE(r.is_active, TRUE) = TRUE
+                    ORDER BY r.name ASC, r.id ASC
+                """)
+                rows = cur.fetchall()
+            except Exception:
+                conn.rollback()
+                # Fallback for schemas missing city_id / is_manager
+                cur.execute("""
+                    SELECT r.id, r.name, r.phone, r.email,
+                           NULL::integer AS city_id, NULL::varchar AS city,
+                           FALSE AS is_manager
+                    FROM rms r
+                    WHERE COALESCE(r.is_active, TRUE) = TRUE
+                    ORDER BY r.name ASC, r.id ASC
+                """)
+                rows = cur.fetchall()
     finally:
         put_app_conn(conn)
     return jsonify({"rms": rows}), 200
+
+
+@bp.patch("/channel-partners/<int:cp_id>/rm")
+@require_staff
+def set_cp_rm(cp_id: int):
+    """Admin-only: set channel_partners.rm_id for a CP.
+
+    Request body: { rm_id: <rms.id> | null }
+    Response:     { ok: true, rm_id: <value> }
+
+    Managers/RMs can VIEW the CP\u2019s current RM (via submission detail) but
+    cannot CHANGE it. Only role='admin' passes the guard.
+
+    If rm_id is null/omitted, clears the CP\u2019s RM assignment (no-RM state).
+    If rm_id is provided, we validate it exists in the `rms` table.
+    """
+    # Extra guard on top of require_staff — only true admins may reassign
+    if g.user.get("role") != "admin":
+        return jsonify({"error": "Only admins can change a CP's RM assignment"}), 403
+
+    data = request.get_json(silent=True) or {}
+    rm_id_raw = data.get("rm_id")
+    if rm_id_raw in ("", None):
+        new_rm_id = None
+    else:
+        try:
+            new_rm_id = int(rm_id_raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "rm_id must be an integer or null"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Verify CP exists
+            cur.execute("SELECT id FROM channel_partners WHERE id = %s", (cp_id,))
+            if cur.fetchone() is None:
+                return jsonify({"error": "Channel partner not found"}), 404
+
+            # If setting to a specific RM, verify that RM exists + is active
+            if new_rm_id is not None:
+                try:
+                    cur.execute(
+                        "SELECT id FROM rms WHERE id = %s AND COALESCE(is_active, TRUE) = TRUE",
+                        (new_rm_id,),
+                    )
+                except Exception:
+                    conn.rollback()
+                    cur.execute("SELECT id FROM rms WHERE id = %s", (new_rm_id,))
+                if cur.fetchone() is None:
+                    return jsonify({"error": "RM not found or inactive"}), 404
+
+            cur.execute(
+                "UPDATE channel_partners SET rm_id = %s WHERE id = %s",
+                (new_rm_id, cp_id),
+            )
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "Update failed", "detail": str(e)}), 500
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"ok": True, "rm_id": new_rm_id}), 200
 
 
 @bp.post("/submissions/bulk-status")

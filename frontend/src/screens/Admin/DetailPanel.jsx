@@ -176,16 +176,20 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
     }
   };
 
+  // Reassign the CP's permanent RM (channel_partners.rm_id) — admin only.
+  // This changes the RM for this CP ACROSS ALL their submissions, not just this one.
   const assignToRm = async (rmIdRaw) => {
     if (busy) return;
     const rmId = rmIdRaw ? parseInt(rmIdRaw, 10) : null;
+    const cpId = data?.submission?.cp_id;
+    if (!cpId) return;
     setBusy(true);
     try {
-      await api.adminUpdateSubmission(submissionId, { assigned_rm_id: rmId });
+      await api.adminSetCpRm(cpId, rmId);
       await load();
       onChanged?.();
     } catch (err) {
-      alert(err.message || 'Failed to assign');
+      alert(err.message || 'Failed to reassign RM');
     } finally {
       setBusy(false);
     }
@@ -284,7 +288,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
           <button className="panel-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
-        {/* Admin action bar */}
+        {/* Staff action bar — edit open to managers/RMs too */}
         {s && isStaff && !editMode && (
           <div className="admin-panel-actions">
             <button className="btn-secondary-sm" onClick={startEdit} disabled={busy}>✏ Edit</button>
@@ -484,31 +488,34 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </div>
               </div>
 
-              {/* Assignment — admin only */}
-              {isStaff && (
-                <div className="admin-panel-section">
-                  <div className="admin-panel-section-title">Assigned RM</div>
-                  <select
-                    className="status-select"
-                    value={s.assigned_rm_id || ''}
-                    onChange={(e) => assignToRm(e.target.value)}
-                    disabled={busy}
-                  >
-                    <option value="">— None (city default) —</option>
-                    {rms.map((rm) => (
-                      <option key={rm.id} value={rm.id}>
-                        {rm.name} {rm.city ? `(${rm.city})` : ''} {rm.role === 'admin' ? '· admin' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {s.assigned_rm_name && (
+              {/* CP's assigned RM — always shown; admin can reassign, others read-only */}
+              <div className="admin-panel-section">
+                <div className="admin-panel-section-title">CP's assigned RM</div>
+                {isAdmin ? (
+                  <>
+                    <select
+                      className="status-select"
+                      value={s.cp_rm_id || ''}
+                      onChange={(e) => assignToRm(e.target.value)}
+                      disabled={busy}
+                    >
+                      <option value="">— Unassigned —</option>
+                      {rms.map((rm) => (
+                        <option key={rm.id} value={rm.id}>
+                          {rm.name}{rm.city ? ` · ${rm.city}` : ''}{rm.is_manager ? ' · Manager' : ''}
+                        </option>
+                      ))}
+                    </select>
                     <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-                      Currently assigned to <strong>{s.assigned_rm_name}</strong>.
-                      They see this in addition to their city's submissions.
+                      Changes the RM for this CP across ALL their submissions, not just this one.
                     </div>
-                  )}
-                </div>
-              )}
+                  </>
+                ) : (
+                  <div className="admin-panel-val" style={{ fontWeight: 500 }}>
+                    {s.cp_rm_name || <span style={{ color: '#999', fontStyle: 'italic' }}>Unassigned</span>}
+                  </div>
+                )}
+              </div>
 
               {/* Attachments */}
               <div className="admin-panel-section">
