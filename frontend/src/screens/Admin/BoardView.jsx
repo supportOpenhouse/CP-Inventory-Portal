@@ -109,6 +109,15 @@ export default function BoardView({
                   </div>
                   <div className="board-card-bottom">
                     <span className="board-card-price">{formatPrice(s.asking_price)}</span>
+                    {s.acq_price_lakhs != null && (
+                      <span
+                        className="board-card-acq-price"
+                        title="Openhouse acquisition price"
+                        style={{ color: '#16a34a', fontWeight: 600, marginLeft: 6 }}
+                      >
+                        {formatPrice(s.acq_price_lakhs * 100000)}
+                      </span>
+                    )}
                     <span className="board-card-date">
                       {timeAgo(s.submitted_at)} · {s.cp_name}
                     </span>

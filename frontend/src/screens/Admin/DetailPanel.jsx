@@ -344,6 +344,14 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     <div className="admin-panel-label">Asking</div>
                     <div className="admin-panel-val" style={{ color: '#FF6B2B', fontWeight: 700 }}>{formatPrice(s.asking_price)}</div>
                   </div>
+                  {s.acq_price_lakhs != null && (
+                    <div title="Openhouse acquisition price">
+                      <div className="admin-panel-label">Acq</div>
+                      <div className="admin-panel-val" style={{ color: '#16a34a', fontWeight: 700 }}>
+                        {formatPrice(s.acq_price_lakhs * 100000)}
+                      </div>
+                    </div>
+                  )}
                   {s.asking_price && s.sqft ? (
                     <div>
                       <div className="admin-panel-label">Rate / sqft</div>

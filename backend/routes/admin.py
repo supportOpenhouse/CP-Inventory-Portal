@@ -180,11 +180,24 @@ def _list_submissions_core():
                     cp.id AS cp_id,
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
                     cp.company AS cp_company,
-                    rm.name AS assigned_rm_name
+                    rm.name AS assigned_rm_name,
+                    acq.acq_price_lakhs
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
+                LEFT JOIN LATERAL (
+                    -- Match: same society (case/whitespace-insensitive), same city, same bhk
+                    -- (strict). Tie-break by closest sqft to the submission. Returns 1 row.
+                    SELECT ap.acq_price_lakhs
+                    FROM acquisition_prices ap
+                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[[:space:]]', '', 'g'))
+                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[[:space:]]', '', 'g'))
+                      AND ap.city = c.name
+                      AND COALESCE(ap.bhk, '') = COALESCE(s.bhk, '')
+                    ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
+                    LIMIT 1
+                ) acq ON TRUE
                 WHERE TRUE {scope_sql}
             """
             params = list(scope_params)
@@ -281,12 +294,23 @@ def get_submission(sid: int):
                        cp.phone AS cp_phone, cp.company AS cp_company,
                        cp.rm_id AS cp_rm_id,
                        cp_rm.name AS cp_rm_name,
-                       rm.name AS assigned_rm_name
+                       rm.name AS assigned_rm_name,
+                       acq.acq_price_lakhs
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN rms cp_rm ON cp.rm_id = cp_rm.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
+                LEFT JOIN LATERAL (
+                    SELECT ap.acq_price_lakhs
+                    FROM acquisition_prices ap
+                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[[:space:]]', '', 'g'))
+                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[[:space:]]', '', 'g'))
+                      AND ap.city = c.name
+                      AND COALESCE(ap.bhk, '') = COALESCE(s.bhk, '')
+                    ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
+                    LIMIT 1
+                ) acq ON TRUE
                 WHERE s.id = %s {scope_sql}
             """, [sid, *scope_params])
             submission = cur.fetchone()

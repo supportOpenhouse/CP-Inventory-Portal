@@ -140,6 +140,7 @@ export default function TableView({
             <TH sortKey="unit">Unit</TH>
             <TH sortKey="config">Config</TH>
             <TH sortKey="asking">Asking</TH>
+            <th style={{ whiteSpace: 'nowrap' }} title="Openhouse acquisition price">Acq</th>
             <TH sortKey="cp">CP</TH>
             <TH sortKey="status">Status</TH>
             <TH sortKey="submitted">Submitted</TH>
@@ -186,6 +187,12 @@ export default function TableView({
                 </td>
                 <td>{[s.bhk, s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={{ fontWeight: 600, color: '#FF6B2B' }}>{formatPrice(s.asking_price)}</td>
+                <td
+                  style={{ fontWeight: 600, color: '#16a34a', whiteSpace: 'nowrap' }}
+                  title="Openhouse acquisition price"
+                >
+                  {s.acq_price_lakhs != null ? formatPrice(s.acq_price_lakhs * 100000) : '—'}
+                </td>
                 <td>
                   {s.cp_name}
                   <div style={{ fontSize: 11, color: '#999' }}>{s.cp_code}</div>
