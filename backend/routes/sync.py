@@ -475,10 +475,12 @@ def sync_acquisition_prices():
         if not isinstance(acq_sync_r, dict):
             acq_sync_invalid_rows.append({"row_index": acq_sync_idx, "reason": "row not an object"})
             continue
-        acq_sync_society = (acq_sync_r.get("society_name") or "").strip()
-        acq_sync_city = (acq_sync_r.get("city") or "").strip()
+        # Apps Script may pass ints/floats as raw values (e.g. society "1234" or
+        # bhk = 3 cell formatted as number). str() before strip() to be safe.
+        acq_sync_society = str(acq_sync_r.get("society_name") or "").strip()
+        acq_sync_city = str(acq_sync_r.get("city") or "").strip()
         acq_sync_price = _acq_sync_parse_price(acq_sync_r.get("acq_price_lakhs"))
-        acq_sync_bhk_raw = (acq_sync_r.get("bhk") or "").strip() or None
+        acq_sync_bhk_raw = str(acq_sync_r.get("bhk") or "").strip() or None
 
         # sqft: parse to int (strip non-digits). Tolerate "1200", "1,200", "1200 sqft".
         acq_sync_sqft_raw = acq_sync_r.get("sqft")
