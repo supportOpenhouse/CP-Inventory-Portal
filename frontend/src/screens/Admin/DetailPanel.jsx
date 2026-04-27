@@ -7,7 +7,7 @@ import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
 } from '../../cloudinary';
 
-// Fields the admin can edit (mirrors EDITABLE_FIELDS in backend/routes/admin.py)
+// Fields the admin can edit (mirrors EDITABLE_FIELDS in backend/routes/admin.py) go
 const EDITABLE_FIELDS = [
   { key: 'tower',               label: 'Tower',            type: 'text'   },
   { key: 'unit_no',              label: 'Unit No',          type: 'text'   },
