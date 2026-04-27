@@ -410,7 +410,7 @@ def sync_channel_partners():
 # new rows. All done in one transaction — rollback on any failure so the
 # table is never left empty.
 #
-_ACQ_SYNC_MAX_BATCH = 2000
+_ACQ_SYNC_MAX_BATCH = 10000
 
 
 def _acq_sync_parse_price(raw):
@@ -465,8 +465,11 @@ def sync_acquisition_prices():
     if len(sheet_rows) > _ACQ_SYNC_MAX_BATCH:
         return jsonify({"error": f"Batch too large: {len(sheet_rows)} > {_ACQ_SYNC_MAX_BATCH}"}), 413
 
-    # Validate + dedupe
-    acq_sync_valid_rows = {}   # key: (normalized_society, city) -> row tuple
+    # Validate + dedupe.
+    # Unique key is (normalized_society, city, bhk, sqft) to match the SQL
+    # composite unique index. bhk and sqft are optional — NULL/missing values
+    # collapse to '' and 0 respectively for dedup purposes.
+    acq_sync_valid_rows = {}   # key: (norm_society, city, bhk_str, sqft_int) -> row tuple
     acq_sync_invalid_rows = []
     for acq_sync_idx, acq_sync_r in enumerate(sheet_rows):
         if not isinstance(acq_sync_r, dict):
@@ -475,6 +478,20 @@ def sync_acquisition_prices():
         acq_sync_society = (acq_sync_r.get("society_name") or "").strip()
         acq_sync_city = (acq_sync_r.get("city") or "").strip()
         acq_sync_price = _acq_sync_parse_price(acq_sync_r.get("acq_price_lakhs"))
+        acq_sync_bhk_raw = (acq_sync_r.get("bhk") or "").strip() or None
+
+        # sqft: parse to int (strip non-digits). Tolerate "1200", "1,200", "1200 sqft".
+        acq_sync_sqft_raw = acq_sync_r.get("sqft")
+        acq_sync_sqft = None
+        if acq_sync_sqft_raw not in (None, ""):
+            acq_sync_sqft_digits = "".join(c for c in str(acq_sync_sqft_raw) if c.isdigit())
+            if acq_sync_sqft_digits:
+                try:
+                    acq_sync_sqft_val = int(acq_sync_sqft_digits)
+                    acq_sync_sqft = acq_sync_sqft_val if acq_sync_sqft_val > 0 else None
+                except ValueError:
+                    acq_sync_sqft = None
+
         if not acq_sync_society:
             acq_sync_invalid_rows.append({"row_index": acq_sync_idx, "reason": "missing society_name"})
             continue
@@ -487,10 +504,18 @@ def sync_acquisition_prices():
                 "reason": f"invalid price: {acq_sync_r.get('acq_price_lakhs')!r}",
             })
             continue
-        # Normalized key for in-memory dedup (matches the SQL UNIQUE index logic)
+
+        # Normalized key — must match the SQL UNIQUE index
         acq_sync_norm_soc = "".join(acq_sync_society.lower().split())
-        acq_sync_key = (acq_sync_norm_soc, acq_sync_city)
-        acq_sync_valid_rows[acq_sync_key] = (acq_sync_society, acq_sync_city, acq_sync_price)
+        acq_sync_key = (
+            acq_sync_norm_soc,
+            acq_sync_city,
+            acq_sync_bhk_raw or "",
+            acq_sync_sqft or 0,
+        )
+        acq_sync_valid_rows[acq_sync_key] = (
+            acq_sync_society, acq_sync_city, acq_sync_bhk_raw, acq_sync_sqft, acq_sync_price,
+        )
 
     acq_sync_inserted_count = 0
     conn = get_app_conn()
@@ -499,14 +524,26 @@ def sync_acquisition_prices():
             # Full-replace: wipe first
             cur.execute("TRUNCATE TABLE acquisition_prices RESTART IDENTITY")
 
-            # Bulk insert. Using executemany-style loop keeps the code simple;
-            # at ~2000 rows max this is plenty fast (<1s on Neon).
-            for (society, city, price) in acq_sync_valid_rows.values():
-                cur.execute("""
-                    INSERT INTO acquisition_prices (society_name, city, acq_price_lakhs)
-                    VALUES (%s, %s, %s)
-                """, (society, city, price))
-                acq_sync_inserted_count += 1
+            # Bulk insert via execute_values (batched single round-trip per chunk).
+            # At ~6500+ rows, the per-row execute() loop adds noticeable latency;
+            # execute_values pushes 500 rows per network call.
+            from psycopg2.extras import execute_values
+            acq_sync_payload = [
+                (society, city, bhk, sqft, price)
+                for (society, city, bhk, sqft, price) in acq_sync_valid_rows.values()
+            ]
+            if acq_sync_payload:
+                execute_values(
+                    cur,
+                    """
+                    INSERT INTO acquisition_prices
+                        (society_name, city, bhk, sqft, acq_price_lakhs)
+                    VALUES %s
+                    """,
+                    acq_sync_payload,
+                    page_size=500,
+                )
+                acq_sync_inserted_count = len(acq_sync_payload)
 
             conn.commit()
             log.info(
