@@ -191,10 +191,12 @@ def _list_submissions_core():
                     -- (strict). Tie-break by closest sqft to the submission. Returns 1 row.
                     SELECT ap.acq_price_lakhs
                     FROM acquisition_prices ap
-                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[[:space:]]', '', 'g'))
-                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[[:space:]]', '', 'g'))
-                      AND ap.city = c.name
-                      AND COALESCE(ap.bhk, '') = COALESCE(s.bhk, '')
+                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
+                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
+                      AND LOWER(TRIM(ap.city)) = LOWER(TRIM(c.name))
+                      -- BHK normalized to digits only ('3 BHK', '3BHK', '3' all become '3')
+                      AND REGEXP_REPLACE(COALESCE(ap.bhk, ''), '[^0-9.]', '', 'g')
+                          = REGEXP_REPLACE(COALESCE(s.bhk, ''), '[^0-9.]', '', 'g')
                     ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
                     LIMIT 1
                 ) acq ON TRUE
@@ -304,10 +306,12 @@ def get_submission(sid: int):
                 LEFT JOIN LATERAL (
                     SELECT ap.acq_price_lakhs
                     FROM acquisition_prices ap
-                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[[:space:]]', '', 'g'))
-                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[[:space:]]', '', 'g'))
-                      AND ap.city = c.name
-                      AND COALESCE(ap.bhk, '') = COALESCE(s.bhk, '')
+                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
+                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
+                      AND LOWER(TRIM(ap.city)) = LOWER(TRIM(c.name))
+                      -- BHK normalized to digits only ('3 BHK', '3BHK', '3' all become '3')
+                      AND REGEXP_REPLACE(COALESCE(ap.bhk, ''), '[^0-9.]', '', 'g')
+                          = REGEXP_REPLACE(COALESCE(s.bhk, ''), '[^0-9.]', '', 'g')
                     ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
                     LIMIT 1
                 ) acq ON TRUE
