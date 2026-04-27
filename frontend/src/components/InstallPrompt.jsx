@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react';
  */
 
 const DISMISS_KEY = 'oh_install_dismissed_at';
-const DISMISS_DAYS = 7;
+const DISMISS_DAYS = 30;
 
 function isRecentlyDismissed() {
   try {

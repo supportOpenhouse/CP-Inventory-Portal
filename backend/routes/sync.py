@@ -398,3 +398,134 @@ def sync_channel_partners():
         "added": cp_sync_added_samples,
         "invalid": cp_sync_invalid_rows,
     })
+
+# ==============================================================
+# Acquisition Prices sync from Google Sheet
+# ==============================================================
+#
+# Sheet columns expected on the payload (from Apps Script):
+#   society_name, city, acq_price_lakhs
+#
+# Weekly full-replace: TRUNCATE the table on each run, then INSERT the
+# new rows. All done in one transaction — rollback on any failure so the
+# table is never left empty.
+#
+_ACQ_SYNC_MAX_BATCH = 2000
+
+
+def _acq_sync_parse_price(raw):
+    """Parse '145', '145.5', '₹145L', '  145L ' etc. into a float or None."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    # Strip common non-numeric decorations: ₹, L, Cr, commas, spaces
+    cleaned = "".join(c for c in s if c.isdigit() or c == ".")
+    if not cleaned:
+        return None
+    try:
+        v = float(cleaned)
+        if v <= 0:
+            return None
+        return v
+    except ValueError:
+        return None
+
+
+@bp.post("/acquisition-prices")
+def sync_acquisition_prices():
+    """Weekly full-replace sync of society acquisition prices.
+
+    Request body: {"rows": [ {society_name, city, acq_price_lakhs}, ... ]}
+    Response:
+      {
+        "ok": true,
+        "inserted": N,
+        "skipped_invalid": K,
+        "total": N+K,
+        "truncated": true,
+        "invalid": [ {row_index, reason}, ... ]
+      }
+
+    Behavior: wraps TRUNCATE + INSERT in a single transaction. If any step
+    fails, full rollback — table is never emptied unless the sync succeeds.
+    Duplicate rows within the batch (same city + normalized society) are
+    deduped in memory (last occurrence wins) so the UNIQUE index doesn't
+    error out.
+    """
+    auth_err = _require_sync_auth()
+    if auth_err is not None:
+        return auth_err
+
+    data = request.get_json(silent=True) or {}
+    sheet_rows = data.get("rows")
+    if not isinstance(sheet_rows, list):
+        return jsonify({"error": "Missing or invalid 'rows' (expected list)"}), 400
+    if len(sheet_rows) > _ACQ_SYNC_MAX_BATCH:
+        return jsonify({"error": f"Batch too large: {len(sheet_rows)} > {_ACQ_SYNC_MAX_BATCH}"}), 413
+
+    # Validate + dedupe
+    acq_sync_valid_rows = {}   # key: (normalized_society, city) -> row tuple
+    acq_sync_invalid_rows = []
+    for acq_sync_idx, acq_sync_r in enumerate(sheet_rows):
+        if not isinstance(acq_sync_r, dict):
+            acq_sync_invalid_rows.append({"row_index": acq_sync_idx, "reason": "row not an object"})
+            continue
+        acq_sync_society = (acq_sync_r.get("society_name") or "").strip()
+        acq_sync_city = (acq_sync_r.get("city") or "").strip()
+        acq_sync_price = _acq_sync_parse_price(acq_sync_r.get("acq_price_lakhs"))
+        if not acq_sync_society:
+            acq_sync_invalid_rows.append({"row_index": acq_sync_idx, "reason": "missing society_name"})
+            continue
+        if not acq_sync_city:
+            acq_sync_invalid_rows.append({"row_index": acq_sync_idx, "reason": "missing city"})
+            continue
+        if acq_sync_price is None:
+            acq_sync_invalid_rows.append({
+                "row_index": acq_sync_idx,
+                "reason": f"invalid price: {acq_sync_r.get('acq_price_lakhs')!r}",
+            })
+            continue
+        # Normalized key for in-memory dedup (matches the SQL UNIQUE index logic)
+        acq_sync_norm_soc = "".join(acq_sync_society.lower().split())
+        acq_sync_key = (acq_sync_norm_soc, acq_sync_city)
+        acq_sync_valid_rows[acq_sync_key] = (acq_sync_society, acq_sync_city, acq_sync_price)
+
+    acq_sync_inserted_count = 0
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Full-replace: wipe first
+            cur.execute("TRUNCATE TABLE acquisition_prices RESTART IDENTITY")
+
+            # Bulk insert. Using executemany-style loop keeps the code simple;
+            # at ~2000 rows max this is plenty fast (<1s on Neon).
+            for (society, city, price) in acq_sync_valid_rows.values():
+                cur.execute("""
+                    INSERT INTO acquisition_prices (society_name, city, acq_price_lakhs)
+                    VALUES (%s, %s, %s)
+                """, (society, city, price))
+                acq_sync_inserted_count += 1
+
+            conn.commit()
+            log.info(
+                "[acq-sync] TRUNCATE+INSERT complete: %d inserted, %d invalid, %d dupes-in-batch",
+                acq_sync_inserted_count, len(acq_sync_invalid_rows),
+                len([r for r in sheet_rows if isinstance(r, dict)]) - acq_sync_inserted_count - len(acq_sync_invalid_rows),
+            )
+    except Exception as e:
+        conn.rollback()
+        log.exception("[acq-sync] failed: %s", e)
+        return jsonify({"error": "Sync failed, table not modified", "detail": str(e)}), 500
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "inserted": acq_sync_inserted_count,
+        "skipped_invalid": len(acq_sync_invalid_rows),
+        "total": len(sheet_rows),
+        "truncated": True,
+        "invalid": acq_sync_invalid_rows,
+    })
