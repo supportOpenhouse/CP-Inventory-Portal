@@ -1,4 +1,4 @@
-import { formatPrice, STAGES, timeAgo } from '../../format';
+import { formatPrice, formatAcqPrice, STAGES, timeAgo } from '../../format';
 
 export default function BoardView({
   submissions, loading, selectedId, onSelect,
@@ -109,15 +109,19 @@ export default function BoardView({
                   </div>
                   <div className="board-card-bottom">
                     <span className="board-card-price">{formatPrice(s.asking_price)}</span>
-                    {s.acq_price_lakhs != null && (
-                      <span
-                        className="board-card-acq-price"
-                        title="Openhouse acquisition price"
-                        style={{ color: '#16a34a', fontWeight: 600, marginLeft: 6 }}
-                      >
-                        {formatPrice(s.acq_price_lakhs * 100000)}
-                      </span>
-                    )}
+                    {(() => {
+                      const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
+                      if (!acq) return null;
+                      return (
+                        <span
+                          className="board-card-acq-price"
+                          title={acq.tooltip}
+                          style={{ color: '#16a34a', fontWeight: 600, marginLeft: 6 }}
+                        >
+                          {acq.display}
+                        </span>
+                      );
+                    })()}
                     <span className="board-card-date">
                       {timeAgo(s.submitted_at)} · {s.cp_name}
                     </span>

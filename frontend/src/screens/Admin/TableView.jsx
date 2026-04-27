@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { formatPrice, stageMeta, timeAgo } from '../../format';
+import { formatPrice, formatAcqPrice, stageMeta, timeAgo } from '../../format';
 
 // How to extract the sort key for each column.
 // All accessors return primitives (number or string) so compare is predictable.
@@ -187,12 +187,17 @@ export default function TableView({
                 </td>
                 <td>{[s.bhk, s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={{ fontWeight: 600, color: '#FF6B2B' }}>{formatPrice(s.asking_price)}</td>
-                <td
-                  style={{ fontWeight: 600, color: '#16a34a', whiteSpace: 'nowrap' }}
-                  title="Openhouse acquisition price"
-                >
-                  {s.acq_price_lakhs != null ? formatPrice(s.acq_price_lakhs * 100000) : '—'}
-                </td>
+                {(() => {
+                  const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
+                  return (
+                    <td
+                      style={{ fontWeight: 600, color: '#16a34a', whiteSpace: 'nowrap' }}
+                      title={acq ? acq.tooltip : 'Openhouse acquisition price'}
+                    >
+                      {acq ? acq.display : '—'}
+                    </td>
+                  );
+                })()}
                 <td>
                   {s.cp_name}
                   <div style={{ fontSize: 11, color: '#999' }}>{s.cp_code}</div>

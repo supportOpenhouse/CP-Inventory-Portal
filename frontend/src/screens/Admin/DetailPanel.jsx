@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../api';
-import { formatDateTime, formatPrice, STAGES } from '../../format';
+import { formatDateTime, formatPrice, formatAcqPrice, STAGES } from '../../format';
 import { getUser } from '../../auth';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
@@ -344,14 +344,27 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     <div className="admin-panel-label">Asking</div>
                     <div className="admin-panel-val" style={{ color: '#FF6B2B', fontWeight: 700 }}>{formatPrice(s.asking_price)}</div>
                   </div>
-                  {s.acq_price_lakhs != null && (
-                    <div title="Openhouse acquisition price">
-                      <div className="admin-panel-label">Acq</div>
-                      <div className="admin-panel-val" style={{ color: '#16a34a', fontWeight: 700 }}>
-                        {formatPrice(s.acq_price_lakhs * 100000)}
+                  {(() => {
+                    const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
+                    if (!acq) return null;
+                    const isSuggested = acq.display.includes('~');
+                    return (
+                      <div title={acq.tooltip}>
+                        <div className="admin-panel-label">
+                          Acq{isSuggested ? ' (suggested)' : ''}
+                        </div>
+                        <div className="admin-panel-val" style={{ color: '#16a34a', fontWeight: 700 }}>
+                          {isSuggested ? '~' : ''}{formatPrice(s.acq_price_lakhs * 100000)}
+                        </div>
+                        {isSuggested && s.acq_sqft && (
+                          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                            for {s.acq_sqft} sqft
+                            {s.sqft ? ` · your unit: ${s.sqft} sqft` : ''}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                   {s.asking_price && s.sqft ? (
                     <div>
                       <div className="admin-panel-label">Rate / sqft</div>

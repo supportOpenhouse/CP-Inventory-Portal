@@ -72,3 +72,33 @@ export const STAGES = [
 export function stageMeta(key) {
   return STAGES.find((s) => s.key === key) || STAGES[0];
 }
+/**
+ * Format the Openhouse acquisition price for display next to a submission.
+ * Returns { display, tooltip } where display is "Acq ₹145L" (exact match) or
+ * "Acq ~₹145L (1500 sqft)" (suggested). Returns null if no acq price.
+ *
+ * Match is "exact" when submission's sqft equals the matched acq row's sqft.
+ * Any difference (or missing submission sqft) renders as "~" prefix + sqft hint.
+ */
+export function formatAcqPrice(acq_price_lakhs, acq_sqft, submission_sqft) {
+  if (acq_price_lakhs == null) return null;
+  const priceStr = formatPrice(acq_price_lakhs * 100000);
+  const isExact =
+    submission_sqft && acq_sqft &&
+    Number(submission_sqft) === Number(acq_sqft);
+  if (isExact) {
+    return {
+      display: `Acq ${priceStr}`,
+      tooltip: 'Openhouse acquisition price',
+    };
+  }
+  // Suggested price — sqft differs OR submission has no sqft
+  const sqftHint = acq_sqft ? ` (${acq_sqft} sqft)` : '';
+  const tooltip = submission_sqft && acq_sqft
+    ? `Suggested price for ${acq_sqft} sqft (your unit: ${submission_sqft} sqft)`
+    : `Suggested price${acq_sqft ? ` for ${acq_sqft} sqft` : ''}`;
+  return {
+    display: `Acq ~${priceStr}${sqftHint}`,
+    tooltip,
+  };
+}

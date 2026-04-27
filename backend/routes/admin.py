@@ -181,7 +181,7 @@ def _list_submissions_core():
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
                     cp.company AS cp_company,
                     rm.name AS assigned_rm_name,
-                    acq.acq_price_lakhs
+                    acq.acq_price_lakhs, acq.acq_sqft
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
@@ -189,7 +189,7 @@ def _list_submissions_core():
                 LEFT JOIN LATERAL (
                     -- Match: same society (case/whitespace-insensitive), same city, same bhk
                     -- (strict). Tie-break by closest sqft to the submission. Returns 1 row.
-                    SELECT ap.acq_price_lakhs
+                    SELECT ap.acq_price_lakhs, ap.sqft AS acq_sqft
                     FROM acquisition_prices ap
                     WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
                           = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
@@ -297,14 +297,14 @@ def get_submission(sid: int):
                        cp.rm_id AS cp_rm_id,
                        cp_rm.name AS cp_rm_name,
                        rm.name AS assigned_rm_name,
-                       acq.acq_price_lakhs
+                       acq.acq_price_lakhs, acq.acq_sqft
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN rms cp_rm ON cp.rm_id = cp_rm.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
                 LEFT JOIN LATERAL (
-                    SELECT ap.acq_price_lakhs
+                    SELECT ap.acq_price_lakhs, ap.sqft AS acq_sqft
                     FROM acquisition_prices ap
                     WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
                           = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
