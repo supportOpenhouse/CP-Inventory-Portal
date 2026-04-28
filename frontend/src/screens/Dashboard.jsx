@@ -54,26 +54,6 @@ export default function Dashboard({ onAdd }) {
   // Confirmation dialogs for destructive actions
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [pendingRejectId, setPendingRejectId] = useState(null);  // submission id awaiting reject confirmation
-  const [pendingWithdrawId, setPendingWithdrawId] = useState(null);  // submission id awaiting withdraw confirmation
-  const [withdrawBusy, setWithdrawBusy] = useState({});
-
-  const handleWithdraw = async (submissionId) => {
-    setWithdrawBusy((b) => ({ ...b, [submissionId]: true }));
-    try {
-      await api.withdrawSubmission(submissionId);
-      // Refresh list — withdrawn row stays visible but with greyed/withdrawn styling
-      await loadSubmissions();
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Failed to withdraw');
-    } finally {
-      setWithdrawBusy((b) => {
-        const next = { ...b };
-        delete next[submissionId];
-        return next;
-      });
-      setPendingWithdrawId(null);
-    }
-  };
 
   const loadSubmissions = () => {
     setState((st) => ({ ...st, loading: true }));
@@ -290,19 +270,8 @@ export default function Dashboard({ onAdd }) {
           const thumbId = Array.isArray(s.photos) && s.photos.length > 0 ? s.photos[0] : null;
           const hasPendingCounter = s.counter_offer_status === 'pending' && s.counter_offer_price;
           const busy = counterBusy[s.id];
-          // New flags from backend (May 2026 withdraw flow):
-          const isWithdrawn = !!s.deleted_at;
-          const isPerfectMatch = !!s.perfect_match_at_submit;
-          const isUnitLess = !!s.unit_less;
-          const canWithdraw = !isWithdrawn && (isUnitLess || isPerfectMatch);
-          // Card styling priority: perfect-match > withdrawn > normal
-          const cardStyle = isPerfectMatch
-            ? { border: '1.5px solid #f87171', background: '#fef2f2' }   // soft red
-            : isWithdrawn
-              ? { border: '1.5px solid #fbbf24', background: '#fffbeb', opacity: 0.85 }  // soft yellow + dim
-              : undefined;
           return (
-            <div className="unit-card" key={s.id} style={cardStyle}>
+            <div className="unit-card" key={s.id}>
               <div
                 className="unit-card-body"
                 style={{ display: 'flex', gap: 14, cursor: 'pointer' }}
@@ -444,64 +413,6 @@ export default function Dashboard({ onAdd }) {
                   </div>
                 </div>
               )}
-
-              {/* Perfect-match notice + Withdraw button */}
-              {isPerfectMatch && !isWithdrawn && (
-                <div style={{
-                  margin: '12px 0 0',
-                  padding: '10px 12px',
-                  background: '#fef2f2',
-                  border: '1px solid #fca5a5',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: '#991b1b',
-                }}>
-                  <strong>⚠ This unit appears to already be in our system.</strong>
-                  <div style={{ marginTop: 4, opacity: 0.85 }}>
-                    Tap "Withdraw" if this was a mistake.
-                  </div>
-                </div>
-              )}
-
-              {/* Withdrawn indicator */}
-              {isWithdrawn && (
-                <div style={{
-                  margin: '12px 0 0',
-                  padding: '8px 12px',
-                  background: '#fef3c7',
-                  border: '1px solid #fcd34d',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: '#92400e',
-                  fontWeight: 600,
-                }}>
-                  ✓ Withdrawn{isPerfectMatch ? ' (was flagged as duplicate)' : ''}
-                </div>
-              )}
-
-              {/* Withdraw button — only shown for active unit-less or perfect-match submissions */}
-              {canWithdraw && (
-                <button
-                  type="button"
-                  onClick={() => setPendingWithdrawId(s.id)}
-                  disabled={!!withdrawBusy[s.id]}
-                  style={{
-                    marginTop: 10,
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    border: '1.5px solid #ef4444',
-                    background: '#fff',
-                    color: '#ef4444',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: withdrawBusy[s.id] ? 'not-allowed' : 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {withdrawBusy[s.id] ? 'Withdrawing…' : 'Withdraw unit'}
-                </button>
-              )}
             </div>
           );
         })
@@ -566,21 +477,6 @@ export default function Dashboard({ onAdd }) {
           await handleCounterResponse(id, 'reject');
         }}
         onCancel={() => setPendingRejectId(null)}
-      />
-
-      {/* Confirm CP-self-withdraw of a unit-less or perfect-match submission */}
-      <ConfirmDialog
-        open={pendingWithdrawId !== null}
-        title="Withdraw this unit?"
-        message="This will remove your submission. You can submit it again later if you wish."
-        confirmLabel="Withdraw"
-        cancelLabel="Cancel"
-        destructive
-        busy={pendingWithdrawId !== null && !!withdrawBusy[pendingWithdrawId]}
-        onConfirm={() => {
-          if (pendingWithdrawId !== null) handleWithdraw(pendingWithdrawId);
-        }}
-        onCancel={() => setPendingWithdrawId(null)}
       />
     </div>
   );

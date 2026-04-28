@@ -50,28 +50,36 @@ export default function DuplicateCard({ result, onEdit, onForceCreate }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-          {onEdit && (
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={onEdit}
-              style={{ flex: 1 }}
-            >
-              Edit details
-            </button>
-          )}
-          {onForceCreate && (
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={onForceCreate}
-              style={{ flex: 1 }}
-            >
-              Add anyway
-            </button>
-          )}
-        </div>
+        {/* For perfect-match (exact + block), the listing is already with us — CP can
+            only Contact RM. Edit/Add-anyway buttons would be misleading, so hide them. */}
+        {(() => {
+          const isPerfectMatch = result?.match_level === 'exact' && result?.block === true;
+          if (isPerfectMatch) return null;
+          return (
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              {onEdit && (
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={onEdit}
+                  style={{ flex: 1 }}
+                >
+                  Edit details
+                </button>
+              )}
+              {onForceCreate && (
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={onForceCreate}
+                  style={{ flex: 1 }}
+                >
+                  Add anyway
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

@@ -90,9 +90,6 @@ export const api = {
   // Timeline for a CP's own submission (detail modal)
   listMySubmissionEvents: (submissionId) =>
     request(`/submissions/${submissionId}/events`),
-  // CP self-withdraws their unit-less or perfect-match submission (soft delete)
-  withdrawSubmission: (submissionId) =>
-    request(`/submissions/${submissionId}/withdraw`, { method: 'POST' }),
 
   // Admin (staff only)
   adminListSubmissions: (filters = {}) =>

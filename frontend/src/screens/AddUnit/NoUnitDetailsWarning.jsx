@@ -43,7 +43,7 @@ export default function NoUnitDetailsWarning({ onContinue, onBack }) {
                 fontFamily: 'inherit',
               }}
             >
-              Continue without unit details
+              Submit (without unit details)
             </button>
             <button
               type="button"

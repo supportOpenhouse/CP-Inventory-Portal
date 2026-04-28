@@ -228,13 +228,24 @@ def create_submission():
     finally:
         put_app_conn(conn)
 
-    # Email alert only for normal submissions; Unapproved ones wait for admin approval
+    # Email alert only for normal submissions; Unapproved ones wait for admin approval.
+    # Perfect-match rows ARE created and visible to admin in Unapproved (red card),
+    # but we don't ping RM with a "new submission" alert since the listing already exists.
     if initial_status == "Submitted":
         send_new_submission_alert_async(new_id)
 
+    # Perfect match: respond 409 so CP sees the "This unit is already with Openhouse"
+    # page (with Contact RM only, no Edit/Add anyway). The DB row is still created
+    # above so admin sees it as a red card in Unapproved column.
     if is_perfect_match:
-        message = "This unit appears to already be in our system. You can withdraw if this was a mistake."
-    elif is_unit_less and has_collated_match:
+        return jsonify({
+            "error": "Duplicate",
+            "duplicate": dup,
+            "submission_id": new_id,
+            "public_id": public_id,
+        }), 409
+
+    if is_unit_less and has_collated_match:
         message = "Unit submitted for admin review"
     elif is_unit_less:
         message = "Unit submitted for evaluation"
@@ -248,9 +259,7 @@ def create_submission():
         "submission_id": new_id,
         "public_id": public_id,
         "status": initial_status,
-        "perfect_match": is_perfect_match,
         "unit_less": is_unit_less,
-        "withdrawable": is_perfect_match or is_unit_less,
         "message": message,
     }), 201
 

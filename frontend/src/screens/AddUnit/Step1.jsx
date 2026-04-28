@@ -312,7 +312,11 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon }) {
                   className="input-field"
                   placeholder="e.g. 101"
                   value={form.unitNo}
-                  onChange={(e) => setForm({ ...form, unitNo: e.target.value })}
+                  onChange={(e) => {
+                    // Same restriction as Tower: letters, numbers, spaces only
+                    const sanitized = (e.target.value || '').replace(/[^a-zA-Z0-9 ]/g, '');
+                    setForm({ ...form, unitNo: sanitized });
+                  }}
                 />
               </div>
             </div>
