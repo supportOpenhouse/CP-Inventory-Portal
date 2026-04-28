@@ -125,6 +125,12 @@ export const api = {
     request(`/admin/submissions/${submissionId}/counter-offer`, {
       method: 'POST', body: { price_lakhs: priceLakhs },
     }),
+  // Forms-app integration — Schedule Visit
+  adminListFieldExecs: () => request('/admin/field-execs'),
+  adminScheduleVisit: (submissionId, payload) =>
+    request(`/admin/submissions/${submissionId}/schedule-visit`, {
+      method: 'POST', body: payload,
+    }),
 
   // Health
   health: () => request('/health', { auth: false }),

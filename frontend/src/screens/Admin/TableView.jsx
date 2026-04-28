@@ -203,6 +203,15 @@ export default function TableView({
                       WITHDRAWN
                     </span>
                   )}
+                  {s.forms_uid && (
+                    <span style={{
+                      display: 'inline-block', marginLeft: 6, padding: '1px 6px',
+                      fontSize: 9, fontWeight: 700, color: '#065F46',
+                      background: '#ECFDF5', borderRadius: 3, letterSpacing: 0.3,
+                    }} title={`Visit scheduled · ${s.scheduled_date || ''} ${s.scheduled_time || ''} · ${s.field_exec_name || ''} · UID ${s.forms_uid}`}>
+                      📅 {s.forms_uid}
+                    </span>
+                  )}
                 </td>
                 <td style={{ fontWeight: 600 }}>
                   {isWeakMatch && <span style={{ color: '#DC2626', marginRight: 6 }}>⚠</span>}

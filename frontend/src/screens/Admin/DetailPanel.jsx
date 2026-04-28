@@ -359,6 +359,30 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </select>
               </div>
 
+              {/* Schedule Visit — only when status is 'Visit Scheduled'.
+                  Shows current schedule info if forms_uid is set, or
+                  the Schedule Visit button if not. */}
+              {s.status === 'Visit Scheduled' && (
+                <ScheduleVisitSection
+                  submission={s}
+                  onScheduled={(result) => {
+                    // Patch the local detail with the new schedule info so
+                    // the section flips to "Already scheduled" without a refetch.
+                    setData((prev) => prev ? {
+                      ...prev,
+                      submission: {
+                        ...prev.submission,
+                        forms_uid: result.uid,
+                        scheduled_date: result.scheduled_date,
+                        scheduled_time: result.scheduled_time,
+                        field_exec_name: result.field_exec_name,
+                      },
+                    } : prev);
+                    onChanged?.();
+                  }}
+                />
+              )}
+
               {/* Unit details */}
               <div className="admin-panel-section">
                 <div className="admin-panel-section-title">Unit details</div>
@@ -753,6 +777,308 @@ function Row({ label, value, optional = false }) {
       <div className="admin-panel-val">
         {value || (optional ? '—' : <span className="missing-flag">Missing</span>)}
       </div>
+    </div>
+  );
+}
+// ============================================================
+// Schedule Visit — pushes listing to external Forms app.
+//
+// Two states:
+//   1. NOT yet scheduled (no forms_uid): button "Schedule Visit" → opens modal.
+//      Modal collects schedule_date, schedule_time, field_exec_id (dropdown
+//      from /admin/field-execs). Validates required submission fields client-side
+//      AND server-side. POSTs to /admin/submissions/<id>/schedule-visit.
+//
+//   2. Already scheduled (forms_uid set): shows green pill with the UID,
+//      schedule date/time, and field exec name. No button.
+// ============================================================
+function ScheduleVisitSection({ submission: s, onScheduled }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [fieldExecs, setFieldExecs] = useState([]);
+  const [loadingExecs, setLoadingExecs] = useState(false);
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
+  const [fieldExecId, setFieldExecId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [missingFields, setMissingFields] = useState([]);
+  const [toast, setToast] = useState(null);  // { kind: 'success' | 'error', text }
+
+  // Already scheduled — show the info pill instead of the button.
+  if (s.forms_uid) {
+    return (
+      <div className="admin-panel-section">
+        <div className="admin-panel-section-title">Visit Schedule</div>
+        <div style={{
+          padding: '12px 14px',
+          background: '#ECFDF5',
+          border: '1.5px solid #6EE7B7',
+          borderRadius: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#047857' }}>
+            ✓ Visit scheduled
+          </div>
+          <div style={{ fontSize: 12, color: '#065F46', fontFamily: 'monospace', fontWeight: 600 }}>
+            UID: {s.forms_uid}
+          </div>
+          <div style={{ fontSize: 13, color: '#065F46' }}>
+            {s.scheduled_date || '—'}{s.scheduled_time ? ` at ${s.scheduled_time}` : ''}
+            {s.field_exec_name ? ` · ${s.field_exec_name}` : ''}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const openModal = async () => {
+    setError('');
+    setMissingFields([]);
+    setDate('');
+    setTime('');
+    setFieldExecId('');
+    setModalOpen(true);
+    if (fieldExecs.length === 0) {
+      setLoadingExecs(true);
+      try {
+        const data = await api.adminListFieldExecs();
+        setFieldExecs(data?.field_execs || []);
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : 'Failed to load field execs');
+      } finally {
+        setLoadingExecs(false);
+      }
+    }
+  };
+
+  const closeModal = () => {
+    if (submitting) return;
+    setModalOpen(false);
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    setMissingFields([]);
+    if (!date || !time || !fieldExecId) {
+      setError('Please fill in all fields.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await api.adminScheduleVisit(s.id, {
+        schedule_date: date,
+        schedule_time: time,
+        field_exec_id: Number(fieldExecId),
+      });
+      setModalOpen(false);
+      const successMsg = result.already_existed
+        ? `Visit was already scheduled — UID: ${result.uid}`
+        : `Visit scheduled — UID: ${result.uid}`;
+      setToast({ kind: 'success', text: successMsg });
+      onScheduled?.(result);
+    } catch (e) {
+      if (e instanceof ApiError && e.data?.missing_fields) {
+        setMissingFields(e.data.missing_fields);
+        setError(e.message || 'Listing is missing required fields.');
+      } else {
+        setError(e instanceof ApiError ? e.message : 'Failed to schedule visit');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  return (
+    <div className="admin-panel-section">
+      <div className="admin-panel-section-title">Visit Schedule</div>
+      <button
+        type="button"
+        onClick={openModal}
+        style={{
+          width: '100%',
+          padding: '12px 16px',
+          borderRadius: 10,
+          border: 'none',
+          background: 'linear-gradient(135deg, #FF6B2B 0%, #FF8A50 100%)',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 700,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          boxShadow: '0 2px 8px rgba(255, 107, 43, 0.3)',
+        }}
+      >
+        📅 Schedule Visit
+      </button>
+
+      {toast && (
+        <div style={{
+          marginTop: 10,
+          padding: '10px 12px',
+          borderRadius: 8,
+          fontSize: 12,
+          fontWeight: 600,
+          background: toast.kind === 'success' ? '#ECFDF5' : '#FEF2F2',
+          color: toast.kind === 'success' ? '#047857' : '#991B1B',
+          border: `1px solid ${toast.kind === 'success' ? '#6EE7B7' : '#FCA5A5'}`,
+        }}>
+          {toast.text}
+        </div>
+      )}
+
+      {modalOpen && (
+        <div
+          onClick={closeModal}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.45)', zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: 14,
+              padding: 20,
+              maxWidth: 440,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.25)',
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+              Schedule Visit
+            </div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+              {s.public_id} · {s.society_name}
+            </div>
+
+            {error && (
+              <div style={{
+                padding: '10px 12px',
+                background: '#FEF2F2',
+                border: '1px solid #FCA5A5',
+                borderRadius: 8,
+                fontSize: 13,
+                color: '#991B1B',
+                marginBottom: 14,
+              }}>
+                {error}
+                {missingFields.length > 0 && (
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 12 }}>
+                    {missingFields.map((mf, i) => (
+                      <li key={i}>{mf.label || mf.field}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <div className="input-label">Date <span style={{ color: '#dc2626' }}>*</span></div>
+                <input
+                  type="date"
+                  className="input-field"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
+              <div>
+                <div className="input-label">Time <span style={{ color: '#dc2626' }}>*</span></div>
+                <input
+                  type="time"
+                  className="input-field"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <div className="input-label">Field Exec <span style={{ color: '#dc2626' }}>*</span></div>
+                {loadingExecs ? (
+                  <div style={{ fontSize: 13, color: '#999', padding: '8px 0' }}>Loading…</div>
+                ) : fieldExecs.length === 0 ? (
+                  <div style={{ fontSize: 13, color: '#dc2626' }}>
+                    No field execs available. Add users with can_visit=true in the properties DB.
+                  </div>
+                ) : (
+                  <select
+                    className="input-field"
+                    value={fieldExecId}
+                    onChange={(e) => setFieldExecId(e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {fieldExecs.map((fe) => (
+                      <option key={fe.id} value={fe.id}>
+                        {fe.name}{fe.email ? ` (${fe.email})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                Assigned by: <strong>{getUser()?.name || getUser()?.phone || 'admin'}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={closeModal}
+                disabled={submitting}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1.5px solid var(--oh-border, #ddd)',
+                  background: '#fff',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: submitting ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting || loadingExecs || fieldExecs.length === 0}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: submitting ? '#FFB28D' : 'linear-gradient(135deg, #FF6B2B 0%, #FF8A50 100%)',
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: submitting ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {submitting ? 'Scheduling…' : 'Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -44,6 +44,16 @@ class Config:
     # Generate a long random string (>= 48 chars). If unset, sync endpoints 503.
     SYNC_SECRET_TOKEN = os.getenv("SYNC_SECRET_TOKEN") or None
 
+    # -------- Forms App integration (Schedule Visit) --------
+    # External Forms app handles visit scheduling end-to-end. Admin clicks
+    # 'Schedule Visit' on a listing → CP backend POSTs to FORMS_APP_URL +
+    # /api/external/schedule with INTERNAL_API_KEY header. Forms app returns
+    # a UID we store on the submission.
+    FORMS_APP_URL = os.getenv("FORMS_APP_URL") or None
+    INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY") or None
+    # Timeout for the outbound POST to the Forms app, in seconds.
+    FORMS_APP_TIMEOUT_SECONDS = int(os.getenv("FORMS_APP_TIMEOUT_SECONDS", "10"))
+
     @classmethod
     def validate(cls) -> None:
         missing = []

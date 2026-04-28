@@ -17,14 +17,20 @@ Endpoints:
 import csv
 import io
 import json
+import logging
+import re
 from datetime import datetime
 from functools import wraps
 
+import requests
 from flask import Blueprint, Response, g, jsonify, request
 
 from auth import require_staff
-from db import get_app_conn, put_app_conn
+from config import Config
+from db import get_app_conn, put_app_conn, get_props_conn, put_props_conn, properties_configured
 from utils import to_int, to_str
+
+log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -187,6 +193,7 @@ def _list_submissions_core():
                     s.status, s.submitted_at, s.photos, s.weak_match, s.collated_match,
                     s.deleted_at, s.drive_links, s.assigned_rm_id,
                     s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
+                    s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
                     c.name AS city,
                     cp.id AS cp_id,
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
@@ -621,6 +628,314 @@ def delete_submission(sid: int):
     finally:
         put_app_conn(conn)
     return jsonify({"ok": True}), 200
+
+
+# ============================================================
+# Forms App integration — Schedule Visit
+# ============================================================
+
+@bp.get("/field-execs")
+@require_staff
+def list_field_execs():
+    """Return field execs available for visit assignment.
+
+    Source: properties DB, `users` table, where can_visit = TRUE AND is_active = TRUE.
+    The Forms app expects the `name` field. We return id+name+email so the
+    frontend can render a richer dropdown if it wants.
+    """
+    if not properties_configured():
+        return jsonify({"field_execs": [], "error": "Properties DB not configured"}), 200
+
+    pconn = get_props_conn()
+    try:
+        with pconn.cursor() as cur:
+            cur.execute("""
+                SELECT id, name, email
+                FROM users
+                WHERE can_visit = TRUE
+                  AND is_active = TRUE
+                  AND name IS NOT NULL
+                  AND TRIM(name) <> ''
+                ORDER BY name ASC
+            """)
+            rows = cur.fetchall()
+    finally:
+        put_props_conn(pconn)
+
+    return jsonify({"field_execs": rows}), 200
+
+
+# Required submission fields for scheduling — checked before pushing to Forms app.
+# Empty/missing values block the request with a friendly error message.
+SCHEDULE_REQUIRED_SUBMISSION_FIELDS = [
+    ("society_name",   "Society"),
+    ("seller_name",    "Owner / broker name"),
+    ("seller_phone",   "Contact number"),
+    ("bhk",            "BHK configuration"),
+    ("sqft",           "Area (sqft)"),
+    ("asking_price",   "Asking price"),
+]
+
+
+def _normalize_bhk_for_forms(bhk_str: str) -> str:
+    """'3 BHK' / '3BHK' / '3' → '3BHK'.  None / empty → ''. """
+    if not bhk_str:
+        return ""
+    digits = re.sub(r"[^0-9.]", "", str(bhk_str))
+    if not digits:
+        return ""
+    return f"{digits.rstrip('.')}BHK"
+
+
+def _split_seller_name(full_name: str) -> tuple[str, str]:
+    """'John Doe' → ('John', 'Doe'); 'Madonna' → ('Madonna', '')."""
+    if not full_name:
+        return "", ""
+    parts = str(full_name).strip().split(None, 1)
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[1]
+
+
+def _normalize_phone_to_10_digits(phone: str) -> str:
+    """Strip everything but digits; trim '+91' / '91' country code if present."""
+    if not phone:
+        return ""
+    digits = re.sub(r"\D", "", str(phone))
+    if len(digits) > 10 and digits.startswith("91"):
+        digits = digits[2:]
+    return digits
+
+
+def _rupees_to_crores(rupees) -> float | None:
+    """Convert asking_price (rupees) to crores (Forms app's expected unit)."""
+    try:
+        if rupees is None:
+            return None
+        return round(float(rupees) / 10_000_000, 4)
+    except (TypeError, ValueError):
+        return None
+
+
+@bp.post("/submissions/<int:sid>/schedule-visit")
+@require_staff
+def schedule_visit(sid: int):
+    """Push a listing to the external Forms app to create a visit schedule.
+
+    Request body:
+        {
+          "schedule_date": "YYYY-MM-DD" (REQUIRED),
+          "schedule_time": "HH:MM"      (REQUIRED, 24h),
+          "field_exec_id": int          (REQUIRED — id from /admin/field-execs)
+        }
+
+    Behavior:
+      - Idempotent on our side: if submission already has forms_uid, returns
+        the existing UID without re-calling the Forms app.
+      - Validates required submission fields (society, seller, contact, etc.).
+        If any missing, returns 400 with `missing_fields` list.
+      - Constructs payload, POSTs to FORMS_APP_URL + '/api/external/schedule'.
+      - On 2xx: stores forms_uid + schedule date/time/field_exec_name on the
+        submission row.
+      - On Forms-app error: returns the error to the admin without touching
+        the submission row.
+      - Does NOT change submission status (admin moves to 'Visit Scheduled' first).
+    """
+    if not Config.FORMS_APP_URL or not Config.INTERNAL_API_KEY:
+        return jsonify({
+            "error": "Forms app integration not configured. "
+                     "Set FORMS_APP_URL and INTERNAL_API_KEY env vars."
+        }), 503
+
+    data = request.get_json(silent=True) or {}
+    schedule_date = to_str(data.get("schedule_date"))
+    schedule_time = to_str(data.get("schedule_time"))
+    field_exec_id = to_int(data.get("field_exec_id"))
+
+    # Basic input validation
+    body_errors = []
+    if not schedule_date or not re.match(r"^\d{4}-\d{2}-\d{2}$", schedule_date):
+        body_errors.append("schedule_date must be YYYY-MM-DD")
+    if not schedule_time or not re.match(r"^\d{1,2}:\d{2}$", schedule_time):
+        body_errors.append("schedule_time must be HH:MM (24-hr)")
+    if not field_exec_id:
+        body_errors.append("field_exec_id is required")
+    if body_errors:
+        return jsonify({"error": "Invalid request", "details": body_errors}), 400
+
+    # Load the submission + its city
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT s.*, c.name AS city
+                FROM submissions s
+                LEFT JOIN cities c ON c.id = s.city_id
+                WHERE s.id = %s AND s.deleted_at IS NULL
+            """, (sid,))
+            sub = cur.fetchone()
+    finally:
+        put_app_conn(conn)
+
+    if not sub:
+        return jsonify({"error": "Submission not found"}), 404
+
+    # Idempotency on our side: already scheduled?
+    if sub.get("forms_uid"):
+        return jsonify({
+            "ok": True,
+            "uid": sub["forms_uid"],
+            "already_existed": True,
+            "message": "Visit was already scheduled for this listing.",
+        }), 200
+
+    # Required-field validation
+    missing = []
+    for field, label in SCHEDULE_REQUIRED_SUBMISSION_FIELDS:
+        val = sub.get(field)
+        if val is None or (isinstance(val, str) and not val.strip()) or val == 0:
+            missing.append({"field": field, "label": label})
+    if missing:
+        return jsonify({
+            "error": "Cannot schedule visit — listing is missing required fields.",
+            "missing_fields": missing,
+        }), 400
+
+    # Resolve field exec name from properties DB
+    if not properties_configured():
+        return jsonify({"error": "Properties DB not configured for field execs."}), 503
+    pconn = get_props_conn()
+    try:
+        with pconn.cursor() as cur:
+            cur.execute(
+                "SELECT id, name, email FROM users WHERE id = %s AND can_visit = TRUE",
+                (field_exec_id,),
+            )
+            exec_row = cur.fetchone()
+    finally:
+        put_props_conn(pconn)
+
+    if not exec_row:
+        return jsonify({"error": "Selected field exec is not authorized for visits."}), 400
+
+    field_exec_name = exec_row["name"]
+
+    # Build the Forms app payload
+    first_name, last_name = _split_seller_name(sub.get("seller_name"))
+    contact_no = _normalize_phone_to_10_digits(sub.get("seller_phone"))
+    if len(contact_no) != 10:
+        return jsonify({
+            "error": "Cannot schedule visit — contact number is not a valid 10-digit number.",
+            "missing_fields": [{"field": "seller_phone", "label": "Contact number"}],
+        }), 400
+
+    demand_price_cr = _rupees_to_crores(sub.get("asking_price"))
+    if demand_price_cr is None or demand_price_cr <= 0:
+        return jsonify({
+            "error": "Cannot schedule visit — asking price is invalid.",
+            "missing_fields": [{"field": "asking_price", "label": "Asking price"}],
+        }), 400
+
+    admin_name = (
+        g.user.get("name")
+        or g.user.get("phone")
+        or f"admin-{g.user.get('admin_id') or g.user.get('rm_id') or 'unknown'}"
+    )
+
+    payload = {
+        "lead_id": str(sub["id"]),
+        "society_name": sub.get("society_name") or "",
+        "locality": "",   # we don't track locality separately yet
+        "city": sub.get("city") or "",
+        "tower_no": sub.get("tower") or "",
+        "unit_no": sub.get("unit_no") or "",
+        "owner_broker_name": sub.get("seller_name") or "",
+        "first_name": first_name,
+        "last_name": last_name,
+        "contact_no": contact_no,
+        "configuration": _normalize_bhk_for_forms(sub.get("bhk")),
+        "area_sqft": int(sub.get("sqft") or 0),
+        "demand_price": demand_price_cr,
+        "source": "CP Listing",
+        "field_exec": field_exec_name,
+        "assigned_by": admin_name,
+        "schedule_date": schedule_date,
+        "schedule_time": schedule_time,
+    }
+
+    # POST to Forms app
+    forms_url = Config.FORMS_APP_URL.rstrip("/") + "/api/external/schedule"
+    try:
+        resp = requests.post(
+            forms_url,
+            json=payload,
+            headers={
+                "X-Internal-Key": Config.INTERNAL_API_KEY,
+                "Content-Type": "application/json",
+            },
+            timeout=Config.FORMS_APP_TIMEOUT_SECONDS,
+        )
+    except requests.exceptions.Timeout:
+        log.error("[schedule_visit] Forms app timeout sid=%s", sid)
+        return jsonify({"error": "Forms app did not respond in time. Please try again."}), 504
+    except requests.exceptions.RequestException as e:
+        log.error("[schedule_visit] Forms app network error sid=%s: %s", sid, e)
+        return jsonify({"error": f"Could not reach Forms app: {e}"}), 502
+
+    # Parse response
+    try:
+        result = resp.json()
+    except ValueError:
+        result = {}
+
+    if resp.status_code >= 400 or not result.get("success"):
+        log.warning("[schedule_visit] Forms app returned %s sid=%s body=%s",
+                    resp.status_code, sid, resp.text[:500])
+        return jsonify({
+            "error": result.get("error") or f"Forms app error (HTTP {resp.status_code})",
+            "details": result,
+        }), 502
+
+    forms_uid = result.get("uid")
+    already_existed = bool(result.get("already_existed"))
+    if not forms_uid:
+        return jsonify({"error": "Forms app did not return a UID."}), 502
+
+    # Persist on our side
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE submissions
+                SET forms_uid       = %s,
+                    scheduled_date  = %s,
+                    scheduled_time  = %s,
+                    field_exec_name = %s
+                WHERE id = %s
+            """, (forms_uid, schedule_date, schedule_time, field_exec_name, sid))
+
+            cur.execute("""
+                INSERT INTO submission_events
+                    (submission_id, actor_cp_id, kind, text)
+                VALUES (%s, %s, 'system', %s)
+            """, (
+                sid,
+                g.user.get("cp_id"),  # NULL for admins/RMs/managers — column allows it
+                f"Visit scheduled for {schedule_date} {schedule_time} with {field_exec_name}. "
+                f"Forms UID: {forms_uid}{' (already existed)' if already_existed else ''}",
+            ))
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "uid": forms_uid,
+        "already_existed": already_existed,
+        "scheduled_date": schedule_date,
+        "scheduled_time": schedule_time,
+        "field_exec_name": field_exec_name,
+    }), 200
 
 
 # ---- CP history ----

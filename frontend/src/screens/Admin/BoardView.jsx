@@ -118,6 +118,23 @@ export default function BoardView({
                       </span>
                     )}
                   </div>
+                  {s.scheduled_date && (
+                    <div style={{
+                      marginTop: 6,
+                      padding: '3px 8px',
+                      background: '#ECFDF5',
+                      border: '1px solid #6EE7B7',
+                      borderRadius: 6,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: '#047857',
+                      display: 'inline-block',
+                    }}>
+                      📅 {s.scheduled_date}
+                      {s.scheduled_time ? ` · ${s.scheduled_time}` : ''}
+                      {s.field_exec_name ? ` · ${s.field_exec_name}` : ''}
+                    </div>
+                  )}
                   <div className="board-card-bottom">
                     <span className="board-card-price">{formatPrice(s.asking_price)}</span>
                     {(() => {
