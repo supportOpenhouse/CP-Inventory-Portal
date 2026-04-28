@@ -3,7 +3,7 @@
 Matching sources (both checked, either match blocks):
   1. properties (ground truth from LSQ + legacy — in Properties DB)
   2. submissions (active CP portal submissions — in app DB,
-     status NOT IN ('Price Rejected', 'Duplicate Rejected', 'Unapproved', 'Closed'))
+     status NOT IN ('Price Rejected', 'Duplicate Rejected', 'Unapproved'))
 
 Matching fields:
   society (required) + bhk + floor + optionally tower + optionally unit_no
@@ -118,8 +118,10 @@ def _no_match():
     }
 
 
-# Statuses that still occupy a unit in inventory. Rejected submissions free it up.
-_ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Evaluation", "Offer Given", "Visit Scheduled")
+# Statuses that still occupy a unit in inventory. The 3 reject statuses
+# (Price Rejected, Duplicate Rejected) and Unapproved free it up. Visit Completed
+# means a CP has gotten this far through the pipeline — the unit is committed.
+_ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Offer Given", "Visit Scheduled", "Visit Completed")
 
 
 def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):

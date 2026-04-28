@@ -12,11 +12,11 @@ import ConfirmDialog from '../components/ConfirmDialog';
 // Note: 'Price Rejected' / 'Duplicate Rejected' are intentionally NOT in the filter row
 //       (still visible under 'All').
 const FILTER_BOXES = [
-  { key: 'All',         label: 'All',            color: '#6366F1' },
-  { key: 'Unapproved',  label: 'Pending Review', color: '#B8860B' },
-  { key: 'Submitted',   label: 'Submitted',      color: '#6366F1' },
-  { key: 'Offer Given', label: 'Offers',         color: '#FF6B2B' },
-  { key: 'Closed',      label: 'Closures',       color: '#10B981' },
+  { key: 'All',             label: 'All',            color: '#6366F1' },
+  { key: 'Unapproved',      label: 'Pending Review', color: '#B8860B' },
+  { key: 'Submitted',       label: 'Submitted',      color: '#6366F1' },
+  { key: 'Offer Given',     label: 'Offers',         color: '#FF6B2B' },
+  { key: 'Visit Completed', label: 'Visits Done',    color: '#10B981' },
 ];
 
 function badgeClass(s) {
@@ -27,7 +27,7 @@ function badgeClass(s) {
   const status = s.status;
   if (status === 'Unapproved') return 'badge';
   if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
-  if (status === 'Closed' || status === 'Visit Scheduled') return 'badge badge-closed';
+  if (status === 'Visit Completed' || status === 'Visit Scheduled') return 'badge badge-closed';
   if (status === 'Price Rejected' || status === 'Duplicate Rejected') return 'badge badge-rejected';
   return 'badge badge-submitted';
 }
@@ -110,15 +110,14 @@ export default function Dashboard({ onAdd }) {
   }, [user.city]);
 
   // Synthetic status used for filtering/counting only (actual DB status unchanged).
-  // While admin has a submission in 'Evaluation' AND/OR there's a pending counter offer,
-  // the CP sees it in the 'Submitted' filter. The counter offer banner still appears on
-  // the card itself. Once the CP accepts or admin moves to Offer Given, it moves.
+  // While there's a pending counter offer, the CP sees the listing in the
+  // 'Submitted' filter (counter offer banner still appears on the card itself).
+  // Once the CP accepts, status moves to Offer Given and so does the synthetic.
   const syntheticStatus = (s) => {
-    // Note: perfect_match_at_submit rows now have status='Duplicate Rejected'
-    // directly (since the May 2026 split-rejected migration), so no special
-    // remap is needed — they naturally land outside the Pending Review tile.
+    // Note: perfect_match_at_submit rows have status='Duplicate Rejected'
+    // directly (since the May 2026 migration), so no special remap is needed —
+    // they naturally land outside the Pending Review tile.
     if (s.counter_offer_status === 'pending') return 'Submitted';
-    if (s.status === 'Evaluation') return 'Submitted';
     return s.status;
   };
 

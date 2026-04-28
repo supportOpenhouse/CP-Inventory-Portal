@@ -62,10 +62,9 @@ export function validatePhone(raw) {
 export const STAGES = [
   { key: 'Unapproved',         color: '#B8860B', bg: '#FFF8E1', adminOnly: true },
   { key: 'Submitted',          color: '#6366F1', bg: '#EEF2FF' },
-  { key: 'Evaluation',         color: '#E8A838', bg: '#FFF8EC' },
   { key: 'Offer Given',        color: '#FF6B2B', bg: '#FFF3ED' },
   { key: 'Visit Scheduled',    color: '#D946EF', bg: '#FDF4FF' },
-  { key: 'Closed',             color: '#10B981', bg: '#D1FAE5' },   // green = success
+  { key: 'Visit Completed',    color: '#10B981', bg: '#D1FAE5' },   // green = success
   { key: 'Price Rejected',     color: '#DC2626', bg: '#FEE2E2' },
   { key: 'Duplicate Rejected', color: '#DC2626', bg: '#FEE2E2' },
 ];

@@ -13,7 +13,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Price Rejected", "Duplicate Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Duplicate Rejected"]
 
 
 @bp.get("/submissions")
@@ -59,7 +59,8 @@ def list_my_submissions():
 
     stats["submitted"] = stats["Submitted"]
     stats["offers"] = stats["Offer Given"]
-    stats["closures"] = stats["Closed"]
+    # Note: 'closures' (Closed) was removed in May 2026 pipeline simplification.
+    # If any legacy frontend still expects this key, it'll be undefined.
     return jsonify({"submissions": subs, "stats": stats}), 200
 
 

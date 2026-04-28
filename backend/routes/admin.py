@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Price Rejected", "Duplicate Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Duplicate Rejected"]
 
 
 def require_admin_role(f):
@@ -395,14 +395,18 @@ def change_status(sid: int):
 @bp.post("/submissions/<int:sid>/counter-offer")
 @require_staff
 def send_counter_offer(sid: int):
-    """Admin sends a counter offer. Submission stays in 'Evaluation'.
+    """Admin sends a counter offer. Submission stays in 'Submitted'.
 
     Payload: { "price_rupees": 9500000 }  (integer, in rupees)
     OR       { "price_lakhs":  95 }        (integer, in lakhs — converted server-side)
 
-    Stage does NOT change here — stays 'Evaluation'. CP responds via
+    Stage does NOT change here — stays 'Submitted'. CP responds via
     /api/submissions/<id>/counter-offer-response, which moves to
     'Offer Given' (accept) or 'Price Rejected' (reject).
+
+    Note: the gate used to be 'Evaluation' before that stage was removed
+    in the May 2026 pipeline simplification. 'Submitted' now plays the
+    same role (listing is in admin's hands awaiting decision).
     """
     data = request.get_json(silent=True) or {}
     price_rupees = data.get("price_rupees")
@@ -438,9 +442,9 @@ def send_counter_offer(sid: int):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Submission not found"}), 404
-            if row["status"] != "Evaluation":
+            if row["status"] != "Submitted":
                 return jsonify({
-                    "error": "Counter offer only allowed when status is 'Evaluation'",
+                    "error": "Counter offer only allowed when status is 'Submitted'",
                     "current_status": row["status"],
                 }), 409
 
@@ -1282,7 +1286,7 @@ def set_cp_rm(cp_id: int):
 def bulk_status():
     """
     Bulk status change.
-    Body: { "ids": [1, 2, 3], "status": "Evaluation" }
+    Body: { "ids": [1, 2, 3], "status": "Visit Scheduled" }
     Max 200 IDs per call.
     """
     data = request.get_json(silent=True) or {}

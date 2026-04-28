@@ -444,8 +444,8 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </div>
               </div>
 
-              {/* Counter offer — visible when Evaluation or when one exists */}
-              {(s.status === 'Evaluation' || s.counter_offer_status) && (
+              {/* Counter offer — visible when in Submitted (admin can send one) or when one already exists */}
+              {(s.status === 'Submitted' || s.counter_offer_status) && (
                 <div className="admin-panel-section">
                   <div className="admin-panel-section-title">Counter Offer</div>
 
@@ -496,8 +496,8 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     </div>
                   )}
 
-                  {/* Input — only when Evaluation AND no pending counter already out */}
-                  {s.status === 'Evaluation' && s.counter_offer_status !== 'pending' && (
+                  {/* Input — only when status is Submitted AND no pending counter already out */}
+                  {s.status === 'Submitted' && s.counter_offer_status !== 'pending' && (
                     <>
                       <div className="admin-panel-label">Send counter offer (in lakhs)</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

@@ -62,8 +62,8 @@ STATUS_MAP = {
     "visittobescheduled":     "Submitted",   # Gurgaon CSV — concatenated form
     "lead":                   "Submitted",   # Gurgaon CSV
     "hold":                   "Submitted",
-    "visit completed":        "Evaluation",
-    "visited":                "Evaluation",  # Gurgaon CSV
+    "visit completed":        "Visit Completed",
+    "visited":                "Visit Completed",  # Gurgaon CSV
     "onboarded":              "Offer Given", # Gurgaon CSV
     "visit scheduled":        "Visit Scheduled",
     "rejected":               "Price Rejected",
