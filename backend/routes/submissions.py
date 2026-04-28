@@ -19,7 +19,12 @@ VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit S
 @bp.get("/submissions")
 @require_auth
 def list_my_submissions():
-    """Return the logged-in CP's submissions + aggregate stats."""
+    """Return the logged-in CP's submissions + aggregate stats.
+
+    Includes soft-deleted (withdrawn) submissions so the CP can see their
+    full history. The frontend distinguishes by checking deleted_at /
+    withdraw_reason.
+    """
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
@@ -30,7 +35,9 @@ def list_my_submissions():
                        asking_price,
                        status, photos, submitted_at,
                        counter_offer_price, counter_offer_status, counter_offer_at,
-                       counter_offer_response_text
+                       counter_offer_response_text,
+                       unit_less, perfect_match_at_submit,
+                       deleted_at, withdraw_reason
                 FROM submissions
                 WHERE cp_id = %s
                 ORDER BY submitted_at DESC
@@ -40,13 +47,16 @@ def list_my_submissions():
     finally:
         put_app_conn(conn)
 
-    # Aggregate counts across all 5 stages
+    # Aggregate counts: only count NON-withdrawn submissions in stage stats.
+    # Withdrawn rows still appear in the list (greyed out on UI), but they
+    # don't pollute the stage counts.
     stats = {stage: 0 for stage in VALID_STAGES}
     for s in subs:
+        if s.get("deleted_at"):
+            continue
         if s["status"] in stats:
             stats[s["status"]] += 1
 
-    # Legacy fields for existing frontend (still displayed on dashboard)
     stats["submitted"] = stats["Submitted"]
     stats["offers"] = stats["Offer Given"]
     stats["closures"] = stats["Closed"]
@@ -97,46 +107,54 @@ def create_submission():
 
     # ---- Branch: "Submit without unit details" ----
     # CP didn't provide tower/unit and explicitly chose to skip. Goes straight into
-    # Unapproved queue, but we still run the dup check (without tower/unit) so we can
-    # capture a collated_data match for the admin's Unapproved-queue highlight.
     skip_unit_details = bool(data.get("skip_unit_details"))
 
-    if skip_unit_details:
-        initial_status = "Unapproved"
-        dup = check_duplicate(
-            society_id=society_id,
-            bhk=to_str(data.get("bhk")),
-            tower=None,
-            unit_no=None,
-            floor=to_str(data.get("floor")),
-            cp_id=g.user["cp_id"],
-        )
-    else:
-        # Normal flow — run dup check; allow force_create bypass if CP chose "Add anyway"
-        dup = check_duplicate(
-            society_id=society_id,
-            bhk=to_str(data.get("bhk")),
-            tower=to_str(data.get("tower")),
-            unit_no=to_str(data.get("unit_no")),
-            floor=to_str(data.get("floor")),
-            cp_id=g.user["cp_id"],
-        )
-        force_create = bool(data.get("force_create"))
-        if dup["block"] and not force_create:
-            return jsonify({"error": "Duplicate", "duplicate": dup}), 409
-        initial_status = "Unapproved" if (dup["block"] and force_create) else "Submitted"
+    # Run dup check in all cases — its result drives status, flags, and CP messaging.
+    dup = check_duplicate(
+        society_id=society_id,
+        bhk=to_str(data.get("bhk")),
+        tower=None if skip_unit_details else to_str(data.get("tower")),
+        unit_no=None if skip_unit_details else to_str(data.get("unit_no")),
+        floor=to_str(data.get("floor")),
+        cp_id=g.user["cp_id"],
+    )
 
-    # Flag for admin UI: only persisted for rows landing in Unapproved, since that's
-    # where the "partial match from collated_data" highlight is meaningful.
-    collated_match = bool(dup.get("collated_match")) and initial_status == "Unapproved"
+    # Perfect match = exact dup found in properties or other submissions
+    # (only possible when unit details were given). It used to hard-block (409);
+    # now it lets the submission through with a flag so CP can review/withdraw.
+    is_perfect_match = (
+        not skip_unit_details
+        and dup.get("match_level") == "exact"
+        and bool(dup.get("block"))
+    )
+    is_unit_less = skip_unit_details
+    has_collated_match = bool(dup.get("collated_match"))
+
+    # Status logic:
+    #   - Perfect match           → Unapproved (admin must review the perfect-match dup)
+    #   - Unit-less + collated    → Unapproved (admin reviews potential dup)
+    #   - Unit-less + clean       → Submitted (auto-approved, goes straight into pipeline)
+    #   - Normal submit           → Submitted (existing default)
+    #   - force_create on weak/collated dup (existing "Add anyway" path) → Unapproved
+    force_create = bool(data.get("force_create"))
+    if is_perfect_match:
+        initial_status = "Unapproved"
+    elif is_unit_less:
+        initial_status = "Unapproved" if has_collated_match else "Submitted"
+    else:
+        # Normal flow with unit details: weak/collated dups go to Unapproved if force_create,
+        # else Submitted. Note we no longer 409 on perfect match (handled above).
+        initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
+
+    # Persist collated_match only when relevant for admin highlighting (Unapproved rows).
+    collated_match = has_collated_match and initial_status == "Unapproved"
 
     import logging
     logging.getLogger(__name__).info(
-        "[submission] cp_id=%s society=%r bhk=%r floor=%r skip_unit_details=%s "
-        "dup.block=%s dup.collated_match=%s -> initial_status=%s collated_match_to_persist=%s",
+        "[submission] cp_id=%s society=%r bhk=%r floor=%r skip_unit=%s perfect=%s "
+        "collated=%s force_create=%s -> status=%s",
         g.user.get("cp_id"), society_name, data.get("bhk"), data.get("floor"),
-        skip_unit_details, dup.get("block"), dup.get("collated_match"),
-        initial_status, collated_match,
+        skip_unit_details, is_perfect_match, has_collated_match, force_create, initial_status,
     )
 
     conn = get_app_conn()
@@ -153,13 +171,15 @@ def create_submission():
                     exit_facing, balcony_facing, balcony_view,
                     parking, extra_rooms, occupancy_status,
                     asking_price, seller_name, seller_phone, photos,
-                    status, collated_match
+                    status, collated_match,
+                    unit_less, perfect_match_at_submit
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s::jsonb, %s,
                     %s, %s, %s, %s::jsonb,
+                    %s, %s,
                     %s, %s
                 )
                 RETURNING id
@@ -187,6 +207,8 @@ def create_submission():
                 json.dumps(data.get("photos") or []),
                 initial_status,
                 collated_match,
+                is_unit_less,
+                is_perfect_match,
             ))
             new_id = cur.fetchone()["id"]
 
@@ -210,16 +232,26 @@ def create_submission():
     if initial_status == "Submitted":
         send_new_submission_alert_async(new_id)
 
+    if is_perfect_match:
+        message = "This unit appears to already be in our system. You can withdraw if this was a mistake."
+    elif is_unit_less and has_collated_match:
+        message = "Unit submitted for admin review"
+    elif is_unit_less:
+        message = "Unit submitted for evaluation"
+    elif initial_status == "Unapproved":
+        message = "Unit submitted for admin review"
+    else:
+        message = "Unit submitted for evaluation"
+
     return jsonify({
         "success": True,
         "submission_id": new_id,
         "public_id": public_id,
         "status": initial_status,
-        "message": (
-            "Unit submitted for admin review"
-            if initial_status == "Unapproved"
-            else "Unit submitted for evaluation"
-        ),
+        "perfect_match": is_perfect_match,
+        "unit_less": is_unit_less,
+        "withdrawable": is_perfect_match or is_unit_less,
+        "message": message,
     }), 201
 
 
@@ -240,6 +272,72 @@ def check_duplicate_endpoint():
         cp_id=g.user["cp_id"],
     )
     return jsonify(result), 200
+
+
+@bp.post("/submissions/<int:sid>/withdraw")
+@require_auth
+def withdraw_submission(sid):
+    """CP soft-deletes their own submission.
+
+    Allowed when:
+      - submission is unit-less (CP submitted without a unit number), OR
+      - submission was flagged as a perfect match at submit time.
+
+    Sets:
+      - deleted_at = NOW()
+      - withdraw_reason = 'cp_withdrawn'
+
+    Idempotent: if already withdrawn, returns 200 with no change.
+
+    NOT allowed for normal submissions (with unit details and no perfect-match flag) —
+    those need admin to delete via DELETE /admin/submissions/<id>.
+    """
+    cp_id = g.user.get("cp_id")
+    if not cp_id:
+        return jsonify({"error": "Only CPs can withdraw"}), 403
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, cp_id, deleted_at, unit_less, perfect_match_at_submit
+                FROM submissions
+                WHERE id = %s
+            """, (sid,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Submission not found"}), 404
+            if row["cp_id"] != cp_id:
+                return jsonify({"error": "Not your submission"}), 403
+
+            # Already withdrawn? Treat as idempotent success.
+            if row["deleted_at"] is not None:
+                return jsonify({"ok": True, "already_withdrawn": True}), 200
+
+            # Eligibility: must be unit-less or perfect-match.
+            if not (row["unit_less"] or row["perfect_match_at_submit"]):
+                return jsonify({
+                    "error": "This submission cannot be self-withdrawn. Contact your RM."
+                }), 403
+
+            cur.execute("""
+                UPDATE submissions
+                SET deleted_at = NOW(),
+                    withdraw_reason = 'cp_withdrawn'
+                WHERE id = %s
+            """, (sid,))
+
+            cur.execute("""
+                INSERT INTO submission_events
+                    (submission_id, actor_cp_id, kind, text)
+                VALUES (%s, %s, 'system', 'CP withdrew the submission')
+            """, (sid, cp_id))
+
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"ok": True, "withdrawn": True}), 200
 
 
 @bp.post("/submissions/<int:sid>/counter-offer-response")

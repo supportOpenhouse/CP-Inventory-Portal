@@ -298,6 +298,52 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
         <div className="admin-panel-body">
           {s && !editMode && (
             <>
+              {/* Banners for perfect-match / withdrawn / unit-less */}
+              {s.perfect_match_at_submit && (
+                <div style={{
+                  margin: '0 0 14px',
+                  padding: '10px 12px',
+                  background: '#fef2f2',
+                  border: '1.5px solid #fca5a5',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  color: '#991b1b',
+                }}>
+                  <strong>⚠ Perfect match detected at submit time.</strong>
+                  <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
+                    Same society + BHK + floor + unit number was already in our system or properties DB
+                    when the CP submitted this.
+                  </div>
+                </div>
+              )}
+              {s.deleted_at && (
+                <div style={{
+                  margin: '0 0 14px',
+                  padding: '10px 12px',
+                  background: '#fef3c7',
+                  border: '1.5px solid #fcd34d',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  color: '#92400e',
+                  fontWeight: 600,
+                }}>
+                  ✓ Withdrawn{s.withdraw_reason === 'cp_withdrawn' ? ' by CP' : ''}
+                </div>
+              )}
+              {s.unit_less && !s.perfect_match_at_submit && !s.deleted_at && (
+                <div style={{
+                  margin: '0 0 14px',
+                  padding: '8px 12px',
+                  background: '#fffbeb',
+                  border: '1px solid #fcd34d',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  color: '#78350f',
+                }}>
+                  Submitted without unit number{s.collated_match ? ' · matches a 99acres listing' : ' · auto-approved'}
+                </div>
+              )}
+
               {/* Status selector */}
               <div className="admin-panel-section">
                 <div className="admin-panel-label">Status</div>

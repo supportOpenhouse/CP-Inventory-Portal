@@ -153,6 +153,15 @@ export default function TableView({
             const isRejected = s.status === 'Rejected';
             const isChecked = selectedIds.has(s.id);
             const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
+            const isPerfectMatch = s.perfect_match_at_submit === true;
+            const isWithdrawn = !!s.deleted_at;
+            const isUnitLess = s.unit_less === true;
+            // Row tint priority: perfect-match (red) > withdrawn (yellow) > unit-less unapproved (yellow)
+            const rowStyle = isPerfectMatch
+              ? { background: '#fef2f2' }
+              : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
+                ? { background: '#fffbeb' }
+                : undefined;
             const handleClick = () => {
               if (bulkMode) onToggleSelect?.(s.id);
               else onSelect(s.id);
@@ -161,6 +170,7 @@ export default function TableView({
               <tr
                 key={s.id}
                 className={`${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''} ${isChecked ? 'bulk-selected' : ''}`}
+                style={rowStyle}
                 onClick={handleClick}
                 title={isWeakMatch ? 'Weak society match during import — verify' : undefined}
               >
@@ -175,6 +185,24 @@ export default function TableView({
                 )}
                 <td style={{ fontFamily: 'monospace', fontSize: 12, color: '#555', fontWeight: 600 }}>
                   {s.public_id || '—'}
+                  {isPerfectMatch && (
+                    <span style={{
+                      display: 'inline-block', marginLeft: 6, padding: '1px 6px',
+                      fontSize: 9, fontWeight: 700, color: '#991b1b',
+                      background: '#fee2e2', borderRadius: 3, letterSpacing: 0.3,
+                    }} title="Detected as duplicate of an existing listing at submit time">
+                      PERFECT
+                    </span>
+                  )}
+                  {isWithdrawn && (
+                    <span style={{
+                      display: 'inline-block', marginLeft: 6, padding: '1px 6px',
+                      fontSize: 9, fontWeight: 700, color: '#92400e',
+                      background: '#fef3c7', borderRadius: 3, letterSpacing: 0.3,
+                    }} title={s.withdraw_reason === 'cp_withdrawn' ? 'CP withdrew this submission' : 'Soft-deleted'}>
+                      WITHDRAWN
+                    </span>
+                  )}
                 </td>
                 <td style={{ fontWeight: 600 }}>
                   {isWeakMatch && <span style={{ color: '#DC2626', marginRight: 6 }}>⚠</span>}

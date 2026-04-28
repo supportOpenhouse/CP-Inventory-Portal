@@ -117,10 +117,20 @@ def _apply_filters(base_sql: str, params: list):
     bhk = to_str(request.args.get("bhk"))
     date_from = to_str(request.args.get("date_from"))
     date_to = to_str(request.args.get("date_to"))
+
+    # Filtering rules for soft-deleted (deleted_at IS NOT NULL):
+    #   - CP-withdrawn submissions (withdraw_reason='cp_withdrawn'): SHOWN by default
+    #     so admin can see withdrawn cards in Unapproved column with the proper indicators.
+    #   - Admin-deleted submissions (withdraw_reason IS NULL or 'admin_deleted'):
+    #     HIDDEN by default — these are intentional deletes by staff.
+    #   - include_deleted=true overrides both — shows everything.
     include_deleted = request.args.get("include_deleted", "false").lower() == "true"
 
     if not include_deleted:
-        base_sql += " AND s.deleted_at IS NULL"
+        base_sql += (
+            " AND (s.deleted_at IS NULL "
+            "      OR s.withdraw_reason = 'cp_withdrawn')"
+        )
 
     if status and status in VALID_STAGES:
         base_sql += " AND s.status = %s"
@@ -176,6 +186,7 @@ def _list_submissions_core():
                     s.seller_name, s.seller_phone,
                     s.status, s.submitted_at, s.photos, s.weak_match, s.collated_match,
                     s.deleted_at, s.drive_links, s.assigned_rm_id,
+                    s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     c.name AS city,
                     cp.id AS cp_id,
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
@@ -221,7 +232,7 @@ def _stage_counts():
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
-                WHERE TRUE {scope_sql} AND s.deleted_at IS NULL
+                WHERE TRUE {scope_sql} AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn')
             """
             params = list(scope_params)
 
@@ -469,7 +480,9 @@ def add_comment(sid: int):
             cur.execute(f"""
                 SELECT s.id FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
-                WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}
+                WHERE s.id = %s
+                  AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn')
+                  {scope_sql}
             """, [sid, *scope_params])
             if not cur.fetchone():
                 return jsonify({"error": "Not found or out of scope"}), 404
@@ -637,7 +650,7 @@ def cp_history(cp_id: int):
                        c.name AS city
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
-                WHERE s.cp_id = %s AND s.deleted_at IS NULL {scope_sql}
+                WHERE s.cp_id = %s AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn') {scope_sql}
                 ORDER BY s.submitted_at DESC
                 LIMIT 500
             """, [cp_id, *scope_params])

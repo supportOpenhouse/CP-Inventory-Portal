@@ -49,6 +49,16 @@ export default function BoardView({
               const isWeakMatch = s.weak_match === true;
               const isChecked = selectedIds.has(s.id);
               const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
+              // New flags: perfect-match overrides yellow; withdrawn = soft yellow tint
+              const isPerfectMatch = s.perfect_match_at_submit === true;
+              const isWithdrawn = !!s.deleted_at;
+              const isUnitLess = s.unit_less === true;
+              // Style priority: perfect-match (red) beats withdrawn (yellow) beats unit-less (yellow).
+              const cardOverlayStyle = isPerfectMatch
+                ? { background: '#fef2f2', border: '1.5px solid #f87171' }
+                : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
+                  ? { background: '#fffbeb', border: '1.5px solid #fcd34d' }
+                  : undefined;
               const handleClick = (e) => {
                 if (bulkMode) {
                   e.stopPropagation();
@@ -61,6 +71,7 @@ export default function BoardView({
                 <div
                   key={s.id}
                   className={`board-card ${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''} ${isChecked ? 'bulk-selected' : ''}`}
+                  style={cardOverlayStyle}
                   onClick={handleClick}
                   title={isWeakMatch ? 'Society name was a weak match during import — verify' : undefined}
                 >
