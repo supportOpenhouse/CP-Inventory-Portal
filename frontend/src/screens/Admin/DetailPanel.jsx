@@ -804,6 +804,17 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
   const [missingFields, setMissingFields] = useState([]);
   const [toast, setToast] = useState(null);  // { kind: 'success' | 'error', text }
 
+  // Auto-dismiss toast. MUST be declared before any conditional early-return —
+  // React requires hook order to be identical on every render. If we return
+  // early when s.forms_uid becomes truthy after success, this useEffect would
+  // be skipped and React would throw "Rendered fewer hooks than expected",
+  // crashing the entire DetailPanel tree.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   // Already scheduled — show the info pill instead of the button.
   if (s.forms_uid) {
     return (
@@ -890,12 +901,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
     }
   };
 
-  // Auto-dismiss toast
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
+  // Auto-dismiss toast — moved above the early return.
 
   return (
     <div className="admin-panel-section">
