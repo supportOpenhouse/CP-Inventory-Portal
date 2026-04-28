@@ -254,6 +254,32 @@ def create_submission():
     else:
         message = "Unit submitted for evaluation"
 
+    # Unit-less + collated match: row is still created (so admin sees it in
+    # Unapproved with the yellow card), but the frontend renders a Contact RM
+    # page similar to perfect-match (Title: "Similar Unit exists with Openhouse").
+    # We send the `duplicate` dict and a `show_contact_rm_page=True` flag so
+    # the frontend knows to short-circuit into that screen instead of bouncing
+    # the CP straight back to the dashboard. We also tag the dict with
+    # `unit_less_collated=True` so DuplicateCard can pick the lighter "similar
+    # match" rendering vs the harder "already in inventory" perfect-match one.
+    show_contact_rm_page = is_unit_less and has_collated_match
+    duplicate_payload = None
+    if show_contact_rm_page:
+        # Per spec, override the body message for the unit-less + collated
+        # Contact RM page (the screen header is "Similar Unit exists with
+        # Openhouse"; the body explains the 48hr review SLA). The original
+        # check_duplicate() message is more abrupt.
+        custom_message = (
+            f"We already have a similar listing for {society_name} "
+            f"({to_str(data.get('bhk')) or 'BHK'}, floor {to_str(data.get('floor')) or '—'}). "
+            f"Your unit will be reviewed and an update will be given in the next 48 hours."
+        )
+        duplicate_payload = {
+            **dup,
+            "message": custom_message,
+            "unit_less_collated": True,
+        }
+
     return jsonify({
         "success": True,
         "submission_id": new_id,
@@ -261,6 +287,8 @@ def create_submission():
         "status": initial_status,
         "unit_less": is_unit_less,
         "message": message,
+        "show_contact_rm_page": show_contact_rm_page,
+        "duplicate": duplicate_payload,
     }), 201
 
 

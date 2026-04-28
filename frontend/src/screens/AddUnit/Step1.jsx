@@ -120,6 +120,14 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon }) {
     setSubmitting(true);
     try {
       const result = await api.createSubmission(buildPayload({ forceCreate, skipUnit }));
+      // Backend may return 201 but ask the frontend to show a Contact RM
+      // page anyway (e.g. unit-less + collated match — row IS created so admin
+      // sees it, but CP gets a "Similar match" message instead of going back
+      // to the dashboard). DuplicateCard handles the rendering.
+      if (result.show_contact_rm_page && result.duplicate) {
+        setDupResult(result.duplicate);
+        return;
+      }
       onSubmitted({
         id: result.submission_id,
         public_id: result.public_id,
