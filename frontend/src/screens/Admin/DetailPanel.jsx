@@ -94,7 +94,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
       return;
     }
     if (!window.confirm(
-      `Send counter offer of ₹${lakhs} lakhs to the CP?\n\nThe CP will see this on their dashboard and can accept (moves to 'Offer Given') or reject (moves to 'Rejected').`
+      `Send counter offer of ₹${lakhs} lakhs to the CP?\n\nThe CP will see this on their dashboard and can accept (moves to 'Offer Given') or reject (moves to 'Price Rejected').`
     )) return;
     setSendingCounter(true);
     try {

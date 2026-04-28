@@ -28,9 +28,11 @@ export default function SubmissionDetailModal({ submission, onClose }) {
 
   // Determine clear rejection source
   let rejectionSource = null;
-  if (s.status === 'Rejected') {
+  if (s.status === 'Price Rejected' || s.status === 'Duplicate Rejected') {
     if (s.counter_offer_status === 'rejected') {
       rejectionSource = { by: 'you', label: 'You rejected the counter offer from Openhouse' };
+    } else if (s.status === 'Duplicate Rejected') {
+      rejectionSource = { by: 'openhouse', label: 'This listing was already in Openhouse inventory' };
     } else {
       rejectionSource = { by: 'openhouse', label: 'This listing was rejected by Openhouse' };
     }

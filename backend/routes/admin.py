@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Price Rejected", "Duplicate Rejected"]
 
 
 def require_admin_role(f):
@@ -402,7 +402,7 @@ def send_counter_offer(sid: int):
 
     Stage does NOT change here — stays 'Evaluation'. CP responds via
     /api/submissions/<id>/counter-offer-response, which moves to
-    'Offer Given' (accept) or 'Rejected' (reject).
+    'Offer Given' (accept) or 'Price Rejected' (reject).
     """
     data = request.get_json(silent=True) or {}
     price_rupees = data.get("price_rupees")

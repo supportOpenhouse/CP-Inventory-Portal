@@ -2,7 +2,8 @@
 
 Matching sources (both checked, either match blocks):
   1. properties (ground truth from LSQ + legacy — in Properties DB)
-  2. submissions (active CP portal submissions — in app DB, status != 'Rejected')
+  2. submissions (active CP portal submissions — in app DB,
+     status NOT IN ('Price Rejected', 'Duplicate Rejected', 'Unapproved', 'Closed'))
 
 Matching fields:
   society (required) + bhk + floor + optionally tower + optionally unit_no
@@ -27,7 +28,8 @@ BHK is normalized by stripping "BHK" and matching digits only:
 Properties DB stores config as "2 BHK" etc; submissions stores bhk as "2 BHK" etc.
 We normalize both sides.
 
-Submissions with status 'Rejected' are ignored (freed up for other CPs).
+Submissions with status 'Price Rejected' or 'Duplicate Rejected' are ignored
+(freed up for other CPs).
 
 If properties DB isn't configured, we fail open (no match).
 """

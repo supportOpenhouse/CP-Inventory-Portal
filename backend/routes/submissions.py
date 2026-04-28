@@ -13,7 +13,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Evaluation", "Offer Given", "Visit Scheduled", "Closed", "Price Rejected", "Duplicate Rejected"]
 
 
 @bp.get("/submissions")
@@ -131,19 +131,19 @@ def create_submission():
     has_collated_match = bool(dup.get("collated_match"))
 
     # Status logic:
-    #   - Perfect match           → Unapproved (admin must review the perfect-match dup)
+    #   - Perfect match           → Duplicate Rejected (admin sees red card; CP saw 409 + Contact RM)
     #   - Unit-less + collated    → Unapproved (admin reviews potential dup)
     #   - Unit-less + clean       → Submitted (auto-approved, goes straight into pipeline)
     #   - Normal submit           → Submitted (existing default)
     #   - force_create on weak/collated dup (existing "Add anyway" path) → Unapproved
     force_create = bool(data.get("force_create"))
     if is_perfect_match:
-        initial_status = "Unapproved"
+        initial_status = "Duplicate Rejected"
     elif is_unit_less:
         initial_status = "Unapproved" if has_collated_match else "Submitted"
     else:
         # Normal flow with unit details: weak/collated dups go to Unapproved if force_create,
-        # else Submitted. Note we no longer 409 on perfect match (handled above).
+        # else Submitted. Note we still 409 on perfect match (handled above).
         initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
 
     # Persist collated_match only when relevant for admin highlighting (Unapproved rows).
@@ -383,7 +383,7 @@ def counter_offer_response(sid):
     """CP accepts or rejects a pending counter offer from the admin.
 
     On accept: status -> 'Offer Given', counter_offer_status -> 'accepted'
-    On reject: status -> 'Rejected',  counter_offer_status -> 'rejected'
+    On reject: status -> 'Price Rejected',  counter_offer_status -> 'rejected'
     """
     data = request.get_json(silent=True) or {}
     action = (data.get("action") or "").strip().lower()
@@ -396,7 +396,7 @@ def counter_offer_response(sid):
         comment = comment[:2000]
     comment_or_none = comment or None
 
-    new_status = "Offer Given" if action == "accept" else "Rejected"
+    new_status = "Offer Given" if action == "accept" else "Price Rejected"
     new_co_status = "accepted" if action == "accept" else "rejected"
     event_text = (
         "CP accepted counter offer"

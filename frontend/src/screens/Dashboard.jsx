@@ -9,7 +9,8 @@ import SubmissionDetailModal from './SubmissionDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
-// Note: 'Rejected' is intentionally NOT in the filter row (still visible under 'All').
+// Note: 'Price Rejected' / 'Duplicate Rejected' are intentionally NOT in the filter row
+//       (still visible under 'All').
 const FILTER_BOXES = [
   { key: 'All',         label: 'All',            color: '#6366F1' },
   { key: 'Unapproved',  label: 'Pending Review', color: '#B8860B' },
@@ -27,7 +28,7 @@ function badgeClass(s) {
   if (status === 'Unapproved') return 'badge';
   if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Closed' || status === 'Visit Scheduled') return 'badge badge-closed';
-  if (status === 'Rejected') return 'badge badge-rejected';
+  if (status === 'Price Rejected' || status === 'Duplicate Rejected') return 'badge badge-rejected';
   return 'badge badge-submitted';
 }
 
@@ -113,11 +114,9 @@ export default function Dashboard({ onAdd }) {
   // the CP sees it in the 'Submitted' filter. The counter offer banner still appears on
   // the card itself. Once the CP accepts or admin moves to Offer Given, it moves.
   const syntheticStatus = (s) => {
-    // Perfect-match auto-created rows aren't really "Pending Review" — the CP
-    // got the Contact RM page during submit. Count them under a synthetic
-    // 'Rejected' bucket so the Pending Review tile reflects only genuine
-    // pending items. The 'All' tile still counts them (they exist on the dashboard).
-    if (s.perfect_match_at_submit) return 'Rejected';
+    // Note: perfect_match_at_submit rows now have status='Duplicate Rejected'
+    // directly (since the May 2026 split-rejected migration), so no special
+    // remap is needed — they naturally land outside the Pending Review tile.
     if (s.counter_offer_status === 'pending') return 'Submitted';
     if (s.status === 'Evaluation') return 'Submitted';
     return s.status;

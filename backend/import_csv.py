@@ -66,9 +66,9 @@ STATUS_MAP = {
     "visited":                "Evaluation",  # Gurgaon CSV
     "onboarded":              "Offer Given", # Gurgaon CSV
     "visit scheduled":        "Visit Scheduled",
-    "rejected":               "Rejected",
-    "sold out":               "Rejected",
-    "duplicate":              "Rejected",    # Gurgaon CSV
+    "rejected":               "Price Rejected",
+    "sold out":               "Price Rejected",
+    "duplicate":              "Duplicate Rejected",   # Gurgaon CSV
 }
 
 

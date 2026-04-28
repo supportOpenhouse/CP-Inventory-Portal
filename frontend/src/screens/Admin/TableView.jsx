@@ -150,7 +150,7 @@ export default function TableView({
           {(sorted && sorted.length > 0 ? sorted : submissions).map((s) => {
             const stage = stageMeta(s.status);
             const isWeakMatch = s.weak_match === true;
-            const isRejected = s.status === 'Rejected';
+            const isRejected = s.status === 'Price Rejected' || s.status === 'Duplicate Rejected';
             const isChecked = selectedIds.has(s.id);
             const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
             const isPerfectMatch = s.perfect_match_at_submit === true;

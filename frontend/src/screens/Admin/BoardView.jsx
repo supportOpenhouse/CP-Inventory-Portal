@@ -30,7 +30,7 @@ export default function BoardView({
     <div className="admin-board">
       {visibleStages.map((stage) => {
         const colSubs = submissions.filter((s) => s.status === stage.key);
-        const isRejectedCol = stage.key === 'Rejected';
+        const isRejectedCol = stage.key === 'Price Rejected' || stage.key === 'Duplicate Rejected';
         return (
           <div
             className={`board-column ${isRejectedCol ? 'is-rejected' : ''}`}
