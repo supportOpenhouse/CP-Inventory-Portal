@@ -707,12 +707,18 @@ def _normalize_phone_to_10_digits(phone: str) -> str:
     return digits
 
 
-def _rupees_to_crores(rupees) -> float | None:
-    """Convert asking_price (rupees) to crores (Forms app's expected unit)."""
+def _rupees_to_lakhs_int(rupees) -> int | None:
+    """Convert asking_price (rupees) to integer lakhs (Forms app's expected unit).
+
+    Forms app's `demand_price` column is an INTEGER, and they expect lakhs
+    (per Indian real-estate convention). 99 lakhs is sent as `99`, 1.5 Cr
+    as `150`. We round to the nearest lakh to avoid losing precision on
+    fractional crores like 0.99 Cr (=99 L exactly) or 1.45 Cr (=145 L).
+    """
     try:
         if rupees is None:
             return None
-        return round(float(rupees) / 10_000_000, 4)
+        return round(float(rupees) / 100_000)
     except (TypeError, ValueError):
         return None
 
@@ -926,8 +932,8 @@ def schedule_visit(sid: int):
             "missing_fields": [{"field": "sqft", "label": "Area (sqft)"}],
         }), 400
 
-    demand_price_cr = _rupees_to_crores(sub.get("asking_price"))
-    if demand_price_cr is None or demand_price_cr <= 0:
+    demand_price_lakhs = _rupees_to_lakhs_int(sub.get("asking_price"))
+    if demand_price_lakhs is None or demand_price_lakhs <= 0:
         return jsonify({
             "error": "Cannot schedule visit — asking price is invalid.",
             "missing_fields": [{"field": "asking_price", "label": "Asking price"}],
@@ -997,7 +1003,7 @@ def schedule_visit(sid: int):
         "contact_no": contact_no,
         "configuration": _normalize_bhk_for_forms(sub.get("bhk")),
         "area_sqft": area_sqft,
-        "demand_price": demand_price_cr,
+        "demand_price": demand_price_lakhs,
         "source": "CP",
         "field_exec": field_exec_name,
         "assigned_by": admin_name,
