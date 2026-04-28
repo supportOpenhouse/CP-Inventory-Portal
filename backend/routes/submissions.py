@@ -130,10 +130,12 @@ def create_submission():
     )
     is_unit_less = skip_unit_details
     has_collated_match = bool(dup.get("collated_match"))
+    has_submissions_match = bool(dup.get("submissions_match"))
 
     # Status logic:
     #   - Perfect match           → Duplicate Rejected (admin sees red card; CP saw 409 + Contact RM)
     #   - Unit-less + collated    → Unapproved (admin reviews potential dup)
+    #   - Unit-less + submissions → Unapproved (admin reviews potential dup; new May 2026 signal)
     #   - Unit-less + clean       → Submitted (auto-approved, goes straight into pipeline)
     #   - Normal submit           → Submitted (existing default)
     #   - force_create on weak/collated dup (existing "Add anyway" path) → Unapproved
@@ -141,21 +143,27 @@ def create_submission():
     if is_perfect_match:
         initial_status = "Duplicate Rejected"
     elif is_unit_less:
-        initial_status = "Unapproved" if has_collated_match else "Submitted"
+        initial_status = (
+            "Unapproved"
+            if (has_collated_match or has_submissions_match)
+            else "Submitted"
+        )
     else:
         # Normal flow with unit details: weak/collated dups go to Unapproved if force_create,
         # else Submitted. Note we still 409 on perfect match (handled above).
         initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
 
-    # Persist collated_match only when relevant for admin highlighting (Unapproved rows).
+    # Persist match flags only when row lands in Unapproved (admin highlight context).
     collated_match = has_collated_match and initial_status == "Unapproved"
+    submissions_match = has_submissions_match and initial_status == "Unapproved"
 
     import logging
     logging.getLogger(__name__).info(
         "[submission] cp_id=%s society=%r bhk=%r floor=%r skip_unit=%s perfect=%s "
-        "collated=%s force_create=%s -> status=%s",
+        "collated=%s submissions=%s force_create=%s -> status=%s",
         g.user.get("cp_id"), society_name, data.get("bhk"), data.get("floor"),
-        skip_unit_details, is_perfect_match, has_collated_match, force_create, initial_status,
+        skip_unit_details, is_perfect_match, has_collated_match, has_submissions_match,
+        force_create, initial_status,
     )
 
     conn = get_app_conn()
@@ -172,7 +180,7 @@ def create_submission():
                     exit_facing, balcony_facing, balcony_view,
                     parking, extra_rooms, occupancy_status,
                     asking_price, seller_name, seller_phone, photos,
-                    status, collated_match,
+                    status, collated_match, submissions_match,
                     unit_less, perfect_match_at_submit
                 ) VALUES (
                     %s, %s, %s, %s, %s,
@@ -180,7 +188,7 @@ def create_submission():
                     %s, %s, %s,
                     %s, %s::jsonb, %s,
                     %s, %s, %s, %s::jsonb,
-                    %s, %s,
+                    %s, %s, %s,
                     %s, %s
                 )
                 RETURNING id
@@ -208,6 +216,7 @@ def create_submission():
                 json.dumps(data.get("photos") or []),
                 initial_status,
                 collated_match,
+                submissions_match,
                 is_unit_less,
                 is_perfect_match,
             ))
@@ -246,7 +255,7 @@ def create_submission():
             "public_id": public_id,
         }), 409
 
-    if is_unit_less and has_collated_match:
+    if is_unit_less and (has_collated_match or has_submissions_match):
         message = "Unit submitted for admin review"
     elif is_unit_less:
         message = "Unit submitted for evaluation"
@@ -255,21 +264,18 @@ def create_submission():
     else:
         message = "Unit submitted for evaluation"
 
-    # Unit-less + collated match: row is still created (so admin sees it in
-    # Unapproved with the yellow card), but the frontend renders a Contact RM
-    # page similar to perfect-match (Title: "Similar Unit exists with Openhouse").
-    # We send the `duplicate` dict and a `show_contact_rm_page=True` flag so
-    # the frontend knows to short-circuit into that screen instead of bouncing
-    # the CP straight back to the dashboard. We also tag the dict with
-    # `unit_less_collated=True` so DuplicateCard can pick the lighter "similar
-    # match" rendering vs the harder "already in inventory" perfect-match one.
-    show_contact_rm_page = is_unit_less and has_collated_match
+    # Unit-less + (collated OR submissions) match: row is still created (so
+    # admin sees it in Unapproved with the appropriate-color card), but the
+    # frontend renders a Contact RM page (Title: "Similar Unit exists with
+    # Openhouse"). CP-side rendering is yellow regardless of source — the
+    # purple/yellow distinction is admin-side only.
+    show_contact_rm_page = is_unit_less and (has_collated_match or has_submissions_match)
     duplicate_payload = None
     if show_contact_rm_page:
-        # Per spec, override the body message for the unit-less + collated
-        # Contact RM page (the screen header is "Similar Unit exists with
-        # Openhouse"; the body explains the 48hr review SLA). The original
-        # check_duplicate() message is more abrupt.
+        # Per spec, override the body message for the unit-less Contact RM page
+        # (the screen header is "Similar Unit exists with Openhouse"; the body
+        # explains the 48hr review SLA). The original check_duplicate() message
+        # is more abrupt.
         custom_message = (
             f"We already have a similar listing for {society_name} "
             f"({to_str(data.get('bhk')) or 'BHK'}, floor {to_str(data.get('floor')) or '—'}). "
@@ -278,7 +284,7 @@ def create_submission():
         duplicate_payload = {
             **dup,
             "message": custom_message,
-            "unit_less_collated": True,
+            "unit_less_collated": True,  # frontend uses this flag for yellow theming
         }
 
     return jsonify({

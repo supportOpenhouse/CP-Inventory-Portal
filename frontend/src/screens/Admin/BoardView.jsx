@@ -49,16 +49,28 @@ export default function BoardView({
               const isWeakMatch = s.weak_match === true;
               const isChecked = selectedIds.has(s.id);
               const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
+              const isSubmissionsPartial = s.status === 'Unapproved' && s.submissions_match === true;
               // New flags: perfect-match overrides yellow; withdrawn = soft yellow tint
               const isPerfectMatch = s.perfect_match_at_submit === true;
               const isWithdrawn = !!s.deleted_at;
               const isUnitLess = s.unit_less === true;
-              // Style priority: perfect-match (red) beats withdrawn (yellow) beats unit-less (yellow).
+              // Style priority:
+              //   1. Perfect match     → red (highest signal)
+              //   2. Both collated AND submissions match → split background (yellow + purple)
+              //   3. Submissions only  → purple
+              //   4. Collated only / withdrawn / unit-less → yellow
               const cardOverlayStyle = isPerfectMatch
                 ? { background: '#fef2f2', border: '1.5px solid #f87171' }
-                : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
-                  ? { background: '#fffbeb', border: '1.5px solid #fcd34d' }
-                  : undefined;
+                : (isCollatedPartial && isSubmissionsPartial)
+                  ? {
+                      background: 'linear-gradient(135deg, #fffbeb 0%, #fffbeb 50%, #f5f3ff 50%, #f5f3ff 100%)',
+                      border: '1.5px solid #c4b5fd',  // purple wins border (stronger signal: another CP)
+                    }
+                  : isSubmissionsPartial
+                    ? { background: '#f5f3ff', border: '1.5px solid #c4b5fd' }
+                    : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
+                      ? { background: '#fffbeb', border: '1.5px solid #fcd34d' }
+                      : undefined;
               const handleClick = (e) => {
                 if (bulkMode) {
                   e.stopPropagation();
@@ -115,6 +127,19 @@ export default function BoardView({
                         }}
                       >
                         Collated match
+                      </span>
+                    )}
+                    {isSubmissionsPartial && (
+                      <span
+                        className="board-chip"
+                        title="Partial match from submissions table — society + BHK + floor matched another CP's submission; tower/unit couldn't be verified"
+                        style={{
+                          background: '#EDE9FE',
+                          color: '#5B21B6',
+                          border: '1px solid #C4B5FD',
+                        }}
+                      >
+                        Submissions match
                       </span>
                     )}
                   </div>

@@ -153,15 +153,24 @@ export default function TableView({
             const isRejected = s.status === 'Price Rejected' || s.status === 'Duplicate Rejected';
             const isChecked = selectedIds.has(s.id);
             const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
+            const isSubmissionsPartial = s.status === 'Unapproved' && s.submissions_match === true;
             const isPerfectMatch = s.perfect_match_at_submit === true;
             const isWithdrawn = !!s.deleted_at;
             const isUnitLess = s.unit_less === true;
-            // Row tint priority: perfect-match (red) > withdrawn (yellow) > unit-less unapproved (yellow)
+            // Row tint priority:
+            //   1. Perfect match               → red
+            //   2. Both collated + submissions → split (gradient)
+            //   3. Submissions only            → purple
+            //   4. Collated / withdrawn / unit-less → yellow
             const rowStyle = isPerfectMatch
               ? { background: '#fef2f2' }
-              : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
-                ? { background: '#fffbeb' }
-                : undefined;
+              : (isCollatedPartial && isSubmissionsPartial)
+                ? { background: 'linear-gradient(135deg, #fffbeb 0%, #fffbeb 50%, #f5f3ff 50%, #f5f3ff 100%)' }
+                : isSubmissionsPartial
+                  ? { background: '#f5f3ff' }
+                  : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
+                    ? { background: '#fffbeb' }
+                    : undefined;
             const handleClick = () => {
               if (bulkMode) onToggleSelect?.(s.id);
               else onSelect(s.id);
@@ -262,6 +271,24 @@ export default function TableView({
                       }}
                     >
                       Collated match
+                    </span>
+                  )}
+                  {isSubmissionsPartial && (
+                    <span
+                      title="Partial match from submissions table — society + BHK + floor matched another CP's submission; tower/unit couldn't be verified"
+                      style={{
+                        marginLeft: 6,
+                        padding: '2px 8px',
+                        borderRadius: 10,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        background: '#EDE9FE',
+                        color: '#5B21B6',
+                        border: '1px solid #C4B5FD',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Submissions match
                     </span>
                   )}
                 </td>

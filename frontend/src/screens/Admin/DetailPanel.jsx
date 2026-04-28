@@ -330,19 +330,35 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   ✓ Withdrawn{s.withdraw_reason === 'cp_withdrawn' ? ' by CP' : ''}
                 </div>
               )}
-              {s.unit_less && !s.perfect_match_at_submit && !s.deleted_at && (
-                <div style={{
-                  margin: '0 0 14px',
-                  padding: '8px 12px',
-                  background: '#fffbeb',
-                  border: '1px solid #fcd34d',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  color: '#78350f',
-                }}>
-                  Submitted without unit number{s.collated_match ? ' · matches a 99acres listing' : ' · auto-approved'}
-                </div>
-              )}
+              {s.unit_less && !s.perfect_match_at_submit && !s.deleted_at && (() => {
+                // Banner color reflects the strongest match signal:
+                //   submissions_match → purple (another CP has this)
+                //   collated_match    → yellow (99acres listing exists)
+                //   neither           → soft yellow (auto-approved unit-less)
+                const hasSubmissions = !!s.submissions_match;
+                const hasCollated = !!s.collated_match;
+                const bg = hasSubmissions ? '#f5f3ff' : '#fffbeb';
+                const border = hasSubmissions ? '1px solid #c4b5fd' : '1px solid #fcd34d';
+                const color = hasSubmissions ? '#5b21b6' : '#78350f';
+                let suffix;
+                if (hasSubmissions && hasCollated) suffix = ' · matches both another CP submission and a 99acres listing';
+                else if (hasSubmissions) suffix = ' · matches another CP submission';
+                else if (hasCollated) suffix = ' · matches a 99acres listing';
+                else suffix = ' · auto-approved';
+                return (
+                  <div style={{
+                    margin: '0 0 14px',
+                    padding: '8px 12px',
+                    background: bg,
+                    border,
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color,
+                  }}>
+                    Submitted without unit number{suffix}
+                  </div>
+                );
+              })()}
 
               {/* Status selector */}
               <div className="admin-panel-section">

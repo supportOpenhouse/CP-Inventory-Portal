@@ -190,7 +190,7 @@ def _list_submissions_core():
                     s.parking, s.exit_facing, s.balcony_facing, s.balcony_view,
                     s.asking_price,
                     s.seller_name, s.seller_phone,
-                    s.status, s.submitted_at, s.photos, s.weak_match, s.collated_match,
+                    s.status, s.submitted_at, s.photos, s.weak_match, s.collated_match, s.submissions_match,
                     s.deleted_at, s.drive_links, s.assigned_rm_id,
                     s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,

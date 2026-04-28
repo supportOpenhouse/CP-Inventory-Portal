@@ -115,6 +115,7 @@ def _no_match():
         "message": "",
         "details": {},
         "collated_match": False,
+        "submissions_match": False,
     }
 
 
@@ -337,6 +338,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         ),
                         "details": {**hard_block_details, **rm_info},
                         "collated_match": collated_match_flag,
+                        "submissions_match": False,  # properties hit, not submissions
                     }
 
                 # Not in properties — also check pending submissions from all CPs
@@ -352,6 +354,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         ),
                         "details": {**hard_block_details, **rm_info},
                         "collated_match": collated_match_flag,
+                        "submissions_match": True,  # ← submissions_hit drove this block
                     }
 
                 # External-scraper match (99acres etc.) — collated_data has no tower/unit,
@@ -369,11 +372,13 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         ),
                         "details": {**hard_block_details, **rm_info},
                         "collated_match": True,
+                        "submissions_match": False,
                     }
 
                 # No narrower match in any source — CP proceeds
                 result = _no_match()
                 result["collated_match"] = collated_match_flag
+                result["submissions_match"] = False
                 return result
 
             # ---------- HARD BLOCK: society+bhk+floor match (no tower/unit given) ----------
@@ -402,10 +407,12 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                     ),
                     "details": {**hard_block_details, **rm_info},
                     "collated_match": collated_match_flag,
+                    "submissions_match": submissions_hit,
                 }
     finally:
         put_props_conn(pconn)
 
     result = _no_match()
     result["collated_match"] = collated_match_flag
+    result["submissions_match"] = False
     return result
