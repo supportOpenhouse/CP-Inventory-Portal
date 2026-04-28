@@ -717,6 +717,42 @@ def _rupees_to_crores(rupees) -> float | None:
         return None
 
 
+def _resolve_admin_name_for_forms(admin_phone: str) -> str | None:
+    """Look up the admin's name in properties.users by phone — used for
+    `assigned_by` on the Forms-app payload.
+
+    Forms app validates assigned_by against the same properties.users table
+    (where we also pull field_exec from). So we need to resolve the calling
+    admin's display name in that table by matching their phone number.
+
+    Phone may be stored differently on each side (with/without +91, with/without
+    spaces). We normalize both sides to digits-only and match by suffix to
+    handle variants like '+91 8595594789' / '918595594789' / '8595594789'.
+    Returns None if no active user matches.
+    """
+    if not admin_phone or not properties_configured():
+        return None
+    digits = re.sub(r"\D", "", str(admin_phone))
+    if len(digits) < 10:
+        return None
+    last_10 = digits[-10:]  # match against the last 10 digits regardless of country code
+    pconn = get_props_conn()
+    try:
+        with pconn.cursor() as cur:
+            cur.execute("""
+                SELECT name
+                FROM users
+                WHERE REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g') LIKE %s
+                  AND is_active = TRUE
+                ORDER BY id ASC
+                LIMIT 1
+            """, (f"%{last_10}",))
+            row = cur.fetchone()
+            return row["name"] if row else None
+    finally:
+        put_props_conn(pconn)
+
+
 @bp.post("/submissions/<int:sid>/schedule-visit")
 @require_staff
 def schedule_visit(sid: int):
@@ -929,11 +965,19 @@ def schedule_visit(sid: int):
         )
         locality = society_for_lookup or "Unknown"
 
-    admin_name = (
-        g.user.get("name")
-        or g.user.get("phone")
-        or f"admin-{g.user.get('admin_id') or g.user.get('rm_id') or 'unknown'}"
-    )
+    # Resolve the calling admin's name from properties.users (Forms app
+    # validates assigned_by against the same table).
+    admin_phone = g.user.get("phone") or ""
+    admin_name = _resolve_admin_name_for_forms(admin_phone)
+    if not admin_name:
+        return jsonify({
+            "error": (
+                f"Cannot schedule visit — your account ({admin_phone}) is not registered "
+                f"as an active user in the Forms app. Add this user to properties.users "
+                f"with is_active=TRUE, then try again."
+            ),
+            "missing_fields": [{"field": "admin_account", "label": "Admin account in Forms users"}],
+        }), 400
 
     # lead_id is the public_id (e.g. 'OHLNC0042'), per Forms-app spec.
     # Falls back to internal id if public_id is somehow missing (shouldn't happen
