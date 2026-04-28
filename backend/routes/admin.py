@@ -667,10 +667,10 @@ def list_field_execs():
 
 # Required submission fields for scheduling — checked before pushing to Forms app.
 # Empty/missing values block the request with a friendly error message.
+# Note: owner_broker_name and contact_no are sourced from the CP record (channel_partners),
+# not from seller_name/seller_phone — see schedule_visit() for the mapping.
 SCHEDULE_REQUIRED_SUBMISSION_FIELDS = [
     ("society_name",   "Society"),
-    ("seller_name",    "Owner / broker name"),
-    ("seller_phone",   "Contact number"),
     ("bhk",            "BHK configuration"),
     ("sqft",           "Area (sqft)"),
     ("asking_price",   "Asking price"),
@@ -687,7 +687,7 @@ def _normalize_bhk_for_forms(bhk_str: str) -> str:
     return f"{digits.rstrip('.')}BHK"
 
 
-def _split_seller_name(full_name: str) -> tuple[str, str]:
+def _split_full_name(full_name: str) -> tuple[str, str]:
     """'John Doe' → ('John', 'Doe'); 'Madonna' → ('Madonna', '')."""
     if not full_name:
         return "", ""
@@ -756,21 +756,46 @@ def schedule_visit(sid: int):
     body_errors = []
     if not schedule_date or not re.match(r"^\d{4}-\d{2}-\d{2}$", schedule_date):
         body_errors.append("schedule_date must be YYYY-MM-DD")
-    if not schedule_time or not re.match(r"^\d{1,2}:\d{2}$", schedule_time):
-        body_errors.append("schedule_time must be HH:MM (24-hr)")
+    else:
+        try:
+            sched_date_obj = datetime.strptime(schedule_date, "%Y-%m-%d").date()
+            if sched_date_obj < datetime.now().date():
+                body_errors.append("schedule_date cannot be in the past")
+        except ValueError:
+            body_errors.append("schedule_date is not a valid date")
+
+    # Time: enforce strict HH:MM (pad single-digit hours like '9:30' → '09:30')
+    if not schedule_time:
+        body_errors.append("schedule_time is required")
+    else:
+        time_match = re.match(r"^(\d{1,2}):(\d{2})$", schedule_time)
+        if not time_match:
+            body_errors.append("schedule_time must be HH:MM (24-hr)")
+        else:
+            hh = int(time_match.group(1))
+            mm = int(time_match.group(2))
+            if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+                body_errors.append("schedule_time has out-of-range values")
+            else:
+                # Re-format to zero-padded HH:MM
+                schedule_time = f"{hh:02d}:{mm:02d}"
+
     if not field_exec_id:
         body_errors.append("field_exec_id is required")
     if body_errors:
         return jsonify({"error": "Invalid request", "details": body_errors}), 400
 
-    # Load the submission + its city
+    # Load the submission + its city + the CP who owns it (CP name/phone is
+    # what we send as owner_broker_name/contact_no to the Forms app).
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT s.*, c.name AS city
+                SELECT s.*, c.name AS city,
+                       cp.name AS cp_name, cp.phone AS cp_phone
                 FROM submissions s
                 LEFT JOIN cities c ON c.id = s.city_id
+                LEFT JOIN channel_partners cp ON cp.id = s.cp_id
                 WHERE s.id = %s AND s.deleted_at IS NULL
             """, (sid,))
             sub = cur.fetchone()
@@ -820,13 +845,49 @@ def schedule_visit(sid: int):
 
     field_exec_name = exec_row["name"]
 
-    # Build the Forms app payload
-    first_name, last_name = _split_seller_name(sub.get("seller_name"))
-    contact_no = _normalize_phone_to_10_digits(sub.get("seller_phone"))
-    if len(contact_no) != 10:
+    # Whitelist city — Forms app only accepts these three values.
+    ALLOWED_FORMS_CITIES = {"Gurgaon", "Noida", "Ghaziabad"}
+    raw_city = (sub.get("city") or "").strip()
+    # Try case-correct match first, then fall back to a case-insensitive lookup
+    # so DB rows like 'gurgaon' don't break the call.
+    city_match = None
+    for allowed in ALLOWED_FORMS_CITIES:
+        if raw_city.lower() == allowed.lower():
+            city_match = allowed
+            break
+    if not city_match:
         return jsonify({
-            "error": "Cannot schedule visit — contact number is not a valid 10-digit number.",
-            "missing_fields": [{"field": "seller_phone", "label": "Contact number"}],
+            "error": f"Cannot schedule visit — city '{raw_city}' is not supported by the Forms app. "
+                     f"Allowed values: {', '.join(sorted(ALLOWED_FORMS_CITIES))}.",
+            "missing_fields": [{"field": "city", "label": "City"}],
+        }), 400
+    city = city_match
+
+    # CP info → owner_broker_name + contact_no (per convention, CP IS the broker
+    # for any CP-listed property).
+    cp_name = (sub.get("cp_name") or "").strip()
+    cp_phone_raw = sub.get("cp_phone") or ""
+    if not cp_name:
+        return jsonify({
+            "error": "Cannot schedule visit — CP name is missing on this listing's channel partner record.",
+            "missing_fields": [{"field": "cp_name", "label": "CP name"}],
+        }), 400
+
+    first_name, last_name = _split_full_name(cp_name)
+    contact_no = _normalize_phone_to_10_digits(cp_phone_raw)
+    if len(contact_no) != 10 or contact_no.startswith("0"):
+        return jsonify({
+            "error": "Cannot schedule visit — CP phone is not a valid 10-digit number "
+                     "(must not start with 0 and must be exactly 10 digits).",
+            "missing_fields": [{"field": "cp_phone", "label": "CP phone"}],
+        }), 400
+
+    # area_sqft must be a positive integer
+    area_sqft = int(sub.get("sqft") or 0)
+    if area_sqft <= 0:
+        return jsonify({
+            "error": "Cannot schedule visit — area (sqft) must be greater than 0.",
+            "missing_fields": [{"field": "sqft", "label": "Area (sqft)"}],
         }), 400
 
     demand_price_cr = _rupees_to_crores(sub.get("asking_price"))
@@ -836,27 +897,64 @@ def schedule_visit(sid: int):
             "missing_fields": [{"field": "asking_price", "label": "Asking price"}],
         }), 400
 
+    # Locality lookup from properties.master_societies (source of truth for
+    # society→locality mapping). Falls back to society_name if no row matches —
+    # Forms app requires non-empty, so a non-empty fallback keeps the call alive
+    # rather than hard-failing on a missing row.
+    society_for_lookup = (sub.get("society_name") or "").strip()
+    locality = ""
+    if society_for_lookup and properties_configured():
+        pconn2 = get_props_conn()
+        try:
+            with pconn2.cursor() as cur:
+                cur.execute("""
+                    SELECT locality
+                    FROM master_societies
+                    WHERE LOWER(REGEXP_REPLACE(society_name, '[^a-zA-Z0-9]', '', 'g'))
+                          = LOWER(REGEXP_REPLACE(%s, '[^a-zA-Z0-9]', '', 'g'))
+                      AND LOWER(TRIM(city)) = LOWER(%s)
+                    LIMIT 1
+                """, (society_for_lookup, city))
+                row = cur.fetchone()
+                if row and (row.get("locality") or "").strip():
+                    locality = row["locality"].strip()
+        finally:
+            put_props_conn(pconn2)
+    if not locality:
+        # Fallback: use society_name itself so the Forms app's required-field
+        # check doesn't 400 us. Logged so we can backfill master_societies later.
+        log.warning(
+            "[schedule_visit] No locality match for society=%r city=%s sid=%s — using society_name as fallback",
+            society_for_lookup, city, sid,
+        )
+        locality = society_for_lookup or "Unknown"
+
     admin_name = (
         g.user.get("name")
         or g.user.get("phone")
         or f"admin-{g.user.get('admin_id') or g.user.get('rm_id') or 'unknown'}"
     )
 
+    # lead_id is the public_id (e.g. 'OHLNC0042'), per Forms-app spec.
+    # Falls back to internal id if public_id is somehow missing (shouldn't happen
+    # for CP submissions but defensively handled).
+    lead_id = sub.get("public_id") or str(sub["id"])
+
     payload = {
-        "lead_id": str(sub["id"]),
+        "lead_id": lead_id,
         "society_name": sub.get("society_name") or "",
-        "locality": "",   # we don't track locality separately yet
-        "city": sub.get("city") or "",
+        "locality": locality,
+        "city": city,
         "tower_no": sub.get("tower") or "",
         "unit_no": sub.get("unit_no") or "",
-        "owner_broker_name": sub.get("seller_name") or "",
+        "owner_broker_name": cp_name,
         "first_name": first_name,
         "last_name": last_name,
         "contact_no": contact_no,
         "configuration": _normalize_bhk_for_forms(sub.get("bhk")),
-        "area_sqft": int(sub.get("sqft") or 0),
+        "area_sqft": area_sqft,
         "demand_price": demand_price_cr,
-        "source": "CP Listing",
+        "source": "CP",
         "field_exec": field_exec_name,
         "assigned_by": admin_name,
         "schedule_date": schedule_date,
