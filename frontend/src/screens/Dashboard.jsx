@@ -18,7 +18,12 @@ const FILTER_BOXES = [
   { key: 'Closed',      label: 'Closures',       color: '#10B981' },
 ];
 
-function badgeClass(status) {
+function badgeClass(s) {
+  // Perfect-match auto-created rows get a distinct red badge — these are
+  // CP submissions that were rejected as duplicates at submit time. They're
+  // not in the normal pipeline; CP can ignore them or follow up with their RM.
+  if (s.perfect_match_at_submit) return 'badge badge-rejected';
+  const status = s.status;
   if (status === 'Unapproved') return 'badge';
   if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Closed' || status === 'Visit Scheduled') return 'badge badge-closed';
@@ -26,16 +31,20 @@ function badgeClass(status) {
   return 'badge badge-submitted';
 }
 
-function badgeStyle(status) {
-  if (status === 'Unapproved') {
+function badgeStyle(s) {
+  if (s.perfect_match_at_submit) {
+    return { background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' };
+  }
+  if (s.status === 'Unapproved') {
     return { background: '#FFF8E1', color: '#B8860B', border: '1px solid #E8C86A' };
   }
   return undefined;
 }
 
-function badgeLabel(status) {
-  if (status === 'Unapproved') return 'Pending Review';
-  return status;
+function badgeLabel(s) {
+  if (s.perfect_match_at_submit) return 'OH already has this';
+  if (s.status === 'Unapproved') return 'Pending Review';
+  return s.status;
 }
 
 export default function Dashboard({ onAdd }) {
@@ -104,6 +113,11 @@ export default function Dashboard({ onAdd }) {
   // the CP sees it in the 'Submitted' filter. The counter offer banner still appears on
   // the card itself. Once the CP accepts or admin moves to Offer Given, it moves.
   const syntheticStatus = (s) => {
+    // Perfect-match auto-created rows aren't really "Pending Review" — the CP
+    // got the Contact RM page during submit. Count them under a synthetic
+    // 'Rejected' bucket so the Pending Review tile reflects only genuine
+    // pending items. The 'All' tile still counts them (they exist on the dashboard).
+    if (s.perfect_match_at_submit) return 'Rejected';
     if (s.counter_offer_status === 'pending') return 'Submitted';
     if (s.status === 'Evaluation') return 'Submitted';
     return s.status;
@@ -313,8 +327,8 @@ export default function Dashboard({ onAdd }) {
                         </div>
                       )}
                     </div>
-                    <div className={badgeClass(s.status)} style={badgeStyle(s.status)}>
-                      {badgeLabel(s.status)}
+                    <div className={badgeClass(s)} style={badgeStyle(s)}>
+                      {badgeLabel(s)}
                     </div>
                   </div>
                   <div className="unit-card-price">
