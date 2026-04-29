@@ -7,6 +7,101 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-29] — Add Inventory on Behalf, RM filter, bulk-reassign RM
+
+### Added
+- **Add Inventory on behalf of a CP** (RM / Manager / Admin). New
+  full-screen flow accessed via the **`+ Add Inventory`** button in the
+  admin toolbar. The flow contains a sticky CP selector at the top
+  (search by phone or name, scope-filtered: RM sees only their CPs,
+  manager sees own + team, admin sees all) and reuses the existing
+  AddUnit `Step1` form below. Photos remain optional.
+
+  **Backend:**
+  - `GET /api/admin/cps?q=<query>&limit=<n>` — scope-filtered CP search.
+    Phone digits-only and name case-insensitive substring; up to 50
+    results per call.
+  - `POST /api/admin/submissions/on-behalf` — mirrors `POST /api/submissions`
+    but with required `target_cp_id`. Validates the target CP is in the
+    caller's scope, runs the same `check_duplicate` pipeline, and inserts
+    the row with `cp_id = target_cp_id` and `submitted_by_name = <staff
+    display name>`. Records a `submission_event` annotated "submitted by
+    <staff> on behalf of CP <cp>".
+
+  **Schema:**
+  - `submissions.submitted_by_name TEXT NULL` (idempotent migration in
+    [`backend/migrations/2026-04-29-add-submitted-by-name.sql`](backend/migrations/2026-04-29-add-submitted-by-name.sql)).
+    `NULL` = CP submitted directly. Non-`NULL` = staff submitted on
+    behalf, with the staff member's display name captured at submit
+    time (denormalised so deletions don't break the audit trail).
+
+  **Frontend:**
+  - New components: [`Admin/AddInventoryOnBehalf.jsx`](frontend/src/screens/Admin/AddInventoryOnBehalf.jsx),
+    [`Admin/CpSelector.jsx`](frontend/src/screens/Admin/CpSelector.jsx).
+  - `AddUnit/Step1.jsx` accepts new `mode` and `targetCp` props (CP-side
+    flow unchanged when `mode='cp'`, staff flow uses `mode='staff'`).
+  - `BoardView`, `TableView`, `DetailPanel` show an orange `✏ via <name>`
+    badge / annotation whenever `submitted_by_name` is set, with a full
+    "Submitted by X on behalf of Y" tooltip.
+  - Admin table rows changed from `vertical-align: middle` to
+    `vertical-align: top` globally (rows now align consistently when a
+    cell has multiple lines, e.g. the CP cell with its on-behalf badge).
+
+- **RM filter on the admin board.** The collapsible **⚙ Filters** panel
+  has a new **RM** dropdown alongside BHK and date range. Selecting an
+  RM filters listings to those whose CP is assigned to that RM
+  (`cp.rm_id = <id>` server-side). Clear-filters and active-count badge
+  updated to include the RM filter.
+
+  **Backend:** `_apply_filters()` accepts a new `rm_id` query param.
+
+- **Bulk reassign RM** (admin only). New purple **`👤 Reassign RM…`**
+  button in the bulk action bar, visible only when `is_admin=TRUE`.
+  Opens a modal that:
+  - Groups the selected listings by CP (so the admin sees the per-CP
+    impact, with current RM and selection count).
+  - Warns prominently that the change updates each CP's *permanent*
+    `rm_id`, affecting **all** of their listings — not just the rows
+    selected.
+  - Lets the admin pick a target RM and submit; results are reported
+    per-CP (✓ reassigned / ↺ already on this RM / ✗ not found).
+
+  **Backend:** new endpoint `POST /api/admin/cps/bulk-reassign-rm`
+  ([admin.py](backend/routes/admin.py)), gated `@require_admin_role`.
+  Body `{ cp_ids: [int], target_rm_id: int }`; validates target RM is
+  active, runs a single `UPDATE channel_partners SET rm_id = ... WHERE
+  id = ANY(%s)` for all CPs that need a real change. Hard cap of 100
+  CPs per request.
+
+  **Frontend:** new component
+  [`Admin/BulkReassignRmModal.jsx`](frontend/src/screens/Admin/BulkReassignRmModal.jsx)
+  + `api.adminBulkReassignRm()` helper.
+
+### Notes
+- `+ Add Inventory` button is always visible to staff (RM / Manager /
+  Admin), even when the caller has no CPs in scope. Clicking with no
+  CPs in scope shows "No CPs match … in your scope." in the search
+  dropdown.
+- `Reassign RM` is admin-only; managers cannot move CPs between RMs in
+  this push (can be loosened later if needed).
+- The "Change CP" button in the on-behalf flow now preserves all typed
+  unit details (BHK, floor, sqft, etc.). Only the targetCp pointer
+  changes — city/society remain whatever the staff already entered.
+- One follow-up known limitation, called out for the next round: the
+  Q1=c design ("BoardView checkboxes restricted to Visit Scheduled
+  column") was not implemented — selection works on all columns and
+  the backend pre-flight catches genuinely invalid cases.
+
+### Closed open issues at handover
+- "Field exec dropdown not city-filtered" — **NOT closed** (separate
+  schema change in `properties.users` required; out of scope here).
+- "Bulk Schedule Visit not supported" — **closed in earlier push
+  ([2026-04-29] Bulk schedule visits)**.
+
+### Migration order (already applied to prod by the user)
+1. `backend/migrations/2026-04-29-add-submitted-by-name.sql` ran on prod
+   App DB before this code shipped, per Convention #2.
+
 ## [2026-04-29] — Schedule pill date/time formatting
 
 ### Fixed
