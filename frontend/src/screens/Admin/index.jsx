@@ -8,6 +8,8 @@ import TableView from './TableView';
 import DetailPanel from './DetailPanel';
 import CpHistoryDrawer from './CpHistoryDrawer';
 import BulkScheduleVisitModal from './BulkScheduleVisitModal';
+import AddInventoryOnBehalf from './AddInventoryOnBehalf';
+import BulkReassignRmModal from './BulkReassignRmModal';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
@@ -37,15 +39,29 @@ export default function Admin() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false);
+  const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
+  const [addingInventory, setAddingInventory] = useState(false);
 
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
   const [bhk, setBhk] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [rmFilter, setRmFilter] = useState('');  // '' = All RMs
   const [statusFilter, setStatusFilter] = useState('');  // '' = All
 
-  const activeFilterCount = [bhk, dateFrom, dateTo].filter(Boolean).length;
+  // RM list for the filter dropdown + reassign modal. Loaded once for staff users.
+  const [rms, setRms] = useState([]);
+  useEffect(() => {
+    if (!isStaff) return;
+    let alive = true;
+    api.adminListRms()
+      .then((data) => { if (alive) setRms(data?.rms || []); })
+      .catch(() => { if (alive) setRms([]); });
+    return () => { alive = false; };
+  }, [isStaff]);
+
+  const activeFilterCount = [bhk, dateFrom, dateTo, rmFilter].filter(Boolean).length;
 
   const effectiveFilters = useMemo(() => {
     const f = {};
@@ -54,9 +70,10 @@ export default function Admin() {
     if (bhk) f.bhk = bhk;
     if (dateFrom) f.date_from = dateFrom;
     if (dateTo) f.date_to = dateTo;
+    if (rmFilter) f.rm_id = rmFilter;
     if (statusFilter) f.status = statusFilter;
     return f;
-  }, [city, search, bhk, dateFrom, dateTo, statusFilter]);
+  }, [city, search, bhk, dateFrom, dateTo, rmFilter, statusFilter]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -99,6 +116,7 @@ export default function Admin() {
     setBhk('');
     setDateFrom('');
     setDateTo('');
+    setRmFilter('');
   };
 
   const toggleBulkMode = () => {
@@ -138,6 +156,21 @@ export default function Admin() {
       setBulkBusy(false);
     }
   };
+
+  // Full-screen takeover when staff is entering on-behalf inventory.
+  // Returning early (rather than rendering a modal) matches the CP-side
+  // AddUnit flow and avoids stacking: while in this flow, the admin board
+  // bulk/filter state stays exactly where it was.
+  if (addingInventory) {
+    return (
+      <AddInventoryOnBehalf
+        onClose={async () => {
+          setAddingInventory(false);
+          await reload();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="admin-root">
@@ -202,6 +235,16 @@ export default function Admin() {
               {bulkMode ? `✕ Cancel${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}` : '☐ Select'}
             </button>
           )}
+          {isStaff && (
+            <button
+              className="filter-toggle"
+              style={{ borderColor: '#FF6B2B', color: '#FF6B2B' }}
+              onClick={() => setAddingInventory(true)}
+              title="Add inventory on behalf of a CP"
+            >
+              + Add Inventory
+            </button>
+          )}
           <div className="view-toggle">
             <button
               className={`view-btn ${view === 'board' ? 'active' : ''}`}
@@ -237,6 +280,19 @@ export default function Admin() {
               ))}
             </select>
           </div>
+          {isStaff && (
+            <div className="filter-field">
+              <label>RM</label>
+              <select value={rmFilter} onChange={(e) => setRmFilter(e.target.value)}>
+                <option value="">All RMs</option>
+                {rms.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}{r.is_manager ? ' (Manager)' : ''}{r.city ? ` · ${r.city}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="filter-field">
             <label>From date</label>
             <input
@@ -332,6 +388,17 @@ export default function Admin() {
           >
             📅 Schedule visits…
           </button>
+          {isAdmin && (
+            <button
+              className="btn-secondary-sm"
+              style={{ borderColor: '#7C3AED', color: '#7C3AED' }}
+              onClick={() => setBulkReassignOpen(true)}
+              disabled={bulkBusy}
+              title="Move the selected CPs to a different RM (admin only)"
+            >
+              👤 Reassign RM…
+            </button>
+          )}
           <button
             className="btn-secondary-sm"
             style={{ marginLeft: 'auto' }}
@@ -392,6 +459,18 @@ export default function Admin() {
         <BulkScheduleVisitModal
           selectedSubmissions={submissions.filter((s) => selectedIds.has(s.id))}
           onClose={() => setBulkScheduleOpen(false)}
+          onSuccess={async () => {
+            setSelectedIds(new Set());
+            setBulkMode(false);
+            await reload();
+          }}
+        />
+      )}
+
+      {bulkReassignOpen && (
+        <BulkReassignRmModal
+          selectedSubmissions={submissions.filter((s) => selectedIds.has(s.id))}
+          onClose={() => setBulkReassignOpen(false)}
           onSuccess={async () => {
             setSelectedIds(new Set());
             setBulkMode(false);

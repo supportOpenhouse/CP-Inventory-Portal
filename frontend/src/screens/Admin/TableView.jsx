@@ -247,6 +247,28 @@ export default function TableView({
                 <td>
                   {s.cp_name}
                   <div style={{ fontSize: 11, color: '#999' }}>{s.cp_code}</div>
+                  {s.submitted_by_name && (
+                    <div
+                      title={`Submitted by ${s.submitted_by_name} on behalf of ${s.cp_name}`}
+                      style={{
+                        marginTop: 3,
+                        maxWidth: 160,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        display: 'inline-block',
+                        padding: '1px 6px',
+                        background: '#FFF3ED',
+                        color: '#FF6B2B',
+                        borderRadius: 3,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: 0.2,
+                      }}
+                    >
+                      ✏ via {s.submitted_by_name.split(' ')[0]}
+                    </div>
+                  )}
                 </td>
                 <td>
                   <span

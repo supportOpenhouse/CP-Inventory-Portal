@@ -138,6 +138,25 @@ export const api = {
       method: 'POST', body: payload,
     }),
 
+  // Add Inventory on Behalf of CP — RM/Manager/Admin only.
+  // Search returns up to 20 CPs scoped to the caller; q matches name or phone.
+  adminCpSearch: (q, limit = 20) => {
+    const qs = new URLSearchParams({ q, limit }).toString();
+    return request(`/admin/cps?${qs}`);
+  },
+  // payload mirrors createSubmission body, plus required `target_cp_id`.
+  adminCreateSubmissionOnBehalf: (payload) =>
+    request('/admin/submissions/on-behalf', {
+      method: 'POST', body: payload,
+    }),
+
+  // Admin-only: bulk reassign multiple CPs to a different RM.
+  // Body: { cp_ids: [int], target_rm_id: int }. Cap of 100 per request.
+  adminBulkReassignRm: (payload) =>
+    request('/admin/cps/bulk-reassign-rm', {
+      method: 'POST', body: payload,
+    }),
+
   // Health
   health: () => request('/health', { auth: false }),
 };

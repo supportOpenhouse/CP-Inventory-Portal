@@ -579,6 +579,18 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
                         {s.cp_code} · +91 {s.cp_phone}
                       </div>
+                      {s.submitted_by_name && (
+                        <div
+                          style={{
+                            marginTop: 6, padding: '4px 8px',
+                            background: '#FFF3ED', color: '#A0510E',
+                            border: '1px solid #FFCBA8', borderRadius: 4,
+                            fontSize: 12, lineHeight: 1.3,
+                          }}
+                        >
+                          ✏ Submitted by <strong>{s.submitted_by_name}</strong> on behalf of <strong>{s.cp_name}</strong>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div>

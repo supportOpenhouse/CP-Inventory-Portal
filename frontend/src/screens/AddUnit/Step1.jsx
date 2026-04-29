@@ -25,10 +25,13 @@ function lakhsToRupees(lakhs) {
   return Math.round(n * 100000);
 }
 
-export default function Step1({ form, setForm, onSubmitted, onAbandon }) {
+export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'cp', targetCp = null }) {
   const { user } = useAuth();
 
-  const defaultCity = CITY_OPTIONS.includes(user?.city) ? user.city : CITY_OPTIONS[0];
+  // In staff mode (RM/manager/admin submitting on behalf of a CP), the
+  // city default comes from the target CP, not the staff member.
+  const cityForDefault = mode === 'staff' ? (targetCp?.city || '') : (user?.city || '');
+  const defaultCity = CITY_OPTIONS.includes(cityForDefault) ? cityForDefault : CITY_OPTIONS[0];
   const [city, setCity] = useState(form.city || defaultCity);
 
   const [search, setSearch] = useState('');
@@ -119,7 +122,10 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon }) {
     setDupResult(null);
     setSubmitting(true);
     try {
-      const result = await api.createSubmission(buildPayload({ forceCreate, skipUnit }));
+      const payload = buildPayload({ forceCreate, skipUnit });
+      const result = mode === 'staff'
+        ? await api.adminCreateSubmissionOnBehalf({ ...payload, target_cp_id: targetCp?.id })
+        : await api.createSubmission(payload);
       // Backend may return 201 but ask the frontend to show a Contact RM
       // page anyway (e.g. unit-less + collated match — row IS created so admin
       // sees it, but CP gets a "Similar match" message instead of going back

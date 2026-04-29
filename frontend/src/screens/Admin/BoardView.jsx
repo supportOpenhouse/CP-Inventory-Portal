@@ -178,6 +178,28 @@ export default function BoardView({
                     <span className="board-card-date">
                       {timeAgo(s.submitted_at)} · {s.cp_name}
                     </span>
+                    {s.submitted_by_name && (
+                      <div
+                        title={`Submitted by ${s.submitted_by_name} on behalf of ${s.cp_name}`}
+                        style={{
+                          marginTop: 4,
+                          maxWidth: '100%',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          display: 'inline-block',
+                          padding: '1px 6px',
+                          background: '#FFF3ED',
+                          color: '#FF6B2B',
+                          borderRadius: 3,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: 0.2,
+                        }}
+                      >
+                        ✏ via {s.submitted_by_name.split(' ')[0]}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

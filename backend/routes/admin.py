@@ -120,6 +120,7 @@ def _apply_filters(base_sql: str, params: list):
     search = to_str(request.args.get("search"))
     since_days = request.args.get("since_days", type=int)
     cp_id = request.args.get("cp_id", type=int)
+    rm_id = request.args.get("rm_id", type=int)
     bhk = to_str(request.args.get("bhk"))
     date_from = to_str(request.args.get("date_from"))
     date_to = to_str(request.args.get("date_to"))
@@ -163,6 +164,13 @@ def _apply_filters(base_sql: str, params: list):
         base_sql += " AND s.cp_id = %s"
         params.append(cp_id)
 
+    if rm_id:
+        # Filter by the CP's assigned RM (channel_partners.rm_id), which is
+        # the canonical "owner" relationship. Note: this is distinct from
+        # submissions.assigned_rm_id (legacy per-listing assignment).
+        base_sql += " AND cp.rm_id = %s"
+        params.append(rm_id)
+
     if bhk:
         base_sql += " AND s.bhk = %s"
         params.append(bhk)
@@ -194,6 +202,7 @@ def _list_submissions_core():
                     s.deleted_at, s.drive_links, s.assigned_rm_id,
                     s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
+                    s.submitted_by_name,
                     c.name AS city,
                     cp.id AS cp_id,
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
@@ -1904,3 +1913,521 @@ def delete_cp_note(note_id: int):
     finally:
         put_app_conn(conn)
     return jsonify({"ok": True}), 200
+
+
+# ============================================================
+# Add Inventory on Behalf of CP (RM/Manager/Admin)
+# ============================================================
+#
+# RMs typically receive listing details from a CP over phone/WhatsApp and
+# enter them into the system on behalf of the CP. This block adds:
+#
+#   1. GET  /api/admin/cps?q=<query>           — CP search (scope-filtered)
+#   2. POST /api/admin/submissions/on-behalf   — create a submission on
+#                                                 behalf of a target CP
+#
+# Storage: submissions.submitted_by_name (TEXT, nullable) captures the
+# staff member's display name at submission time. NULL means the CP
+# submitted directly.
+# ============================================================
+
+
+def _scoped_cp_filter():
+    """Scope filter for queries directly on `channel_partners cp` (NOT via
+    submissions). Returns (sql_fragment, params).
+
+    Mirrors _scoped_city_filter but operates on the cp alias directly.
+      - admin: no restriction.
+      - manager: cp.rm_id = me OR cp.rm_id IN my team.
+      - rm:      cp.rm_id = me.
+      - else:    deny by default.
+    """
+    role = g.user.get("role", "cp")
+    if role == "admin":
+        return "", []
+
+    rm_id = g.user.get("rm_id")
+    is_manager = bool(g.user.get("is_manager"))
+
+    if rm_id:
+        if is_manager:
+            return (
+                "AND (cp.rm_id = %s "
+                "OR cp.rm_id IN (SELECT id FROM rms WHERE manager_id = %s))"
+            ), [rm_id, rm_id]
+        return "AND cp.rm_id = %s", [rm_id]
+
+    return "AND FALSE", []
+
+
+def _resolve_staff_display_name() -> str:
+    """Look up the calling staff member's display name from the canonical
+    table (channel_partners for admin, rms for rm/manager). Used to
+    capture submissions.submitted_by_name for on-behalf submissions.
+
+    Falls back to the JWT 'name' field (or 'Unknown staff') if the lookup
+    fails — we never want a submission insert to break because we can't
+    resolve a name.
+    """
+    role = g.user.get("role")
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            if role == "admin":
+                cp_id = g.user.get("cp_id")
+                if cp_id:
+                    cur.execute("SELECT name FROM channel_partners WHERE id = %s", (cp_id,))
+                    row = cur.fetchone()
+                    if row and (row.get("name") or "").strip():
+                        return row["name"].strip()
+            elif role in ("rm", "manager"):
+                rm_id = g.user.get("rm_id")
+                if rm_id:
+                    cur.execute("SELECT name FROM rms WHERE id = %s", (rm_id,))
+                    row = cur.fetchone()
+                    if row and (row.get("name") or "").strip():
+                        return row["name"].strip()
+    finally:
+        put_app_conn(conn)
+    return (g.user.get("name") or "Unknown staff").strip()
+
+
+@bp.get("/cps")
+@require_staff
+def search_cps():
+    """Scope-filtered CP search for the on-behalf flow.
+
+    Query string:
+      q     — substring of name OR phone (digits-only). REQUIRED, min 2 chars.
+      limit — max results (default 20, capped at 50).
+
+    Returns: { results: [{id, cp_code, name, phone, company, city}, ...] }
+    Phone matching is digits-only on both sides, so '971' matches '9711382053'.
+    Name matching is case-insensitive substring.
+    """
+    q = to_str(request.args.get("q") or "").strip()
+    limit = max(1, min(50, request.args.get("limit", default=20, type=int) or 20))
+
+    if len(q) < 2:
+        return jsonify({"results": []}), 200
+
+    q_digits = re.sub(r"\D", "", q)
+
+    scope_sql, scope_params = _scoped_cp_filter()
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            sql_parts = [
+                "SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company, c.name AS city",
+                "FROM channel_partners cp",
+                "LEFT JOIN cities c ON cp.city_id = c.id",
+                "WHERE cp.is_active = TRUE",
+                "AND COALESCE(cp.is_admin, FALSE) = FALSE",  # exclude admin accounts
+            ]
+            params = []
+
+            # Build the OR clause for q matching
+            or_clauses = []
+            if q_digits and len(q_digits) >= 3:
+                # Match phone with non-digits stripped on both sides
+                or_clauses.append("REGEXP_REPLACE(COALESCE(cp.phone, ''), '\\D', '', 'g') LIKE %s")
+                params.append(f"%{q_digits}%")
+            or_clauses.append("LOWER(cp.name) LIKE LOWER(%s)")
+            params.append(f"%{q}%")
+            sql_parts.append(f"AND ({' OR '.join(or_clauses)})")
+
+            if scope_sql:
+                sql_parts.append(scope_sql)
+                params.extend(scope_params)
+
+            sql_parts.append("ORDER BY cp.name ASC NULLS LAST, cp.id ASC")
+            sql_parts.append("LIMIT %s")
+            params.append(limit)
+
+            cur.execute("\n".join(sql_parts), params)
+            results = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"results": results}), 200
+
+
+@bp.post("/submissions/on-behalf")
+@require_staff
+def create_submission_on_behalf():
+    """Create a submission on behalf of a target CP.
+
+    Mirrors POST /api/submissions (CP-side) but with:
+      - target_cp_id required in body; staff must have it in scope.
+      - cp_id on the inserted row = target_cp_id (not the staff member).
+      - submitted_by_name = staff display name (for audit + UI display).
+      - submission_event text annotates "submitted by <staff> on behalf of CP <cp>".
+
+    Same dup-check + status routing as the CP flow:
+      - perfect match  -> Duplicate Rejected (returns 409 + duplicate dict)
+      - unit_less + collated/submissions match -> Unapproved + show_contact_rm_page
+      - clean / force_create on weak dup       -> Submitted (or Unapproved if force on dup)
+    """
+    # Lazy imports to avoid circular import with routes/submissions.py at module load
+    from duplicate_check import check_duplicate
+    from public_id import generate_public_id, city_to_prefix
+    from services_email import send_new_submission_alert_async
+
+    data = request.get_json(silent=True) or {}
+
+    target_cp_id = to_int(data.get("target_cp_id"))
+    if not target_cp_id:
+        return jsonify({"error": "target_cp_id is required"}), 400
+
+    society_id = data.get("society_id")
+    society_name = to_str(data.get("society_name"), 200)
+    if not society_id or not society_name:
+        return jsonify({"error": "society_id and society_name are required"}), 400
+
+    # 1. Load + scope-check the target CP
+    scope_sql, scope_params = _scoped_cp_filter()
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT cp.id, cp.name, cp.phone, cp.cp_code,
+                       cp.is_active, COALESCE(cp.is_admin, FALSE) AS is_admin
+                FROM channel_partners cp
+                WHERE cp.id = %s {scope_sql}
+            """, [target_cp_id, *scope_params])
+            cp_row = cur.fetchone()
+            if not cp_row:
+                return jsonify({
+                    "error": "Target CP not found or not in your scope.",
+                }), 403
+            if not cp_row.get("is_active"):
+                return jsonify({
+                    "error": "Target CP is inactive. Cannot submit on their behalf.",
+                }), 400
+            if cp_row.get("is_admin"):
+                return jsonify({
+                    "error": "Target is an admin account, not a CP.",
+                }), 400
+
+            # 2. Resolve society + city
+            cur.execute("""
+                SELECT s.city_id, c.name AS city_name
+                FROM societies s
+                JOIN cities c ON s.city_id = c.id
+                WHERE s.id = %s
+            """, (society_id,))
+            soc_row = cur.fetchone()
+            if not soc_row:
+                return jsonify({"error": "Invalid society_id"}), 400
+            society_city_id = soc_row["city_id"]
+            city_name = soc_row["city_name"]
+    finally:
+        put_app_conn(conn)
+
+    if city_to_prefix(city_name) is None:
+        return jsonify({
+            "error": f"City {city_name!r} does not have a public_id prefix configured.",
+        }), 500
+
+    # 3. Dup-check (uses target CP's id so RM info is resolved correctly)
+    skip_unit_details = bool(data.get("skip_unit_details"))
+    dup = check_duplicate(
+        society_id=society_id,
+        bhk=to_str(data.get("bhk")),
+        tower=None if skip_unit_details else to_str(data.get("tower")),
+        unit_no=None if skip_unit_details else to_str(data.get("unit_no")),
+        floor=to_str(data.get("floor")),
+        cp_id=target_cp_id,
+    )
+
+    is_perfect_match = (
+        not skip_unit_details
+        and dup.get("match_level") == "exact"
+        and bool(dup.get("block"))
+    )
+    is_unit_less = skip_unit_details
+    has_collated_match = bool(dup.get("collated_match"))
+    has_submissions_match = bool(dup.get("submissions_match"))
+    force_create = bool(data.get("force_create"))
+
+    if is_perfect_match:
+        initial_status = "Duplicate Rejected"
+    elif is_unit_less:
+        initial_status = (
+            "Unapproved"
+            if (has_collated_match or has_submissions_match)
+            else "Submitted"
+        )
+    else:
+        initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
+
+    collated_match = has_collated_match and initial_status == "Unapproved"
+    submissions_match = has_submissions_match and initial_status == "Unapproved"
+
+    staff_name = _resolve_staff_display_name()
+    target_cp_name = (cp_row.get("name") or f"CP #{target_cp_id}").strip()
+
+    log.info(
+        "[submission/on-behalf] staff=%r target_cp_id=%s society=%r bhk=%r floor=%r "
+        "skip_unit=%s perfect=%s collated=%s submissions=%s force_create=%s -> status=%s",
+        staff_name, target_cp_id, society_name, data.get("bhk"), data.get("floor"),
+        skip_unit_details, is_perfect_match, has_collated_match, has_submissions_match,
+        force_create, initial_status,
+    )
+
+    # 4. Insert + event in one transaction
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            public_id = generate_public_id(cur, city_name)
+
+            cur.execute("""
+                INSERT INTO submissions (
+                    cp_id, society_id, society_name, city_id, public_id,
+                    tower, unit_no, floor, sqft, bhk, furnishing,
+                    exit_facing, balcony_facing, balcony_view,
+                    parking, extra_rooms, occupancy_status,
+                    asking_price, seller_name, seller_phone, photos,
+                    status, collated_match, submissions_match,
+                    unit_less, perfect_match_at_submit,
+                    submitted_by_name
+                ) VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s::jsonb, %s,
+                    %s, %s, %s, %s::jsonb,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s
+                )
+                RETURNING id
+            """, (
+                target_cp_id,
+                society_id,
+                society_name,
+                society_city_id,
+                public_id,
+                to_str(data.get("tower"), 50),
+                to_str(data.get("unit_no"), 50),
+                to_str(data.get("floor"), 20),
+                to_int(data.get("sqft")),
+                to_str(data.get("bhk"), 20),
+                to_str(data.get("furnishing"), 50),
+                to_str(data.get("exit_facing"), 50),
+                to_str(data.get("balcony_facing"), 50),
+                to_str(data.get("balcony_view"), 100),
+                to_str(data.get("parking"), 50),
+                json.dumps(data.get("extra_rooms") or []),
+                to_str(data.get("occupancy_status"), 20),
+                to_int(data.get("asking_price")),
+                to_str(data.get("seller_name"), 200),
+                to_str(data.get("seller_phone"), 20),
+                json.dumps(data.get("photos") or []),
+                initial_status,
+                collated_match,
+                submissions_match,
+                is_unit_less,
+                is_perfect_match,
+                staff_name,
+            ))
+            new_id = cur.fetchone()["id"]
+
+            base_text = (
+                "Unit flagged as duplicate — pending admin review"
+                if initial_status == "Unapproved"
+                else "Unit submitted"
+            )
+            event_text = (
+                f"{base_text} (submitted by {staff_name} on behalf of CP {target_cp_name})"
+            )
+            cur.execute("""
+                INSERT INTO submission_events
+                    (submission_id, actor_cp_id, kind, to_status, text)
+                VALUES (%s, %s, 'system', %s, %s)
+            """, (new_id, target_cp_id, initial_status, event_text))
+
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    if initial_status == "Submitted":
+        send_new_submission_alert_async(new_id)
+
+    if is_perfect_match:
+        return jsonify({
+            "error": "Duplicate",
+            "duplicate": dup,
+            "submission_id": new_id,
+            "public_id": public_id,
+        }), 409
+
+    if is_unit_less and (has_collated_match or has_submissions_match):
+        message = "Unit submitted for admin review"
+    elif is_unit_less:
+        message = "Unit submitted for evaluation"
+    elif initial_status == "Unapproved":
+        message = "Unit submitted for admin review"
+    else:
+        message = "Unit submitted for evaluation"
+
+    show_contact_rm_page = is_unit_less and (has_collated_match or has_submissions_match)
+    duplicate_payload = None
+    if show_contact_rm_page:
+        custom_message = (
+            f"We already have a similar listing for {society_name} "
+            f"({to_str(data.get('bhk')) or 'BHK'}, floor {to_str(data.get('floor')) or '—'}). "
+            f"This unit will be reviewed and an update given in the next 48 hours."
+        )
+        duplicate_payload = {
+            **dup,
+            "message": custom_message,
+            "unit_less_collated": True,
+        }
+
+    return jsonify({
+        "success": True,
+        "submission_id": new_id,
+        "public_id": public_id,
+        "status": initial_status,
+        "unit_less": is_unit_less,
+        "message": message,
+        "submitted_by_name": staff_name,
+        "target_cp_name": target_cp_name,
+        "show_contact_rm_page": show_contact_rm_page,
+        "duplicate": duplicate_payload,
+    }), 201
+
+
+# ============================================================
+# Bulk reassign CPs to a different RM (admin-only)
+# ============================================================
+#
+# Re-routes the channel_partners.rm_id for a batch of CPs in one call.
+# This is the "permanent" RM relationship — every listing owned by these
+# CPs (past and future) will now appear under the new RM's scope.
+#
+# Operates on CP IDs (not submission IDs) because rm_id lives on
+# channel_partners. The frontend collects unique cp_ids from the
+# selected submissions and shows the per-CP impact in a confirm modal
+# before calling this.
+# ============================================================
+
+
+@bp.post("/cps/bulk-reassign-rm")
+@require_staff
+@require_admin_role  # admin only — affects the canonical CP-RM ownership
+def bulk_reassign_rm():
+    """Reassign a batch of CPs to a different RM.
+
+    Body:
+      {
+        "cp_ids": [int, int, ...],   # required, non-empty, max 100
+        "target_rm_id": int          # required; must exist and be active
+      }
+
+    Behavior:
+      - Validates target_rm_id exists in `rms` and is_active=TRUE.
+      - Validates every cp_id exists in `channel_partners` (no scope check
+        because admin only). Inactive CPs are accepted but flagged in the
+        response so the admin can see what they did.
+      - Updates rm_id on every cp atomically (single UPDATE with ANY).
+      - Returns counts + list of updated CP ids.
+    """
+    data = request.get_json(silent=True) or {}
+    cp_ids_raw = data.get("cp_ids") or []
+    target_rm_id = to_int(data.get("target_rm_id"))
+
+    if not isinstance(cp_ids_raw, list) or not cp_ids_raw:
+        return jsonify({"error": "cp_ids must be a non-empty array"}), 400
+    if len(cp_ids_raw) > 100:
+        return jsonify({"error": "cp_ids cap is 100 per request"}), 400
+    if not target_rm_id:
+        return jsonify({"error": "target_rm_id is required"}), 400
+
+    # Dedupe + coerce to int
+    cp_ids = []
+    seen = set()
+    for x in cp_ids_raw:
+        v = to_int(x)
+        if v and v not in seen:
+            seen.add(v)
+            cp_ids.append(v)
+    if not cp_ids:
+        return jsonify({"error": "cp_ids contains no valid integers"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # 1. Verify target RM
+            cur.execute(
+                "SELECT id, name, is_active FROM rms WHERE id = %s",
+                (target_rm_id,),
+            )
+            rm_row = cur.fetchone()
+            if not rm_row:
+                return jsonify({"error": f"RM id={target_rm_id} not found"}), 404
+            if not rm_row.get("is_active"):
+                return jsonify({"error": f"RM id={target_rm_id} ({rm_row.get('name')}) is inactive"}), 400
+            target_rm_name = rm_row["name"]
+
+            # 2. Load existing CPs to report per-CP outcome
+            cur.execute("""
+                SELECT id, name, cp_code, phone, rm_id, is_active
+                FROM channel_partners
+                WHERE id = ANY(%s)
+            """, (cp_ids,))
+            existing = cur.fetchall()
+            existing_by_id = {r["id"]: r for r in existing}
+
+            results = []
+            updated_ids = []
+            for cid in cp_ids:
+                row = existing_by_id.get(cid)
+                if not row:
+                    results.append({"cp_id": cid, "ok": False, "error": "CP not found"})
+                    continue
+                if row["rm_id"] == target_rm_id:
+                    results.append({
+                        "cp_id": cid, "ok": True, "skipped": True,
+                        "name": row.get("name"), "cp_code": row.get("cp_code"),
+                        "previous_rm_id": row["rm_id"],
+                        "note": "Already on this RM — no change",
+                    })
+                    continue
+                results.append({
+                    "cp_id": cid, "ok": True,
+                    "name": row.get("name"), "cp_code": row.get("cp_code"),
+                    "previous_rm_id": row["rm_id"],
+                    "is_active": bool(row.get("is_active")),
+                })
+                updated_ids.append(cid)
+
+            # 3. Single UPDATE for all CPs that need a real change
+            if updated_ids:
+                cur.execute(
+                    "UPDATE channel_partners SET rm_id = %s WHERE id = ANY(%s)",
+                    (target_rm_id, updated_ids),
+                )
+                conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    log.info(
+        "[bulk_reassign_rm] admin=%s target_rm=%s (%s) reassigned=%d skipped=%d not_found=%d",
+        g.user.get("phone"), target_rm_id, target_rm_name,
+        len(updated_ids),
+        sum(1 for r in results if r.get("skipped")),
+        sum(1 for r in results if not r.get("ok")),
+    )
+
+    return jsonify({
+        "ok": True,
+        "target_rm_id": target_rm_id,
+        "target_rm_name": target_rm_name,
+        "reassigned_count": len(updated_ids),
+        "skipped_already_on_rm": sum(1 for r in results if r.get("skipped")),
+        "not_found": sum(1 for r in results if not r.get("ok")),
+        "results": results,
+    }), 200
