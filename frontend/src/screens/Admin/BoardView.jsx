@@ -1,4 +1,4 @@
-import { formatPrice, formatAcqPrice, STAGES, timeAgo } from '../../format';
+import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
 
 export default function BoardView({
   submissions, loading, selectedId, onSelect,
@@ -155,8 +155,8 @@ export default function BoardView({
                       color: '#047857',
                       display: 'inline-block',
                     }}>
-                      📅 {s.scheduled_date}
-                      {s.scheduled_time ? ` · ${s.scheduled_time}` : ''}
+                      📅 {formatDateOnly(s.scheduled_date)}
+                      {s.scheduled_time ? ` · ${formatTime12(s.scheduled_time)}` : ''}
                       {s.field_exec_name ? ` · ${s.field_exec_name}` : ''}
                     </div>
                   )}

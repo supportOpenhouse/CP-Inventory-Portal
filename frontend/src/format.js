@@ -51,6 +51,35 @@ export function formatDateTime(d) {
   });
 }
 
+/** "30 Apr 2026" — accepts ISO ('2026-04-30') or HTTP-date
+ *  ('Thu, 30 Apr 2026 00:00:00 GMT'). Used for date-only fields like
+ *  scheduled_date where the time portion is meaningless. */
+export function formatDateOnly(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '';
+  return dt.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/** "13:30" → "1:30 PM"; "09:00" → "9:00 AM"; "00:15" → "12:15 AM"; "12:00" → "12:00 PM".
+ *  Accepts HH:MM strings (the format scheduled_time is stored in). Returns the
+ *  input unchanged if it doesn't match HH:MM, so the caller is safe with junk. */
+export function formatTime12(t) {
+  if (!t) return '';
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t));
+  if (!m) return String(t);
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const period = hh >= 12 ? 'PM' : 'AM';
+  hh = hh % 12;
+  if (hh === 0) hh = 12;
+  return `${hh}:${mm} ${period}`;
+}
+
 /** Validate 10-digit phone; returns { ok, cleaned, error } */
 export function validatePhone(raw) {
   const cleaned = String(raw || '').replace(/\D/g, '');

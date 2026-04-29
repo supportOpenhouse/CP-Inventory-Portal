@@ -7,6 +7,33 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-29] — Schedule pill date/time formatting
+
+### Fixed
+- **Visit Scheduled pill on the admin board, table, and detail panel was
+  showing raw HTTP-date and 24-hour time** — e.g.
+  `📅 Thu, 30 Apr 2026 00:00:00 GMT · 13:30 · Test Sahaj`. The date came
+  through as Flask's default `date` serialization (RFC 1123) and the time
+  was displayed unconverted from its stored 24-hour form. Frontend now
+  formats both:
+  - Date → `30 Apr 2026` via new `formatDateOnly()` helper.
+  - Time → `1:30 PM` via new `formatTime12()` helper.
+
+  **Files:** [frontend/src/format.js](frontend/src/format.js) (added
+  helpers), [frontend/src/screens/Admin/BoardView.jsx](frontend/src/screens/Admin/BoardView.jsx),
+  [frontend/src/screens/Admin/TableView.jsx](frontend/src/screens/Admin/TableView.jsx),
+  [frontend/src/screens/Admin/DetailPanel.jsx](frontend/src/screens/Admin/DetailPanel.jsx).
+
+  **Migration:** none. Display-only fix; data is unchanged.
+
+  **Verification:** Local Vite HMR; visually confirmed in BoardView card pill,
+  TableView row tooltip, and DetailPanel scheduled section.
+
+  **Note:** This is a frontend-only fix. Backend continues to serialize
+  `scheduled_date` as HTTP-date; if other consumers depend on dates, a
+  later cleanup can migrate the backend to ISO via a custom Flask JSON
+  provider (not done in this push).
+
 ## [2026-04-29] — Bulk schedule visits
 
 ### Added

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../api';
-import { formatDateTime, formatPrice, formatAcqPrice, STAGES } from '../../format';
+import { formatDateTime, formatDateOnly, formatTime12, formatPrice, formatAcqPrice, STAGES } from '../../format';
 import { getUser } from '../../auth';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
@@ -852,7 +852,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
             UID: {s.forms_uid}
           </div>
           <div style={{ fontSize: 13, color: '#065F46' }}>
-            {s.scheduled_date || '—'}{s.scheduled_time ? ` at ${s.scheduled_time}` : ''}
+            {formatDateOnly(s.scheduled_date) || '—'}{s.scheduled_time ? ` at ${formatTime12(s.scheduled_time)}` : ''}
             {s.field_exec_name ? ` · ${s.field_exec_name}` : ''}
           </div>
         </div>

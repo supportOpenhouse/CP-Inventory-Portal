@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { formatPrice, formatAcqPrice, stageMeta, timeAgo } from '../../format';
+import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, stageMeta, timeAgo } from '../../format';
 
 // How to extract the sort key for each column.
 // All accessors return primitives (number or string) so compare is predictable.
@@ -217,7 +217,7 @@ export default function TableView({
                       display: 'inline-block', marginLeft: 6, padding: '1px 6px',
                       fontSize: 9, fontWeight: 700, color: '#065F46',
                       background: '#ECFDF5', borderRadius: 3, letterSpacing: 0.3,
-                    }} title={`Visit scheduled · ${s.scheduled_date || ''} ${s.scheduled_time || ''} · ${s.field_exec_name || ''} · UID ${s.forms_uid}`}>
+                    }} title={`Visit scheduled · ${formatDateOnly(s.scheduled_date)} ${formatTime12(s.scheduled_time)} · ${s.field_exec_name || ''} · UID ${s.forms_uid}`}>
                       📅 {s.forms_uid}
                     </span>
                   )}
