@@ -56,13 +56,19 @@ def _norm_bhk(value) -> str | None:
 
 
 def _norm_floor(value):
-    """Coerce floor string to int. Returns None if unparseable."""
-    if value is None or value == "":
+    """Normalize floor to lowercase trimmed string. Empty / None -> None.
+
+    Floors are categorical text in this codebase ('Middle', 'Lower', 'Ground',
+    'B1', 'F1') AND numeric ('1', '5'). Return a string in all cases so SQL
+    comparisons against the VARCHAR column match by value, not type.
+    Previously this returned int(), which silently broke dup-check:
+      - numeric input: SQL `varchar = integer` raised UndefinedFunction (caught)
+      - text input:    raised ValueError, returned None, exited early
+    """
+    if value is None:
         return None
-    try:
-        return int(str(value).strip())
-    except (ValueError, TypeError):
-        return None
+    s = str(value).strip().lower()
+    return s if s else None
 
 
 def _fetch_rm(city_name: str, cp_id=None):
@@ -145,7 +151,7 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
             conditions = [
                 "society_id = %s",
                 "REGEXP_REPLACE(COALESCE(bhk, ''), '[^0-9]', '', 'g') = %s",
-                "COALESCE(floor, '') = %s",
+                "LOWER(TRIM(COALESCE(floor, ''))) = %s",
                 f"status IN ({status_placeholders})",
             ]
             params = [society_id, bhk_n, floor_n, *_ACTIVE_SUBMISSION_STATUSES]
@@ -203,7 +209,8 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
                 WHERE REGEXP_REPLACE(LOWER(TRIM(COALESCE(society, ''))), '\\s+', ' ', 'g')
                       = REGEXP_REPLACE(LOWER(TRIM(%s)), '\\s+', ' ', 'g')
                   AND REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s
-                  AND REGEXP_REPLACE(COALESCE(floor, ''),    '[^0-9]', '', 'g') = %s
+                  AND REGEXP_REPLACE(COALESCE(floor, ''),    '[^0-9]', '', 'g')
+                      = REGEXP_REPLACE(%s, '[^0-9]', '', 'g')
                   AND (
                         city IS NULL
                      OR TRIM(city) = ''
@@ -211,7 +218,7 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
                   )
                 LIMIT 1
             """
-            params = [society_name, bhk_n, str(floor_n), city]
+            params = [society_name, bhk_n, floor_n, city]
 
             try:
                 cur.execute(sql, params)
@@ -281,11 +288,12 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     collated_match_flag = _check_collated_data(city, society_name, bhk_n, floor_n)
 
     # Shared base WHERE clause — society + bhk (digit-normalized) + floor
+    # `floor::text` defensive cast in case the properties column is INT.
     base_where = (
         "LOWER(TRIM(city))         = LOWER(TRIM(%s)) "
         "AND LOWER(TRIM(society_name)) = LOWER(TRIM(%s)) "
         "AND REGEXP_REPLACE(COALESCE(configuration, ''), '[^0-9]', '', 'g') = %s "
-        "AND floor                   = %s "
+        "AND LOWER(TRIM(COALESCE(floor::text, ''))) = %s "
         "AND COALESCE(is_dead, FALSE) = FALSE"
     )
     base_params = [city, society_name, bhk_n, floor_n]
