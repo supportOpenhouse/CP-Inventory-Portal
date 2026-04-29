@@ -7,6 +7,7 @@ import BoardView from './BoardView';
 import TableView from './TableView';
 import DetailPanel from './DetailPanel';
 import CpHistoryDrawer from './CpHistoryDrawer';
+import BulkScheduleVisitModal from './BulkScheduleVisitModal';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
@@ -35,6 +36,7 @@ export default function Admin() {
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false);
 
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
@@ -323,6 +325,15 @@ export default function Admin() {
           ))}
           <button
             className="btn-secondary-sm"
+            style={{ borderColor: '#FF6B2B', color: '#FF6B2B', marginLeft: 12 }}
+            onClick={() => setBulkScheduleOpen(true)}
+            disabled={bulkBusy || selectedIds.size > 20}
+            title={selectedIds.size > 20 ? 'Max 20 listings per bulk request' : 'Schedule visits for selected listings'}
+          >
+            📅 Schedule visits…
+          </button>
+          <button
+            className="btn-secondary-sm"
             style={{ marginLeft: 'auto' }}
             onClick={() => setSelectedIds(new Set())}
             disabled={bulkBusy}
@@ -373,6 +384,18 @@ export default function Admin() {
           onOpenSubmission={(sid) => {
             setCpHistoryId(null);
             setSelectedId(sid);
+          }}
+        />
+      )}
+
+      {bulkScheduleOpen && (
+        <BulkScheduleVisitModal
+          selectedSubmissions={submissions.filter((s) => selectedIds.has(s.id))}
+          onClose={() => setBulkScheduleOpen(false)}
+          onSuccess={async () => {
+            setSelectedIds(new Set());
+            setBulkMode(false);
+            await reload();
           }}
         />
       )}

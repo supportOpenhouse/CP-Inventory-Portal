@@ -131,6 +131,12 @@ export const api = {
     request(`/admin/submissions/${submissionId}/schedule-visit`, {
       method: 'POST', body: payload,
     }),
+  // Bulk variant: payload = { schedule_date, schedule_time, items: [{id, field_exec_id}, ...] }
+  // Cap of 20 items per request enforced server-side.
+  adminBulkScheduleVisit: (payload) =>
+    request('/admin/submissions/bulk-schedule-visit', {
+      method: 'POST', body: payload,
+    }),
 
   // Health
   health: () => request('/health', { auth: false }),

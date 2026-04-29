@@ -1090,6 +1090,484 @@ def schedule_visit(sid: int):
     }), 200
 
 
+# ---- Bulk schedule visit ----
+
+# Per-request hard cap. Each item triggers one Forms-app POST (sequential),
+# so this also bounds the worst-case admin-facing wait time.
+BULK_SCHEDULE_VISIT_MAX_ITEMS = 20
+
+
+@bp.post("/submissions/bulk-schedule-visit")
+@require_staff
+def bulk_schedule_visit():
+    """Schedule visits for multiple submissions in one request.
+
+    Request body:
+        {
+          "schedule_date": "YYYY-MM-DD" (REQUIRED, applied to all items),
+          "schedule_time": "HH:MM"      (REQUIRED, applied to all items),
+          "items": [
+            { "id": int, "field_exec_id": int },
+            ...
+          ]
+        }
+
+    Behavior:
+      - Hard cap: BULK_SCHEDULE_VISIT_MAX_ITEMS items per request.
+      - Phase 1 (no side effects): pre-validate every item — submission exists,
+        required fields present, city in whitelist, field exec authorized,
+        CP name + 10-digit phone, sqft > 0, asking_price > 0. If ANY item
+        fails pre-validation, return 400 with per-item errors. Nothing is
+        sent to the Forms app.
+      - Phase 2: sequential Forms-app POSTs. Each call is independent —
+        a failure on one item does not abort the rest. Per-item results
+        are aggregated and returned.
+      - Idempotent: rows with forms_uid already set are reported as
+        already_existed=true and counted as success without re-calling Forms.
+      - Persists successful results in a single transaction.
+
+    Response:
+      {
+        "ok": true|false,           # false iff any item failed in Phase 2
+        "results": [
+          {"id": <sid>, "ok": true,  "uid": ..., "already_existed": ..., ...},
+          {"id": <sid>, "ok": false, "error": "..."},
+          ...
+        ],
+        "summary": {"total", "succeeded", "failed", "already_scheduled"}
+      }
+    """
+    # 1. Config
+    if not Config.FORMS_APP_URL or not Config.INTERNAL_API_KEY:
+        return jsonify({
+            "error": "Forms app integration not configured. "
+                     "Set FORMS_APP_URL and INTERNAL_API_KEY env vars."
+        }), 503
+    if not properties_configured():
+        return jsonify({"error": "Properties DB not configured for field execs."}), 503
+
+    # 2. Parse body
+    data = request.get_json(silent=True) or {}
+    schedule_date = to_str(data.get("schedule_date"))
+    schedule_time = to_str(data.get("schedule_time"))
+    items_raw = data.get("items")
+
+    body_errors = []
+
+    # Date validation (mirrors single endpoint)
+    if not schedule_date or not re.match(r"^\d{4}-\d{2}-\d{2}$", schedule_date):
+        body_errors.append("schedule_date must be YYYY-MM-DD")
+    else:
+        try:
+            sched_date_obj = datetime.strptime(schedule_date, "%Y-%m-%d").date()
+            if sched_date_obj < datetime.now().date():
+                body_errors.append("schedule_date cannot be in the past")
+        except ValueError:
+            body_errors.append("schedule_date is not a valid date")
+
+    # Time validation (mirrors single endpoint)
+    if not schedule_time:
+        body_errors.append("schedule_time is required")
+    else:
+        time_match = re.match(r"^(\d{1,2}):(\d{2})$", schedule_time)
+        if not time_match:
+            body_errors.append("schedule_time must be HH:MM (24-hr)")
+        else:
+            hh = int(time_match.group(1))
+            mm = int(time_match.group(2))
+            if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+                body_errors.append("schedule_time has out-of-range values")
+            else:
+                schedule_time = f"{hh:02d}:{mm:02d}"
+
+    # Items validation
+    if not isinstance(items_raw, list) or not items_raw:
+        body_errors.append("items must be a non-empty array")
+    elif len(items_raw) > BULK_SCHEDULE_VISIT_MAX_ITEMS:
+        body_errors.append(
+            f"items cap is {BULK_SCHEDULE_VISIT_MAX_ITEMS} per request "
+            f"(got {len(items_raw)})"
+        )
+    else:
+        for i, it in enumerate(items_raw):
+            if not isinstance(it, dict):
+                body_errors.append(f"items[{i}] must be an object with id and field_exec_id")
+                continue
+            if not to_int(it.get("id")):
+                body_errors.append(f"items[{i}].id is required")
+            if not to_int(it.get("field_exec_id")):
+                body_errors.append(f"items[{i}].field_exec_id is required")
+
+    if body_errors:
+        return jsonify({"error": "Invalid request", "details": body_errors}), 400
+
+    # Normalize + dedupe by submission id (preserve first-seen order)
+    item_pairs = []
+    seen_ids = set()
+    for it in items_raw:
+        sid = to_int(it["id"])
+        fx = to_int(it["field_exec_id"])
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+        item_pairs.append((sid, fx))
+
+    submission_ids = [p[0] for p in item_pairs]
+    field_exec_ids = list({p[1] for p in item_pairs})
+
+    # 3. Resolve admin name once (Forms app validates assigned_by per call,
+    # but the value is the same for the whole batch).
+    admin_phone = g.user.get("phone") or ""
+    admin_name = _resolve_admin_name_for_forms(admin_phone)
+    if not admin_name:
+        return jsonify({
+            "error": (
+                f"Cannot schedule visits — your account ({admin_phone}) is not registered "
+                f"as an active user in the Forms app. Add this user to properties.users "
+                f"with is_active=TRUE, then try again."
+            ),
+        }), 400
+
+    # 4. Bulk-load submissions
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT s.*, c.name AS city,
+                       cp.name AS cp_name, cp.phone AS cp_phone
+                FROM submissions s
+                LEFT JOIN cities c ON c.id = s.city_id
+                LEFT JOIN channel_partners cp ON cp.id = s.cp_id
+                WHERE s.id = ANY(%s) AND s.deleted_at IS NULL
+            """, (submission_ids,))
+            sub_rows = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    sub_by_id = {r["id"]: r for r in sub_rows}
+
+    # 5. Bulk-load field execs (must be can_visit + is_active per spec)
+    pconn = get_props_conn()
+    try:
+        with pconn.cursor() as cur:
+            cur.execute("""
+                SELECT id, name FROM users
+                WHERE id = ANY(%s) AND can_visit = TRUE AND is_active = TRUE
+            """, (field_exec_ids,))
+            exec_rows = cur.fetchall()
+    finally:
+        put_props_conn(pconn)
+
+    exec_by_id = {r["id"]: r for r in exec_rows}
+
+    # 6. Phase 1 — pre-validate every item
+    ALLOWED_FORMS_CITIES = {"Gurgaon", "Noida", "Ghaziabad"}
+    preflight_errors = []
+    ready_items = []        # validated, ready for Forms POST
+    already_scheduled = []  # idempotency: rows with forms_uid already set
+
+    for sid, field_exec_id in item_pairs:
+        sub = sub_by_id.get(sid)
+        if not sub:
+            preflight_errors.append({
+                "id": sid,
+                "errors": [{"label": "Submission not found or deleted"}],
+            })
+            continue
+
+        # Idempotent skip: already scheduled rows aren't a pre-flight error,
+        # they're just reported as already_existed in the final result.
+        if sub.get("forms_uid"):
+            already_scheduled.append({
+                "id": sid,
+                "public_id": sub.get("public_id"),
+                "ok": True,
+                "uid": sub["forms_uid"],
+                "already_existed": True,
+                "scheduled_date": (
+                    sub.get("scheduled_date").isoformat()
+                    if sub.get("scheduled_date") else schedule_date
+                ),
+                "scheduled_time": sub.get("scheduled_time") or schedule_time,
+                "field_exec_name": sub.get("field_exec_name"),
+            })
+            continue
+
+        item_errors = []
+
+        # Required submission fields
+        for field, label in SCHEDULE_REQUIRED_SUBMISSION_FIELDS:
+            val = sub.get(field)
+            if val is None or (isinstance(val, str) and not val.strip()) or val == 0:
+                item_errors.append({"field": field, "label": label})
+
+        # City whitelist (case-insensitive)
+        raw_city = (sub.get("city") or "").strip()
+        city_match = next(
+            (c for c in ALLOWED_FORMS_CITIES if raw_city.lower() == c.lower()),
+            None,
+        )
+        if not city_match:
+            item_errors.append({
+                "field": "city",
+                "label": (
+                    f"City '{raw_city}' is not supported by the Forms app. "
+                    f"Allowed: {', '.join(sorted(ALLOWED_FORMS_CITIES))}."
+                ),
+            })
+
+        # Field exec authorization
+        exec_row = exec_by_id.get(field_exec_id)
+        if not exec_row:
+            item_errors.append({
+                "field": "field_exec_id",
+                "label": f"Field exec id={field_exec_id} not found or not authorized.",
+            })
+
+        # CP info → owner_broker_name + contact_no
+        cp_name = (sub.get("cp_name") or "").strip()
+        if not cp_name:
+            item_errors.append({"field": "cp_name", "label": "CP name is missing."})
+        cp_phone_10 = _normalize_phone_to_10_digits(sub.get("cp_phone") or "")
+        if len(cp_phone_10) != 10 or cp_phone_10.startswith("0"):
+            item_errors.append({
+                "field": "cp_phone",
+                "label": "CP phone is not a valid 10-digit number.",
+            })
+
+        # Numeric fields
+        area_sqft = int(sub.get("sqft") or 0)
+        if area_sqft <= 0:
+            item_errors.append({"field": "sqft", "label": "Area (sqft) must be > 0."})
+
+        demand_price_lakhs = _rupees_to_lakhs_int(sub.get("asking_price"))
+        if demand_price_lakhs is None or demand_price_lakhs <= 0:
+            item_errors.append({
+                "field": "asking_price",
+                "label": "Asking price is invalid.",
+            })
+
+        if item_errors:
+            preflight_errors.append({
+                "id": sid,
+                "public_id": sub.get("public_id"),
+                "errors": item_errors,
+            })
+            continue
+
+        # All clear — collect into ready_items for Phase 2
+        first_name, last_name = _split_full_name(cp_name)
+        ready_items.append({
+            "sid": sid,
+            "sub": sub,
+            "field_exec_id": field_exec_id,
+            "field_exec_name": exec_row["name"],
+            "city": city_match,
+            "cp_name": cp_name,
+            "first_name": first_name,
+            "last_name": last_name,
+            "cp_phone_10": cp_phone_10,
+            "area_sqft": area_sqft,
+            "demand_price_lakhs": demand_price_lakhs,
+        })
+
+    # Per Q3=a: any pre-flight error aborts the entire batch.
+    if preflight_errors:
+        return jsonify({
+            "error": (
+                "Pre-validation failed for one or more listings. "
+                "No requests were sent to the Forms app."
+            ),
+            "preflight_errors": preflight_errors,
+        }), 400
+
+    # 7. Resolve localities (one query per unique (society, city) pair)
+    locality_pairs = list({
+        (r["sub"].get("society_name") or "", r["city"]) for r in ready_items
+    })
+    locality_lookup = {}
+    if locality_pairs:
+        pconn2 = get_props_conn()
+        try:
+            with pconn2.cursor() as cur:
+                for soc, city in locality_pairs:
+                    if not soc:
+                        locality_lookup[(soc, city)] = "Unknown"
+                        continue
+                    cur.execute("""
+                        SELECT locality FROM master_societies
+                        WHERE LOWER(REGEXP_REPLACE(society_name, '[^a-zA-Z0-9]', '', 'g'))
+                              = LOWER(REGEXP_REPLACE(%s, '[^a-zA-Z0-9]', '', 'g'))
+                          AND LOWER(TRIM(city)) = LOWER(%s)
+                        LIMIT 1
+                    """, (soc, city))
+                    row = cur.fetchone()
+                    if row and (row.get("locality") or "").strip():
+                        locality_lookup[(soc, city)] = row["locality"].strip()
+                    else:
+                        log.warning(
+                            "[bulk_schedule_visit] No locality match for society=%r city=%s — using society_name as fallback",
+                            soc, city,
+                        )
+                        locality_lookup[(soc, city)] = soc or "Unknown"
+        finally:
+            put_props_conn(pconn2)
+
+    # 8. Phase 2 — Sequential Forms-app POSTs (best-effort per item)
+    forms_url = Config.FORMS_APP_URL.rstrip("/") + "/api/external/schedule"
+    headers = {
+        "X-Internal-Key": Config.INTERNAL_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    successes = []          # rows to UPDATE in Phase 3
+    new_results = []        # per-item Phase 2 results
+
+    for r in ready_items:
+        sub = r["sub"]
+        sid = r["sid"]
+        locality = locality_lookup.get(
+            (sub.get("society_name") or "", r["city"]),
+            sub.get("society_name") or "Unknown",
+        )
+        lead_id = sub.get("public_id") or str(sid)
+
+        payload = {
+            "lead_id": lead_id,
+            "society_name": sub.get("society_name") or "",
+            "locality": locality,
+            "city": r["city"],
+            "tower_no": sub.get("tower") or "",
+            "unit_no": sub.get("unit_no") or "",
+            "owner_broker_name": r["cp_name"],
+            "first_name": r["first_name"],
+            "last_name": r["last_name"],
+            "contact_no": r["cp_phone_10"],
+            "configuration": _normalize_bhk_for_forms(sub.get("bhk")),
+            "area_sqft": r["area_sqft"],
+            "demand_price": r["demand_price_lakhs"],
+            "source": "CP",
+            "field_exec": r["field_exec_name"],
+            "assigned_by": admin_name,
+            "schedule_date": schedule_date,
+            "schedule_time": schedule_time,
+        }
+
+        try:
+            resp = requests.post(
+                forms_url,
+                json=payload,
+                headers=headers,
+                timeout=Config.FORMS_APP_TIMEOUT_SECONDS,
+            )
+        except requests.exceptions.Timeout:
+            log.error("[bulk_schedule_visit] Forms app timeout sid=%s", sid)
+            new_results.append({
+                "id": sid,
+                "public_id": sub.get("public_id"),
+                "ok": False,
+                "error": "Forms app did not respond in time.",
+            })
+            continue
+        except requests.exceptions.RequestException as e:
+            log.error("[bulk_schedule_visit] Forms app network error sid=%s: %s", sid, e)
+            new_results.append({
+                "id": sid,
+                "public_id": sub.get("public_id"),
+                "ok": False,
+                "error": f"Could not reach Forms app: {e}",
+            })
+            continue
+
+        try:
+            result = resp.json()
+        except ValueError:
+            result = {}
+
+        if resp.status_code >= 400 or not result.get("success"):
+            log.warning(
+                "[bulk_schedule_visit] Forms app returned %s sid=%s body=%s",
+                resp.status_code, sid, resp.text[:500],
+            )
+            new_results.append({
+                "id": sid,
+                "public_id": sub.get("public_id"),
+                "ok": False,
+                "error": result.get("error") or f"Forms app error (HTTP {resp.status_code})",
+            })
+            continue
+
+        forms_uid = result.get("uid")
+        already_existed = bool(result.get("already_existed"))
+        if not forms_uid:
+            new_results.append({
+                "id": sid,
+                "public_id": sub.get("public_id"),
+                "ok": False,
+                "error": "Forms app did not return a UID.",
+            })
+            continue
+
+        successes.append({
+            "sid": sid,
+            "uid": forms_uid,
+            "already_existed": already_existed,
+            "field_exec_name": r["field_exec_name"],
+        })
+        new_results.append({
+            "id": sid,
+            "public_id": sub.get("public_id"),
+            "ok": True,
+            "uid": forms_uid,
+            "already_existed": already_existed,
+            "scheduled_date": schedule_date,
+            "scheduled_time": schedule_time,
+            "field_exec_name": r["field_exec_name"],
+        })
+
+    # 9. Phase 3 — persist Phase 2 successes in one transaction
+    if successes:
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                for s in successes:
+                    cur.execute("""
+                        UPDATE submissions
+                        SET forms_uid       = %s,
+                            scheduled_date  = %s,
+                            scheduled_time  = %s,
+                            field_exec_name = %s
+                        WHERE id = %s
+                    """, (s["uid"], schedule_date, schedule_time, s["field_exec_name"], s["sid"]))
+                    cur.execute("""
+                        INSERT INTO submission_events
+                            (submission_id, actor_cp_id, kind, text)
+                        VALUES (%s, %s, 'system', %s)
+                    """, (
+                        s["sid"],
+                        g.user.get("cp_id"),  # NULL for admins/RMs/managers
+                        f"Visit scheduled (bulk) for {schedule_date} {schedule_time} "
+                        f"with {s['field_exec_name']}. Forms UID: {s['uid']}"
+                        f"{' (already existed)' if s['already_existed'] else ''}",
+                    ))
+                conn.commit()
+        finally:
+            put_app_conn(conn)
+
+    results = already_scheduled + new_results
+    summary = {
+        "total": len(item_pairs),
+        "succeeded": sum(1 for r in results if r["ok"]),
+        "failed": sum(1 for r in results if not r["ok"]),
+        "already_scheduled": len(already_scheduled),
+    }
+    return jsonify({
+        "ok": summary["failed"] == 0,
+        "results": results,
+        "summary": summary,
+    }), 200
+
+
 # ---- CP history ----
 
 @bp.get("/cp/<int:cp_id>/submissions")
