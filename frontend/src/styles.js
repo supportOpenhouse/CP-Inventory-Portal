@@ -310,9 +310,11 @@ export const css = `
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
   /* ===== Admin: table view ===== */
-  .admin-table-wrap { padding: 20px 28px 40px; overflow-x: auto; }
-  .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #E8E6E0; }
-  .admin-table thead th { text-align: left; padding: 12px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #999; font-weight: 600; border-bottom: 2px solid #E8E6E0; background: #FAFAF8; position: sticky; top: 56px; z-index: 5; }
+  .admin-table-wrap { padding: 20px 28px 40px; }
+  .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border-radius: 10px; border: 1px solid #E8E6E0; }
+  .admin-table thead th { text-align: left; padding: 12px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: #999; font-weight: 600; border-bottom: 2px solid #E8E6E0; background: #FAFAF8; position: sticky; top: 56px; z-index: 5; box-shadow: 0 1px 0 #E8E6E0; }
+  .admin-table thead th:first-child { border-top-left-radius: 10px; }
+  .admin-table thead th:last-child { border-top-right-radius: 10px; }
   .admin-table tbody td { padding: 14px; border-bottom: 1px solid #F3F2EE; vertical-align: top; }
   .admin-table tbody tr { cursor: pointer; transition: background 0.1s; }
   .admin-table tbody tr:hover { background: #FAFAF8; }
