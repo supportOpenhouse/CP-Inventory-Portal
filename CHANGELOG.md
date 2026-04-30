@@ -7,6 +7,57 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-30] — Stage reorder + auto-sync Visit Completed
+
+### Changed
+- **Pipeline stage display order.** In the admin board's stat cards and
+  the kanban columns, `Visit Scheduled` and `Visit Completed` now appear
+  **before** `Offer Given` (was: Offer Given → Visit Scheduled → Visit
+  Completed). New left-to-right order:
+
+  ```
+  All · Unapproved · Submitted · Visit Scheduled · Visit Completed
+       · Offer Given · Price Rejected · Duplicate Rejected
+  ```
+
+  Pure UI change in [`frontend/src/format.js`](frontend/src/format.js)
+  `STAGES`. The underlying `status` values themselves are unchanged; no
+  schema migration; no behavioural change in the dup-check / pipeline
+  routing logic.
+
+### Added
+- **Auto-sync `Visit Completed` from `properties.visit_submitted_at`.**
+  On every `GET /api/admin/submissions`, the backend now runs
+  `_sync_visit_completed_from_properties()` before returning the list:
+  1. Collect local submissions where `status='Visit Scheduled'` and
+     `public_id` is non-NULL.
+  2. Look up `properties.lead_id` matching those public_ids where
+     `properties.visit_submitted_at IS NOT NULL`.
+  3. `UPDATE submissions SET status='Visit Completed'` for matches and
+     seed a `system` event in `submission_events` noting the source
+     timestamp.
+
+  Behaviour:
+  - **Idempotent** — once a row reaches Visit Completed it's filtered
+    out of the candidate set.
+  - **Best-effort** — any error (cross-region timeout, properties DB
+    unavailable) is caught and logged so the admin list still loads.
+  - **Bounded by Visit Scheduled count** — typically <100 rows in prod;
+    one cross-region read on Properties DB per admin board load.
+  - Requires `submissions.public_id` to be set. Older imported scheduled
+    rows that lack `public_id` are skipped (no harm). All new
+    schedule-visit submissions set `public_id` automatically.
+
+  **Files:** [backend/routes/admin.py](backend/routes/admin.py) (new
+  helper + call from `list_submissions`).
+
+  **Migration:** none.
+
+  **Note:** This replaces the "Forms-app webhook" pull-mode approach
+  proposed in the handover open issues. A real webhook is still
+  preferable long-term (cheaper, real-time, no polling) — leaving that
+  open as a future improvement.
+
 ## [2026-04-30] — Add README.md
 
 ### Added

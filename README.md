@@ -26,13 +26,30 @@ approve or reject deals.
 ## Pipeline stages
 
 ```
-Unapproved → Submitted → Offer Given → Visit Scheduled → Visit Completed (terminal: green)
-                                                       ↘ Price Rejected | Duplicate Rejected (terminal: red)
+Unapproved → Submitted → Visit Scheduled → Visit Completed (terminal: green)
+                       ↘ Offer Given
+                       ↘ Price Rejected | Duplicate Rejected (terminal: red)
 ```
 
 Removed in May 2026 simplification: `Evaluation`, `Closed`, `Rejected`. Status is a
 plain VARCHAR with no DB CHECK constraint — adding/removing stages is a code change
 plus an UPDATE migration for existing rows.
+
+**Display order** (left-to-right in the admin board stat cards / kanban columns):
+`All → Unapproved → Submitted → Visit Scheduled → Visit Completed → Offer Given → Price Rejected → Duplicate Rejected`. This is configured in [`frontend/src/format.js`](frontend/src/format.js) `STAGES`; the underlying status values themselves don't change.
+
+### Auto-sync Visit Completed from `properties`
+
+When the admin list endpoint (`GET /api/admin/submissions`) is called, the
+backend first runs `_sync_visit_completed_from_properties()`:
+
+1. Find local submissions where `status = 'Visit Scheduled'` and `public_id` is set.
+2. Look up `properties.lead_id = submissions.public_id` where `properties.visit_submitted_at IS NOT NULL`.
+3. UPDATE matching submissions to `'Visit Completed'` and seed a `'system'` event noting the source timestamp.
+
+Best-effort: any error (Properties DB unreachable, etc.) is caught and
+logged so the admin list still loads. Idempotent — already-completed
+submissions are filtered out by the query.
 
 ## Roles
 

@@ -186,6 +186,106 @@ def _apply_filters(base_sql: str, params: list):
     return base_sql, params
 
 
+def _sync_visit_completed_from_properties() -> int:
+    """Promote 'Visit Scheduled' submissions to 'Visit Completed' based on
+    the Properties DB.
+
+    Logic:
+      1. Find submissions where status='Visit Scheduled', deleted_at IS NULL,
+         and public_id IS NOT NULL (the lead_id we send to the Forms app).
+      2. Look up properties.lead_id matching those public_ids where
+         properties.visit_submitted_at IS NOT NULL.
+      3. UPDATE submissions SET status='Visit Completed' for the matches and
+         seed a 'system' submission_event so the timeline records the sync.
+
+    Idempotent (status='Visit Completed' rows are already past this filter).
+    Read-only on Properties DB. Best-effort: any error is swallowed and
+    logged so the calling list endpoint still returns successfully.
+
+    Returns: count of submissions promoted in this call.
+    """
+    if not properties_configured():
+        return 0
+    try:
+        # 1. Collect candidate public_ids
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, public_id FROM submissions
+                    WHERE status = 'Visit Scheduled'
+                      AND public_id IS NOT NULL
+                      AND deleted_at IS NULL
+                """)
+                candidates = cur.fetchall()
+        finally:
+            put_app_conn(conn)
+
+        if not candidates:
+            return 0
+
+        public_ids = [c["public_id"] for c in candidates]
+
+        # 2. Look up properties for matches with visit_submitted_at set
+        pconn = get_props_conn()
+        try:
+            with pconn.cursor() as cur:
+                cur.execute("""
+                    SELECT lead_id, visit_submitted_at
+                    FROM properties
+                    WHERE lead_id = ANY(%s)
+                      AND visit_submitted_at IS NOT NULL
+                """, (public_ids,))
+                matches = cur.fetchall()
+        finally:
+            put_props_conn(pconn)
+
+        if not matches:
+            return 0
+
+        completed_lead_ids = [m["lead_id"] for m in matches]
+        ts_by_lead = {m["lead_id"]: m["visit_submitted_at"] for m in matches}
+
+        # 3. Promote and log per-row events
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE submissions
+                    SET status = 'Visit Completed'
+                    WHERE public_id = ANY(%s)
+                      AND status = 'Visit Scheduled'
+                    RETURNING id, public_id
+                """, (completed_lead_ids,))
+                updated = cur.fetchall()
+
+                for u in updated:
+                    ts = ts_by_lead.get(u["public_id"])
+                    cur.execute("""
+                        INSERT INTO submission_events
+                            (submission_id, actor_cp_id, kind, to_status, text)
+                        VALUES (%s, NULL, 'system', 'Visit Completed', %s)
+                    """, (
+                        u["id"],
+                        f"Visit completion synced from properties.visit_submitted_at "
+                        f"({ts.isoformat() if ts else 'unknown'}).",
+                    ))
+                conn.commit()
+        finally:
+            put_app_conn(conn)
+
+        if updated:
+            log.info(
+                "[sync_visit_completed] promoted %d submissions to Visit Completed",
+                len(updated),
+            )
+        return len(updated)
+    except Exception:
+        # Best-effort: never break the admin list because of a sync hiccup.
+        log.exception("[sync_visit_completed] failed; admin list will continue uninterrupted")
+        return 0
+
+
 def _list_submissions_core():
     conn = get_app_conn()
     try:
@@ -305,6 +405,11 @@ def _stage_counts():
 @bp.get("/submissions")
 @require_staff
 def list_submissions():
+    # Auto-sync Visit Scheduled -> Visit Completed from properties.visit_submitted_at
+    # before returning the list, so the admin board reflects field-level updates
+    # without needing a separate Forms-app webhook. Best-effort; doesn't block
+    # the response on properties-side errors.
+    _sync_visit_completed_from_properties()
     subs = _list_submissions_core()
     counts = _stage_counts()
     return jsonify({"submissions": subs, "counts": counts}), 200

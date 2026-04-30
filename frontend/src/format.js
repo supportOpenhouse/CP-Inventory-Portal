@@ -88,12 +88,16 @@ export function validatePhone(raw) {
   return { ok: true, cleaned: cleaned.slice(-10), error: null };
 }
 
+// Display order for the stage tabs / columns. The STATUS values themselves
+// are unchanged; this is purely how they appear left-to-right in the UI.
+// Visit Scheduled + Visit Completed sit before Offer Given because admin
+// triage scans visit-related queues before rebalancing pricing.
 export const STAGES = [
   { key: 'Unapproved',         color: '#B8860B', bg: '#FFF8E1', adminOnly: true },
   { key: 'Submitted',          color: '#6366F1', bg: '#EEF2FF' },
-  { key: 'Offer Given',        color: '#FF6B2B', bg: '#FFF3ED' },
   { key: 'Visit Scheduled',    color: '#D946EF', bg: '#FDF4FF' },
   { key: 'Visit Completed',    color: '#10B981', bg: '#D1FAE5' },   // green = success
+  { key: 'Offer Given',        color: '#FF6B2B', bg: '#FFF3ED' },
   { key: 'Price Rejected',     color: '#DC2626', bg: '#FEE2E2' },
   { key: 'Duplicate Rejected', color: '#DC2626', bg: '#FEE2E2' },
 ];
