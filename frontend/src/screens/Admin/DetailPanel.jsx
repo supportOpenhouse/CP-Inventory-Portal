@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../api';
-import { formatDateTime, formatDateOnly, formatTime12, formatPrice, formatAcqPrice, STAGES } from '../../format';
+import { formatDateTime, formatDateOnly, formatTime12, formatPrice, formatAcqPrice, STAGES, todayInIST } from '../../format';
 import { getUser } from '../../auth';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
@@ -1107,7 +1107,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
                   className="input-field"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={todayInIST()}
                 />
               </div>
 

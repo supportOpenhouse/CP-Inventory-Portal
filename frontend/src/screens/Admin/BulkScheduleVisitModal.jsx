@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../../api';
+import { todayInIST } from '../../format';
 
 /**
  * Modal for scheduling visits for multiple submissions at once.
@@ -250,7 +251,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                     onChange={(e) => setDate(e.target.value)}
                     disabled={submitting}
                     style={inputStyle}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={todayInIST()}
                   />
                 </div>
                 <div>

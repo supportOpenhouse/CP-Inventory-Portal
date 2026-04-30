@@ -1,6 +1,23 @@
 /**
  * Shared formatting helpers used across CP and admin views.
+ *
+ * Timezone policy:
+ *   The backend stores and returns all timestamps in UTC (+00:00). The
+ *   frontend always displays them in IST (Asia/Kolkata, +05:30) so users
+ *   see times in their local context regardless of browser timezone. All
+ *   date/time formatters in this file pin the display TZ to IST.
  */
+
+const IST_TZ = 'Asia/Kolkata';
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+/** YYYY-MM-DD string for "today" in IST. Use for date-input `min` values
+ *  so the picker doesn't disable today during the IST 00:00–05:30 window
+ *  when UTC is still on yesterday's date. */
+export function todayInIST() {
+  // en-CA locale formats as YYYY-MM-DD which matches <input type="date">.
+  return new Date().toLocaleDateString('en-CA', { timeZone: IST_TZ });
+}
 
 /** ₹95.0 L / ₹2.50 Cr / ₹50,000 */
 export function formatPrice(val) {
@@ -25,20 +42,26 @@ export function formatIndianNumber(val) {
   return rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + last3;
 }
 
-/** "Today" / "Yesterday" / "3d ago" / "Apr 10" */
+/** "Today" / "Yesterday" / "3d ago" / "Apr 10".
+ *  Calendar-day diff is computed in IST so the bucket flips at IST
+ *  midnight, not the browser's local midnight or UTC midnight. */
 export function timeAgo(d) {
   if (!d) return '';
   const now = new Date();
   const then = new Date(d);
   if (isNaN(then.getTime())) return '';
-  const days = Math.floor((now - then) / 86400000);
+  // Shift each timestamp by the IST offset before flooring to a day, so
+  // "Today" / "Yesterday" reflect IST calendar dates regardless of the
+  // browser's timezone.
+  const istDay = (dt) => Math.floor((dt.getTime() + IST_OFFSET_MS) / 86400000);
+  const days = istDay(now) - istDay(then);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 7) return `${days}d ago`;
-  return then.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+  return then.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: IST_TZ });
 }
 
-/** "Apr 17, 10:30 AM" */
+/** "Apr 17, 10:30 AM" — pinned to IST. */
 export function formatDateTime(d) {
   if (!d) return '';
   const dt = new Date(d);
@@ -48,12 +71,15 @@ export function formatDateTime(d) {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: IST_TZ,
   });
 }
 
 /** "30 Apr 2026" — accepts ISO ('2026-04-30') or HTTP-date
  *  ('Thu, 30 Apr 2026 00:00:00 GMT'). Used for date-only fields like
- *  scheduled_date where the time portion is meaningless. */
+ *  scheduled_date where the time portion is meaningless. Pinned to IST
+ *  so a UTC midnight timestamp on a given calendar date renders as the
+ *  same date in IST (UTC midnight = IST 05:30 same day). */
 export function formatDateOnly(d) {
   if (!d) return '';
   const dt = new Date(d);
@@ -62,6 +88,7 @@ export function formatDateOnly(d) {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
+    timeZone: IST_TZ,
   });
 }
 
