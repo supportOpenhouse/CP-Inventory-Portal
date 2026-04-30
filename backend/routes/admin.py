@@ -286,6 +286,135 @@ def _sync_visit_completed_from_properties() -> int:
         return 0
 
 
+def _sync_unit_details_from_properties() -> int:
+    """Overwrite tower / unit_no / floor on submissions from the Forms-app
+    properties table. Field execs sometimes register the actual unit
+    details on-site (especially for 'unit-less' submissions where the CP
+    didn't know them at submit time), and properties is the ground truth
+    after a visit.
+
+    Logic:
+      1. Collect submissions where forms_uid IS NOT NULL, deleted_at IS NULL.
+      2. Look up properties.uid = ANY(forms_uids); pull tower_no, unit_no,
+         floor from each match.
+      3. For each match, UPDATE submissions SET tower / unit_no / floor
+         from the properties values — always overwrite (per product
+         decision: properties is authoritative). Only skip a column when
+         the properties value is NULL/empty (don't blank out an existing
+         value with NULL).
+      4. Only commit a row + log an event when at least one column
+         actually changed (idempotent on repeat runs).
+
+    Cross-DB read on properties; write on submissions. Best-effort: any
+    error is swallowed and logged so the calling list endpoint still
+    returns successfully.
+
+    Returns: count of submissions updated in this call.
+    """
+    if not properties_configured():
+        return 0
+    try:
+        # 1. Collect candidates (submissions with a forms_uid)
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, forms_uid, tower, unit_no, floor
+                    FROM submissions
+                    WHERE forms_uid IS NOT NULL
+                      AND deleted_at IS NULL
+                """)
+                candidates = cur.fetchall()
+        finally:
+            put_app_conn(conn)
+
+        if not candidates:
+            return 0
+
+        forms_uids = [c["forms_uid"] for c in candidates]
+        sub_by_uid = {c["forms_uid"]: c for c in candidates}
+
+        # 2. Fetch matching properties rows. floor::text guards against the
+        # properties.floor column being INT (see duplicate_check.py).
+        pconn = get_props_conn()
+        try:
+            with pconn.cursor() as cur:
+                cur.execute("""
+                    SELECT uid,
+                           NULLIF(TRIM(COALESCE(tower_no, '')), '') AS tower_no,
+                           NULLIF(TRIM(COALESCE(unit_no, '')),   '') AS unit_no,
+                           NULLIF(TRIM(COALESCE(floor::text, '')), '') AS floor
+                    FROM properties
+                    WHERE uid = ANY(%s)
+                """, (forms_uids,))
+                props = cur.fetchall()
+        finally:
+            put_props_conn(pconn)
+
+        if not props:
+            return 0
+
+        # 3. Apply updates — overwrite when properties has a value AND it
+        # differs from what's currently on the submission.
+        updated_count = 0
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                for p in props:
+                    sub = sub_by_uid.get(p["uid"])
+                    if not sub:
+                        continue
+
+                    sets = []
+                    params = []
+                    changes = []
+
+                    if p["tower_no"] is not None and p["tower_no"] != (sub["tower"] or ""):
+                        sets.append("tower = %s")
+                        params.append(p["tower_no"])
+                        changes.append(f"tower: {sub['tower'] or '∅'} → {p['tower_no']}")
+                    if p["unit_no"] is not None and p["unit_no"] != (sub["unit_no"] or ""):
+                        sets.append("unit_no = %s")
+                        params.append(p["unit_no"])
+                        changes.append(f"unit_no: {sub['unit_no'] or '∅'} → {p['unit_no']}")
+                    if p["floor"] is not None and p["floor"] != (sub["floor"] or ""):
+                        sets.append("floor = %s")
+                        params.append(p["floor"])
+                        changes.append(f"floor: {sub['floor'] or '∅'} → {p['floor']}")
+
+                    if not sets:
+                        continue
+
+                    params.append(sub["id"])
+                    cur.execute(
+                        f"UPDATE submissions SET {', '.join(sets)} WHERE id = %s",
+                        params,
+                    )
+                    cur.execute("""
+                        INSERT INTO submission_events
+                            (submission_id, actor_cp_id, kind, text)
+                        VALUES (%s, NULL, 'system', %s)
+                    """, (
+                        sub["id"],
+                        f"Unit details synced from properties (uid={p['uid']}): "
+                        f"{'; '.join(changes)}.",
+                    ))
+                    updated_count += 1
+                conn.commit()
+        finally:
+            put_app_conn(conn)
+
+        if updated_count:
+            log.info(
+                "[sync_unit_details] overwrote unit fields on %d submissions from properties",
+                updated_count,
+            )
+        return updated_count
+    except Exception:
+        log.exception("[sync_unit_details] failed; admin list will continue uninterrupted")
+        return 0
+
+
 def _list_submissions_core():
     conn = get_app_conn()
     try:
@@ -410,6 +539,10 @@ def list_submissions():
     # without needing a separate Forms-app webhook. Best-effort; doesn't block
     # the response on properties-side errors.
     _sync_visit_completed_from_properties()
+    # Pull tower/unit_no/floor back from properties for any submission with a
+    # forms_uid — field execs register the actual unit details on-site and
+    # properties is the authoritative source after a visit. Always overwrites.
+    _sync_unit_details_from_properties()
     subs = _list_submissions_core()
     counts = _stage_counts()
     return jsonify({"submissions": subs, "counts": counts}), 200
