@@ -7,6 +7,41 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-30] — On-behalf header fix + bulk-schedule per-row time
+
+### Fixed
+- **Add Inventory (on behalf) header was unreadable.** The screen reused
+  the global `.header` class which paints a dark navy gradient with white
+  text; my inline `background: '#fff'` overrode the gradient but left the
+  white `← back` button and white title text invisible against the white
+  background. Replaced with a custom light-mode header (dark text, bordered
+  back button) so the back button is visible on the admin desktop view.
+
+### Changed
+- **Bulk Schedule Visit modal — per-row time** instead of one shared time
+  at the top. Each selected listing now has its own time picker inline in
+  the table; this lets RMs space out visits during the day in one batch
+  rather than scheduling all listings at the same minute.
+  - Top toolbar of the modal is now just `Date` + `Apply Field Executive
+    to all rows`. Time has moved to a `Time` column on each row.
+  - Column header `Field exec` renamed to `Field Executive` (full word).
+  - Time inputs use the browser's native `<input type="time">`, which
+    renders 12-hour with AM/PM in en-US locale.
+
+  **Backend** ([backend/routes/admin.py](backend/routes/admin.py)):
+  `POST /admin/submissions/bulk-schedule-visit` now accepts
+  `items[i].schedule_time` (per-item). The top-level `schedule_time`
+  remains as an optional fallback for items that omit it (back-compat).
+  Per-item time is validated `HH:MM` 24-hr server-side and used when
+  building the Forms-app payload AND when persisting `scheduled_time`
+  on the submission row + system event.
+
+### Notes
+- Display formatting elsewhere is unchanged: `formatTime12` already
+  renders stored 24-hr `HH:MM` as `1:30 PM` on the BoardView pill,
+  TableView tooltip, and DetailPanel.
+- No schema change.
+
 ## [2026-04-29] — Add Inventory on Behalf, RM filter, bulk-reassign RM
 
 ### Added
