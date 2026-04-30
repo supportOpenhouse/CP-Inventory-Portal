@@ -15,6 +15,7 @@ Pattern:
   continues from that number (so gaps are OK, collisions are not).
 """
 
+
 import re
 
 # Map city name -> ID prefix. Lowercased for lookup, canonical case for prefix.
