@@ -7,6 +7,16 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-30] — Add README.md
+
+### Added
+- **`README.md`** at the repo root. Single-file orientation for the
+  project: stack, local dev setup (with the macOS port-5000 / AirPlay
+  caveat baked in), pipeline stages, role model, repo layout,
+  conventions, deploy procedure, and known limitations. Doesn't replace
+  the deeper HANDOVER doc — links to it. Will be kept in sync with each
+  push that affects setup, conventions, or public surface.
+
 ## [2026-04-30] — On-behalf header fix + bulk-schedule per-row time
 
 ### Fixed
