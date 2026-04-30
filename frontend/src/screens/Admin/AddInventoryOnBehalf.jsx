@@ -75,13 +75,32 @@ export default function AddInventoryOnBehalf({ onClose }) {
 
   return (
     <div className="app-shell">
-      <div className="header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #eee' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="back-btn" onClick={onClose}>←</button>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>
-            Add Inventory <span style={{ fontWeight: 400, color: '#888' }}>(on behalf of CP)</span>
-          </span>
-        </div>
+      {/* Custom header — NOT the global .header class, which is mobile/CP-side
+          dark gradient with white text. Admin desktop view needs a light header
+          with dark text so the back button is visible. */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 10,
+        background: '#fff', borderBottom: '1px solid #eee',
+        padding: '12px 20px',
+        display: 'flex', alignItems: 'center', gap: 12,
+      }}>
+        <button
+          onClick={onClose}
+          type="button"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: '#fff', border: '1px solid #ddd',
+            borderRadius: 6, padding: '6px 12px',
+            color: '#222', fontSize: 14, fontWeight: 500,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          ← Back
+        </button>
+        <span style={{ fontSize: 16, fontWeight: 600, color: '#222' }}>
+          Add Inventory{' '}
+          <span style={{ fontWeight: 400, color: '#888' }}>(on behalf of CP)</span>
+        </span>
       </div>
 
       <div style={{ padding: 16, maxWidth: 720, margin: '0 auto' }}>

@@ -1113,13 +1113,18 @@ def bulk_schedule_visit():
 
     Request body:
         {
-          "schedule_date": "YYYY-MM-DD" (REQUIRED, applied to all items),
-          "schedule_time": "HH:MM"      (REQUIRED, applied to all items),
+          "schedule_date": "YYYY-MM-DD"   (REQUIRED, applied to all items),
+          "schedule_time": "HH:MM"        (OPTIONAL fallback if an item omits
+                                            its own schedule_time),
           "items": [
-            { "id": int, "field_exec_id": int },
+            { "id": int, "field_exec_id": int, "schedule_time": "HH:MM" },
             ...
           ]
         }
+
+    Per-item `schedule_time` overrides the top-level fallback. At least one
+    of (item.schedule_time, top-level schedule_time) must be present per
+    item. Time format is 24-hr HH:MM, validated server-side.
 
     Behavior:
       - Hard cap: BULK_SCHEDULE_VISIT_MAX_ITEMS items per request.
@@ -1174,20 +1179,28 @@ def bulk_schedule_visit():
         except ValueError:
             body_errors.append("schedule_date is not a valid date")
 
-    # Time validation (mirrors single endpoint)
-    if not schedule_time:
-        body_errors.append("schedule_time is required")
-    else:
-        time_match = re.match(r"^(\d{1,2}):(\d{2})$", schedule_time)
-        if not time_match:
-            body_errors.append("schedule_time must be HH:MM (24-hr)")
+    # Top-level schedule_time is OPTIONAL — used as a fallback for items that
+    # omit their own. If present, validate + zero-pad.
+    def _normalize_time(raw):
+        """Returns (normalized_hhmm, error_message_or_None)."""
+        if not raw:
+            return None, "schedule_time is required"
+        m = re.match(r"^(\d{1,2}):(\d{2})$", raw)
+        if not m:
+            return None, "schedule_time must be HH:MM (24-hr)"
+        hh = int(m.group(1)); mm = int(m.group(2))
+        if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+            return None, "schedule_time has out-of-range values"
+        return f"{hh:02d}:{mm:02d}", None
+
+    if schedule_time:
+        normalized_top, err = _normalize_time(schedule_time)
+        if err:
+            body_errors.append(f"top-level {err}")
         else:
-            hh = int(time_match.group(1))
-            mm = int(time_match.group(2))
-            if hh < 0 or hh > 23 or mm < 0 or mm > 59:
-                body_errors.append("schedule_time has out-of-range values")
-            else:
-                schedule_time = f"{hh:02d}:{mm:02d}"
+            schedule_time = normalized_top
+    else:
+        schedule_time = None  # no fallback — items must each provide their own
 
     # Items validation
     if not isinstance(items_raw, list) or not items_raw:
@@ -1200,29 +1213,46 @@ def bulk_schedule_visit():
     else:
         for i, it in enumerate(items_raw):
             if not isinstance(it, dict):
-                body_errors.append(f"items[{i}] must be an object with id and field_exec_id")
+                body_errors.append(f"items[{i}] must be an object with id, field_exec_id, schedule_time")
                 continue
             if not to_int(it.get("id")):
                 body_errors.append(f"items[{i}].id is required")
             if not to_int(it.get("field_exec_id")):
                 body_errors.append(f"items[{i}].field_exec_id is required")
+            # Per-item schedule_time check: must be present (or top-level
+            # fallback must exist).
+            t_raw = to_str(it.get("schedule_time"))
+            if t_raw:
+                _, t_err = _normalize_time(t_raw)
+                if t_err:
+                    body_errors.append(f"items[{i}].{t_err}")
+            elif not schedule_time:
+                body_errors.append(
+                    f"items[{i}].schedule_time is required (no top-level fallback provided)"
+                )
 
     if body_errors:
         return jsonify({"error": "Invalid request", "details": body_errors}), 400
 
-    # Normalize + dedupe by submission id (preserve first-seen order)
-    item_pairs = []
+    # Normalize + dedupe by submission id (preserve first-seen order).
+    # Each entry is (sid, field_exec_id, schedule_time).
+    item_specs = []
     seen_ids = set()
     for it in items_raw:
         sid = to_int(it["id"])
         fx = to_int(it["field_exec_id"])
+        t_raw = to_str(it.get("schedule_time"))
+        if t_raw:
+            t_norm, _ = _normalize_time(t_raw)
+        else:
+            t_norm = schedule_time  # top-level fallback
         if sid in seen_ids:
             continue
         seen_ids.add(sid)
-        item_pairs.append((sid, fx))
+        item_specs.append({"sid": sid, "field_exec_id": fx, "schedule_time": t_norm})
 
-    submission_ids = [p[0] for p in item_pairs]
-    field_exec_ids = list({p[1] for p in item_pairs})
+    submission_ids = [it["sid"] for it in item_specs]
+    field_exec_ids = list({it["field_exec_id"] for it in item_specs})
 
     # 3. Resolve admin name once (Forms app validates assigned_by per call,
     # but the value is the same for the whole batch).
@@ -1275,7 +1305,10 @@ def bulk_schedule_visit():
     ready_items = []        # validated, ready for Forms POST
     already_scheduled = []  # idempotency: rows with forms_uid already set
 
-    for sid, field_exec_id in item_pairs:
+    for spec in item_specs:
+        sid = spec["sid"]
+        field_exec_id = spec["field_exec_id"]
+        item_time = spec["schedule_time"]
         sub = sub_by_id.get(sid)
         if not sub:
             preflight_errors.append({
@@ -1297,7 +1330,7 @@ def bulk_schedule_visit():
                     sub.get("scheduled_date").isoformat()
                     if sub.get("scheduled_date") else schedule_date
                 ),
-                "scheduled_time": sub.get("scheduled_time") or schedule_time,
+                "scheduled_time": sub.get("scheduled_time") or item_time,
                 "field_exec_name": sub.get("field_exec_name"),
             })
             continue
@@ -1371,6 +1404,7 @@ def bulk_schedule_visit():
             "sub": sub,
             "field_exec_id": field_exec_id,
             "field_exec_name": exec_row["name"],
+            "schedule_time": item_time,
             "city": city_match,
             "cp_name": cp_name,
             "first_name": first_name,
@@ -1459,7 +1493,7 @@ def bulk_schedule_visit():
             "field_exec": r["field_exec_name"],
             "assigned_by": admin_name,
             "schedule_date": schedule_date,
-            "schedule_time": schedule_time,
+            "schedule_time": r["schedule_time"],
         }
 
         try:
@@ -1522,6 +1556,7 @@ def bulk_schedule_visit():
             "uid": forms_uid,
             "already_existed": already_existed,
             "field_exec_name": r["field_exec_name"],
+            "schedule_time": r["schedule_time"],
         })
         new_results.append({
             "id": sid,
@@ -1530,7 +1565,7 @@ def bulk_schedule_visit():
             "uid": forms_uid,
             "already_existed": already_existed,
             "scheduled_date": schedule_date,
-            "scheduled_time": schedule_time,
+            "scheduled_time": r["schedule_time"],
             "field_exec_name": r["field_exec_name"],
         })
 
@@ -1547,7 +1582,7 @@ def bulk_schedule_visit():
                             scheduled_time  = %s,
                             field_exec_name = %s
                         WHERE id = %s
-                    """, (s["uid"], schedule_date, schedule_time, s["field_exec_name"], s["sid"]))
+                    """, (s["uid"], schedule_date, s["schedule_time"], s["field_exec_name"], s["sid"]))
                     cur.execute("""
                         INSERT INTO submission_events
                             (submission_id, actor_cp_id, kind, text)
@@ -1555,7 +1590,7 @@ def bulk_schedule_visit():
                     """, (
                         s["sid"],
                         g.user.get("cp_id"),  # NULL for admins/RMs/managers
-                        f"Visit scheduled (bulk) for {schedule_date} {schedule_time} "
+                        f"Visit scheduled (bulk) for {schedule_date} {s['schedule_time']} "
                         f"with {s['field_exec_name']}. Forms UID: {s['uid']}"
                         f"{' (already existed)' if s['already_existed'] else ''}",
                     ))
@@ -1565,7 +1600,7 @@ def bulk_schedule_visit():
 
     results = already_scheduled + new_results
     summary = {
-        "total": len(item_pairs),
+        "total": len(item_specs),
         "succeeded": sum(1 for r in results if r["ok"]),
         "failed": sum(1 for r in results if not r["ok"]),
         "already_scheduled": len(already_scheduled),

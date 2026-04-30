@@ -15,7 +15,8 @@ import { ApiError, api } from '../../api';
  *
  * Backend contract:
  *   POST /admin/submissions/bulk-schedule-visit
- *     body: { schedule_date, schedule_time, items: [{id, field_exec_id}] }
+ *     body: { schedule_date, items: [{id, field_exec_id, schedule_time}] }
+ *     (schedule_time is per-item now; date is shared.)
  *   Pre-flight failure → 400 + { preflight_errors: [{id, errors: [{field?, label}]}] }
  *   Phase-2 result      → 200 + { ok, results: [{id, ok, uid?, error?}], summary }
  */
@@ -23,9 +24,10 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
   const [fieldExecs, setFieldExecs] = useState([]);
   const [loadingExecs, setLoadingExecs] = useState(true);
   const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  // Map<submission_id, field_exec_id (string for select element, '' = unselected)>
+  // Per-row maps. Time and exec are now both per-row; the picker fields at the
+  // top are convenience "apply to all" actions, not stored values.
   const [execBySid, setExecBySid] = useState({});
+  const [timeBySid, setTimeBySid] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [preflightErrors, setPreflightErrors] = useState([]); // [{id, errors: [{field, label}]}]
@@ -47,22 +49,22 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
     return () => { alive = false; };
   }, []);
 
-  // Initialize per-row exec map whenever the selection changes
+  // Initialize per-row exec + time maps whenever the selection changes
   useEffect(() => {
-    setExecBySid((prev) => {
+    const sync = (prev) => {
       const next = { ...prev };
-      // Drop any sids no longer selected
       for (const sid of Object.keys(next)) {
         if (!selectedSubmissions.some((s) => String(s.id) === String(sid))) {
           delete next[sid];
         }
       }
-      // Default new sids to ''
       for (const s of selectedSubmissions) {
         if (next[s.id] === undefined) next[s.id] = '';
       }
       return next;
-    });
+    };
+    setExecBySid(sync);
+    setTimeBySid(sync);
   }, [selectedSubmissions]);
 
   // Selected submissions sorted by status priority (Visit Scheduled first), then public_id
@@ -95,10 +97,11 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
   }, [sortedSubs]);
 
   const allExecsChosen = sortedSubs.every((s) => Boolean(execBySid[s.id]));
+  const allTimesChosen = sortedSubs.every((s) => Boolean(timeBySid[s.id]));
   const canSubmit = (
     sortedSubs.length > 0 &&
-    Boolean(date) && Boolean(time) &&
-    allExecsChosen &&
+    Boolean(date) &&
+    allExecsChosen && allTimesChosen &&
     !submitting && !loadingExecs
   );
 
@@ -108,11 +111,25 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
     setPreflightErrors((prev) => prev.filter((e) => String(e.id) !== String(sid)));
   };
 
+  const setTimeForSid = (sid, time) => {
+    setTimeBySid((prev) => ({ ...prev, [sid]: time }));
+    setPreflightErrors((prev) => prev.filter((e) => String(e.id) !== String(sid)));
+  };
+
   const applyExecToAll = (execId) => {
     if (!execId) return;
     setExecBySid((prev) => {
       const next = { ...prev };
       for (const s of sortedSubs) next[s.id] = execId;
+      return next;
+    });
+  };
+
+  const applyTimeToAll = (time) => {
+    if (!time) return;
+    setTimeBySid((prev) => {
+      const next = { ...prev };
+      for (const s of sortedSubs) next[s.id] = time;
       return next;
     });
   };
@@ -127,10 +144,10 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
       const items = sortedSubs.map((s) => ({
         id: s.id,
         field_exec_id: Number(execBySid[s.id]),
+        schedule_time: timeBySid[s.id],
       }));
       const result = await api.adminBulkScheduleVisit({
         schedule_date: date,
-        schedule_time: time,
         items,
       });
       // Map results by id for easy per-row rendering
@@ -222,8 +239,9 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
 
           {!submitted && (
             <>
-              {/* Shared date / time / "apply exec to all" */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: 16, alignItems: 'end' }}>
+              {/* Shared date + 'apply Field Executive to all' helper. Time
+                  is per-row only (set in the table below). */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16, alignItems: 'end' }}>
                 <div>
                   <label style={labelStyle}>Date</label>
                   <input
@@ -236,17 +254,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                   />
                 </div>
                 <div>
-                  <label style={labelStyle}>Time (24h)</label>
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    disabled={submitting}
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>Apply field exec to all rows</label>
+                  <label style={labelStyle}>Apply Field Executive to all rows</label>
                   <select
                     value=""
                     onChange={(e) => applyExecToAll(e.target.value)}
@@ -268,7 +276,8 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                     <th style={thStyle}>Listing</th>
                     <th style={thStyle}>Society / City</th>
                     <th style={thStyle}>Status</th>
-                    <th style={thStyle}>Field exec</th>
+                    <th style={thStyle}>Time</th>
+                    <th style={thStyle}>Field Executive</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -299,13 +308,22 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                           <span style={{ fontSize: 11, color: '#666' }}>{s.status}</span>
                         </td>
                         <td style={tdStyle}>
+                          <input
+                            type="time"
+                            value={timeBySid[s.id] || ''}
+                            onChange={(e) => setTimeForSid(s.id, e.target.value)}
+                            disabled={submitting || alreadyScheduled}
+                            style={{ ...inputStyle, minWidth: 110 }}
+                          />
+                        </td>
+                        <td style={tdStyle}>
                           <select
                             value={execBySid[s.id] || ''}
                             onChange={(e) => setExecForSid(s.id, e.target.value)}
                             disabled={submitting || loadingExecs || alreadyScheduled}
                             style={inputStyle}
                           >
-                            <option value="">— select —</option>
+                            <option value="">— select Field Executive —</option>
                             {fieldExecs.map((fe) => (
                               <option key={fe.id} value={fe.id}>{fe.name}</option>
                             ))}
