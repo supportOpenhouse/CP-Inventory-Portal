@@ -41,6 +41,10 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   const [counterOfferLakhs, setCounterOfferLakhs] = useState('');
   const [sendingCounter, setSendingCounter] = useState(false);
   const [lightboxId, setLightboxId] = useState(null);
+  // RM-assignment mode: 'listing' = override this listing's RM only (default,
+  // per user request 2026-04-30); 'cp' = change the CP's permanent RM across
+  // all their listings.
+  const [rmAssignMode, setRmAssignMode] = useState('listing');
   const fileInputRef = useRef(null);
   const eventsEndRef = useRef(null);
 
@@ -177,7 +181,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   };
 
   // Reassign the CP's permanent RM (channel_partners.rm_id) — admin only.
-  // This changes the RM for this CP ACROSS ALL their submissions, not just this one.
+  // Affects ALL of this CP's submissions, not just this one.
   const assignToRm = async (rmIdRaw) => {
     if (busy) return;
     const rmId = rmIdRaw ? parseInt(rmIdRaw, 10) : null;
@@ -190,6 +194,25 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
       onChanged?.();
     } catch (err) {
       alert(err.message || 'Failed to reassign RM');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Per-listing RM override (submissions.listing_rm_id). Doesn't touch the
+  // CP's permanent RM. The default mode in the assignment UI.
+  const assignListingRm = async (rmIdRaw) => {
+    if (busy) return;
+    const rmId = rmIdRaw ? parseInt(rmIdRaw, 10) : null;
+    const sid = data?.submission?.id;
+    if (!sid) return;
+    setBusy(true);
+    try {
+      await api.adminSetListingRm(sid, rmId);
+      await load();
+      onChanged?.();
+    } catch (err) {
+      alert(err.message || 'Failed to set listing RM');
     } finally {
       setBusy(false);
     }
@@ -607,18 +630,63 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </div>
               </div>
 
-              {/* CP's assigned RM — always shown; admin can reassign, others read-only */}
+              {/* Assigned RM — admin picks scope (this listing only OR CP's
+                  permanent RM). Read-only for non-admins; effective RM is the
+                  listing override if set, else the CP's permanent RM. */}
               <div className="admin-panel-section">
-                <div className="admin-panel-section-title">CP's assigned RM</div>
+                <div className="admin-panel-section-title">Assigned RM</div>
                 {isAdmin ? (
                   <>
+                    {/* Mode picker — listing-only is default (per user 2026-04-30) */}
+                    <div style={{ marginBottom: 10, padding: 10, border: '1px solid #e5e5e5', borderRadius: 6 }}>
+                      <div style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>
+                        Reassign scope
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: 'pointer', marginBottom: 4 }}>
+                        <input
+                          type="radio"
+                          name={`rm-mode-${s.id}`}
+                          checked={rmAssignMode === 'listing'}
+                          onChange={() => setRmAssignMode('listing')}
+                          disabled={busy}
+                        />
+                        <span style={{ fontSize: 13 }}>
+                          <strong>This listing only</strong>
+                          {' '}<span style={{ color: '#888' }}>(default)</span>
+                        </span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          name={`rm-mode-${s.id}`}
+                          checked={rmAssignMode === 'cp'}
+                          onChange={() => setRmAssignMode('cp')}
+                          disabled={busy}
+                        />
+                        <span style={{ fontSize: 13 }}>
+                          <strong>CP's permanent RM</strong>{' '}
+                          <span style={{ color: '#888' }}>(affects all of this CP's listings)</span>
+                        </span>
+                      </label>
+                    </div>
+
                     <select
                       className="status-select"
-                      value={s.cp_rm_id || ''}
-                      onChange={(e) => assignToRm(e.target.value)}
+                      value={
+                        rmAssignMode === 'listing'
+                          ? (s.listing_rm_id || '')
+                          : (s.cp_rm_id || '')
+                      }
+                      onChange={(e) =>
+                        rmAssignMode === 'listing'
+                          ? assignListingRm(e.target.value)
+                          : assignToRm(e.target.value)
+                      }
                       disabled={busy}
                     >
-                      <option value="">— Unassigned —</option>
+                      <option value="">
+                        {rmAssignMode === 'listing' ? '— No override (use CP\'s RM) —' : '— Unassigned —'}
+                      </option>
                       {rms.map((rm) => (
                         <option key={rm.id} value={rm.id}>
                           {rm.name}{rm.city ? ` · ${rm.city}` : ''}{rm.is_manager ? ' · Manager' : ''}
@@ -626,12 +694,23 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       ))}
                     </select>
                     <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
-                      Changes the RM for this CP across ALL their submissions, not just this one.
+                      {rmAssignMode === 'listing'
+                        ? `Override for THIS listing only. The CP's permanent RM (${s.cp_rm_name || 'unassigned'}) is unchanged.`
+                        : `Changes this CP's permanent RM. Affects ALL of their submissions — past and future, not just this one.`}
                     </div>
                   </>
                 ) : (
                   <div className="admin-panel-val" style={{ fontWeight: 500 }}>
-                    {s.cp_rm_name || <span style={{ color: '#999', fontStyle: 'italic' }}>Unassigned</span>}
+                    {s.listing_rm_name ? (
+                      <>
+                        {s.listing_rm_name}
+                        <span style={{ fontSize: 11, color: '#7C3AED', marginLeft: 6 }}>
+                          (listing override)
+                        </span>
+                      </>
+                    ) : (
+                      s.cp_rm_name || <span style={{ color: '#999', fontStyle: 'italic' }}>Unassigned</span>
+                    )}
                   </div>
                 )}
               </div>

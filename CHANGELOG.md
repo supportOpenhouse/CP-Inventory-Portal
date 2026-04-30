@@ -7,6 +7,72 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-30] — Per-listing RM override (vs CP-permanent reassign)
+
+### Added
+- **Per-listing RM override.** A new column
+  `submissions.listing_rm_id` (FK → `rms`) lets an admin assign a single
+  listing (or a batch) to a different RM **without** changing the CP's
+  permanent RM. NULL = no override; effective RM falls back to
+  `channel_partners.rm_id`.
+
+  **Migration:** [`backend/migrations/2026-04-30-add-listing-rm-id.sql`](backend/migrations/2026-04-30-add-listing-rm-id.sql)
+  — additive, idempotent (`ADD COLUMN IF NOT EXISTS`), with a partial
+  index on non-NULL values. Must run on prod App DB before this code
+  ships, per Convention #2.
+
+  **Backend** ([backend/routes/admin.py](backend/routes/admin.py)):
+  - `PATCH /api/admin/submissions/<id>/listing-rm` — single override.
+    Body `{ target_rm_id: int|null }` (`null` clears).
+  - `POST  /api/admin/submissions/bulk-reassign-listing-rm` — batch.
+    Body `{ submission_ids: [int], target_rm_id: int|null }`. Cap 100.
+  - Both `@require_admin_role`. Validate target RM exists + is_active.
+    Each call seeds a `system` `submission_event` for audit.
+  - Admin list (`GET /api/admin/submissions`) and single
+    (`GET /api/admin/submissions/<id>`) responses now also include
+    `listing_rm_id` and `listing_rm_name` (LEFT JOIN `rms`).
+
+### Changed
+- **`BulkReassignRmModal` now asks "what to reassign?" with a radio
+  toggle** at the top (default: **These listings only**). User-requested
+  on 2026-04-30: "ALWAYS ask whether the unit has to be reassigned or
+  CP's RM has to be reassigned. By default, use unit to be reassigned."
+  - **These listings only** (default) → calls the new
+    `bulk-reassign-listing-rm` endpoint; sets
+    `submissions.listing_rm_id` for the selected rows.
+  - **Each CP's permanent RM** → existing behaviour
+    (`/api/admin/cps/bulk-reassign-rm`); changes
+    `channel_partners.rm_id`. Yellow "permanent change" warning still
+    shown only when this mode is selected.
+  - Per-mode selection table — listings mode lists each selected row
+    (public_id, society/city, CP, current listing-RM); CP mode keeps
+    the existing per-CP grouped table.
+  - Submit-button label and success summary adapt to the chosen mode.
+
+- **`DetailPanel` "CP's assigned RM"** section renamed to **"Assigned
+  RM"** with the same radio toggle (default: **This listing only**).
+  - The dropdown's `value` and `onChange` both react to the chosen
+    scope: listing mode reads/writes `s.listing_rm_id` via
+    `adminSetListingRm`; CP mode keeps the original
+    `adminSetCpRm` path.
+  - Helper text under the dropdown reflects the active scope ("Override
+    for THIS listing only…" vs "Changes this CP's permanent RM…").
+  - For non-admins (read-only view): if a listing override exists, the
+    listing RM is shown with a small purple "(listing override)" tag;
+    otherwise the CP's permanent RM name is shown as before.
+
+### Notes
+- The legacy `submissions.assigned_rm_id` column (FK to
+  `channel_partners`, currently 0 rows) is intentionally left alone.
+  Modern per-listing RM lives on the new `listing_rm_id` column FK'd
+  at `rms`.
+- Visual indicator on BoardView cards / TableView rows for "this
+  listing has a listing-RM override" is **not** in this push — defer
+  to a follow-up. Today the override is visible only inside the
+  DetailPanel and (for non-admins) in its read-only label.
+- The auto-syncer `_sync_visit_completed_from_properties` is unchanged
+  and unaffected.
+
 ## [2026-04-30] — Stage reorder + auto-sync Visit Completed
 
 ### Changed

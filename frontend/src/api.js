@@ -152,9 +152,26 @@ export const api = {
 
   // Admin-only: bulk reassign multiple CPs to a different RM.
   // Body: { cp_ids: [int], target_rm_id: int }. Cap of 100 per request.
+  // CHANGES THE CP'S PERMANENT RM (channel_partners.rm_id). All of those CPs'
+  // listings move to the new RM going forward.
   adminBulkReassignRm: (payload) =>
     request('/admin/cps/bulk-reassign-rm', {
       method: 'POST', body: payload,
+    }),
+
+  // Admin-only: per-listing RM override (sets submissions.listing_rm_id).
+  // Does NOT touch the CP's permanent rm_id. Use this when an admin wants
+  // a specific listing handled by a different RM than the CP's normal one.
+  // Body: { submission_ids: [int], target_rm_id: int|null }. null clears the override.
+  adminBulkReassignListingRm: (payload) =>
+    request('/admin/submissions/bulk-reassign-listing-rm', {
+      method: 'POST', body: payload,
+    }),
+  // Single-listing RM override.
+  // Body: { target_rm_id: int|null }
+  adminSetListingRm: (submissionId, targetRmId) =>
+    request(`/admin/submissions/${submissionId}/listing-rm`, {
+      method: 'PATCH', body: { target_rm_id: targetRmId },
     }),
 
   // Health

@@ -428,7 +428,7 @@ def _list_submissions_core():
                     s.asking_price,
                     s.seller_name, s.seller_phone,
                     s.status, s.submitted_at, s.photos, s.weak_match, s.collated_match, s.submissions_match,
-                    s.deleted_at, s.drive_links, s.assigned_rm_id,
+                    s.deleted_at, s.drive_links, s.assigned_rm_id, s.listing_rm_id,
                     s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
                     s.submitted_by_name,
@@ -437,11 +437,13 @@ def _list_submissions_core():
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
                     cp.company AS cp_company,
                     rm.name AS assigned_rm_name,
+                    listing_rm.name AS listing_rm_name,
                     acq.acq_price_lakhs, acq.acq_sqft
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
+                LEFT JOIN rms listing_rm ON s.listing_rm_id = listing_rm.id
                 LEFT JOIN LATERAL (
                     -- Match: same society (case/whitespace-insensitive), same city, same bhk
                     -- (strict). Tie-break by closest sqft to the submission. Returns 1 row.
@@ -562,12 +564,14 @@ def get_submission(sid: int):
                        cp.rm_id AS cp_rm_id,
                        cp_rm.name AS cp_rm_name,
                        rm.name AS assigned_rm_name,
+                       listing_rm.name AS listing_rm_name,
                        acq.acq_price_lakhs, acq.acq_sqft
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN rms cp_rm ON cp.rm_id = cp_rm.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
+                LEFT JOIN rms listing_rm ON s.listing_rm_id = listing_rm.id
                 LEFT JOIN LATERAL (
                     SELECT ap.acq_price_lakhs, ap.sqft AS acq_sqft
                     FROM acquisition_prices ap
@@ -2703,4 +2707,185 @@ def bulk_reassign_rm():
         "skipped_already_on_rm": sum(1 for r in results if r.get("skipped")),
         "not_found": sum(1 for r in results if not r.get("ok")),
         "results": results,
+    }), 200
+
+
+# ============================================================
+# Per-listing RM override (vs the CP-permanent rm_id on channel_partners)
+# ============================================================
+#
+# Sets `submissions.listing_rm_id` (FK -> rms). NULL = no override; the
+# effective RM falls back to channel_partners.rm_id.
+#
+# Migration: backend/migrations/2026-04-30-add-listing-rm-id.sql
+# ============================================================
+
+
+def _validate_target_rm(cur, target_rm_id):
+    """Returns (rm_name, error_response_tuple_or_None).
+
+    target_rm_id may be None (clear the override) or an int.
+    On error returns (None, (json_dict, status_code)) so caller can early-exit.
+    """
+    if target_rm_id is None:
+        return None, None
+    cur.execute("SELECT id, name, is_active FROM rms WHERE id = %s", (target_rm_id,))
+    rm = cur.fetchone()
+    if not rm:
+        return None, ({"error": f"RM id={target_rm_id} not found"}, 404)
+    if not rm.get("is_active"):
+        return None, ({"error": f"RM id={target_rm_id} ({rm.get('name')}) is inactive"}, 400)
+    return rm["name"], None
+
+
+@bp.patch("/submissions/<int:sid>/listing-rm")
+@require_staff
+@require_admin_role  # admin only — same gate as the CP-permanent reassign
+def set_listing_rm(sid: int):
+    """Set or clear the per-listing RM override for a single submission.
+
+    Body:
+      { "target_rm_id": int | null }   # null clears the override
+
+    Effect:
+      submissions.listing_rm_id := target_rm_id (NULL clears).
+      The CP's permanent rm_id on channel_partners is NOT touched.
+      Effective RM falls back to channel_partners.rm_id when listing_rm_id is NULL.
+    """
+    data = request.get_json(silent=True) or {}
+    raw = data.get("target_rm_id", "__missing__")
+    if raw == "__missing__":
+        return jsonify({"error": "target_rm_id is required (use null to clear)"}), 400
+    target_rm_id = None if raw is None else to_int(raw)
+    if raw is not None and not target_rm_id:
+        return jsonify({"error": "target_rm_id must be an integer or null"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            rm_name, err = _validate_target_rm(cur, target_rm_id)
+            if err:
+                body, status = err
+                return jsonify(body), status
+
+            cur.execute(
+                "SELECT id, listing_rm_id FROM submissions WHERE id = %s AND deleted_at IS NULL",
+                (sid,),
+            )
+            sub = cur.fetchone()
+            if not sub:
+                return jsonify({"error": "Submission not found or deleted"}), 404
+            if sub["listing_rm_id"] == target_rm_id:
+                return jsonify({
+                    "ok": True, "unchanged": True,
+                    "listing_rm_id": target_rm_id, "listing_rm_name": rm_name,
+                }), 200
+
+            cur.execute(
+                "UPDATE submissions SET listing_rm_id = %s WHERE id = %s",
+                (target_rm_id, sid),
+            )
+            event_text = (
+                f"Listing RM override set to {rm_name}"
+                if target_rm_id is not None
+                else "Listing RM override cleared (CP's permanent RM applies)"
+            )
+            cur.execute("""
+                INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
+                VALUES (%s, %s, 'system', %s)
+            """, (sid, g.user.get("cp_id"), event_text))
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "submission_id": sid,
+        "listing_rm_id": target_rm_id,
+        "listing_rm_name": rm_name,
+    }), 200
+
+
+@bp.post("/submissions/bulk-reassign-listing-rm")
+@require_staff
+@require_admin_role
+def bulk_reassign_listing_rm():
+    """Set or clear the per-listing RM override for many submissions in one call.
+
+    Body:
+      {
+        "submission_ids": [int],   # required, non-empty, max 100
+        "target_rm_id":   int | null  # null clears
+      }
+
+    Idempotent on already-target rows; returns updated count.
+    """
+    data = request.get_json(silent=True) or {}
+    submission_ids_raw = data.get("submission_ids") or []
+    raw = data.get("target_rm_id", "__missing__")
+    if raw == "__missing__":
+        return jsonify({"error": "target_rm_id is required (use null to clear)"}), 400
+    target_rm_id = None if raw is None else to_int(raw)
+    if raw is not None and not target_rm_id:
+        return jsonify({"error": "target_rm_id must be int or null"}), 400
+
+    if not isinstance(submission_ids_raw, list) or not submission_ids_raw:
+        return jsonify({"error": "submission_ids must be a non-empty array"}), 400
+    if len(submission_ids_raw) > 100:
+        return jsonify({"error": "submission_ids cap is 100 per request"}), 400
+
+    seen = set()
+    submission_ids = []
+    for x in submission_ids_raw:
+        v = to_int(x)
+        if v and v not in seen:
+            seen.add(v)
+            submission_ids.append(v)
+    if not submission_ids:
+        return jsonify({"error": "submission_ids contains no valid integers"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            target_rm_name, err = _validate_target_rm(cur, target_rm_id)
+            if err:
+                body, status = err
+                return jsonify(body), status
+
+            cur.execute("""
+                UPDATE submissions
+                SET listing_rm_id = %s
+                WHERE id = ANY(%s) AND deleted_at IS NULL
+                  AND COALESCE(listing_rm_id, -1) IS DISTINCT FROM COALESCE(%s, -1)
+                RETURNING id
+            """, (target_rm_id, submission_ids, target_rm_id))
+            updated = cur.fetchall()
+            updated_ids = [r["id"] for r in updated]
+
+            event_text = (
+                f"Listing RM override set to {target_rm_name} (bulk)"
+                if target_rm_id is not None
+                else "Listing RM override cleared (bulk)"
+            )
+            for sid in updated_ids:
+                cur.execute("""
+                    INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
+                    VALUES (%s, %s, 'system', %s)
+                """, (sid, g.user.get("cp_id"), event_text))
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    log.info(
+        "[bulk_reassign_listing_rm] target_rm=%s n_updated=%d (of %d requested)",
+        target_rm_id, len(updated_ids), len(submission_ids),
+    )
+
+    return jsonify({
+        "ok": True,
+        "target_rm_id": target_rm_id,
+        "target_rm_name": target_rm_name,
+        "updated_count": len(updated_ids),
+        "skipped_already_on_rm": len(submission_ids) - len(updated_ids),
+        "submission_ids": updated_ids,
     }), 200
