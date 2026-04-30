@@ -23,7 +23,7 @@ export default function Step3({ form, setForm, onNext, onBack }) {
   const addPhoto = (publicId) => {
     setForm((f) => ({ ...f, photos: [...(f.photos || []), publicId] }));
   };
-
+ 
   const removePhoto = (publicId) => {
     setForm((f) => ({ ...f, photos: (f.photos || []).filter((p) => p !== publicId) }));
   };
