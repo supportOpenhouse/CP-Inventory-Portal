@@ -197,6 +197,12 @@ export const api = {
       method: 'PATCH', body: { target_rm_id: targetRmId },
     }),
 
+  // External inventory: merged collated_data ("D Data") + properties ("F Data")
+  // viewer for the admin "External Data" page. Server-side paginated.
+  // Filters: { q, city, type ('D'|'F'|''), page, page_size }
+  adminListExternalInventory: (filters = {}) =>
+    request(`/admin/external-inventory${buildQuery(filters)}`),
+
   // Health
   health: () => request('/health', { auth: false }),
 };

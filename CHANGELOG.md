@@ -7,6 +7,54 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-30] — External Data page (collated_data + properties viewer)
+
+### Added
+- **New admin "External Data" page.** Read-only merged view of inventory
+  rows that are NOT in our `submissions` table:
+  - `collated_data` (App DB; 99acres etc. scrape) — labelled **"D Data"**
+  - `properties`    (Properties DB; the prod inventory pool) — labelled **"F Data"**
+
+  **Entry point:** new `📂 External Data` button in the admin toolbar
+  (staff only). Full-screen takeover of the admin board (returns via
+  `← Back`); board state is preserved on return.
+
+  **Backend** ([backend/routes/admin.py](backend/routes/admin.py)):
+  - `GET /api/admin/external-inventory` (`@require_staff`).
+  - Cross-DB merge in Python (can't UNION across `app` + `properties` at
+    SQL level). Each side filtered server-side by `q` (substring match
+    against society/locality/source) and `city` (case-insensitive exact)
+    before merge, then sorted by date desc and paginated.
+  - Hides `properties.is_dead = TRUE` rows.
+  - Page size default 100, capped at 500. Returns `{results, total, page,
+    page_size, counts:{D, F}}`.
+
+  **Frontend:**
+  - `api.adminListExternalInventory(filters)` helper.
+  - New screen [`Admin/ExternalInventory.jsx`](frontend/src/screens/Admin/ExternalInventory.jsx)
+    with search input (debounced 300ms), city dropdown, type toggle
+    (Both / D Data / F Data), table with columns `Type · ID · Source ·
+    Society/Locality · City · BHK · Floor · Tower · Unit · Area · Date`,
+    and Prev/Next pagination.
+
+  **Column mapping** (per user spec 2026-04-30):
+
+  | Display | collated_data | properties |
+  |---|---|---|
+  | type | "D Data" | "F Data" |
+  | id | `id` | `uid` |
+  | source | `source` | `source` |
+  | society | `society` | `society_name` |
+  | city | `city` | `city` |
+  | bhk | `bedrooms` | `configuration` |
+  | floor | `floor` | `floor` |
+  | tower | _(null)_ | `tower_no` |
+  | unit_no | _(null)_ | `unit_no` |
+  | area | `area_sqft` | `area_sqft` |
+  | date | `posting_date` | `schedule_submitted_at` |
+
+  **No schema change.**
+
 ## [2026-04-30] — Force-logout on expired/invalid token
 
 ### Fixed

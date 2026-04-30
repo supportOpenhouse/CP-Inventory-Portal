@@ -10,6 +10,7 @@ import CpHistoryDrawer from './CpHistoryDrawer';
 import BulkScheduleVisitModal from './BulkScheduleVisitModal';
 import AddInventoryOnBehalf from './AddInventoryOnBehalf';
 import BulkReassignRmModal from './BulkReassignRmModal';
+import ExternalInventory from './ExternalInventory';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
@@ -41,6 +42,7 @@ export default function Admin() {
   const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false);
   const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
   const [addingInventory, setAddingInventory] = useState(false);
+  const [externalInventoryOpen, setExternalInventoryOpen] = useState(false);
 
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
@@ -172,6 +174,12 @@ export default function Admin() {
     );
   }
 
+  // External Data viewer (collated_data + properties). Read-only; no reload
+  // of the admin board needed when closed.
+  if (externalInventoryOpen) {
+    return <ExternalInventory onClose={() => setExternalInventoryOpen(false)} />;
+  }
+
   return (
     <div className="admin-root">
       {/* Top bar */}
@@ -243,6 +251,16 @@ export default function Admin() {
               title="Add inventory on behalf of a CP"
             >
               + Add Inventory
+            </button>
+          )}
+          {isStaff && (
+            <button
+              className="filter-toggle"
+              style={{ borderColor: '#6366F1', color: '#6366F1' }}
+              onClick={() => setExternalInventoryOpen(true)}
+              title="View external inventory (collated_data + properties)"
+            >
+              📂 External Data
             </button>
           )}
           <div className="view-toggle">

@@ -198,6 +198,14 @@ README.md      this file
 9. **Keep [CHANGELOG.md](CHANGELOG.md) in sync with each push.** One entry per
    prod push, dated, latest at top.
 
+## Admin pages
+
+| Page | Entry | What it shows |
+|---|---|---|
+| **Inventory board** (default) | `/` after admin login | All `submissions` rows — kanban + table, filters, bulk actions |
+| **Add Inventory (on behalf)** | `+ Add Inventory` button in admin toolbar (staff only) | CP search + the AddUnit form, mode='staff' |
+| **External Data** | `📂 External Data` button in admin toolbar (staff only) | Merged read-only view of `collated_data` (App DB; "D Data") + `properties` (Properties DB; "F Data"). Filters: search, city, type. Server-side paginated 100/page. |
+
 ## External services & dashboards
 
 | Service | URL | What lives there |

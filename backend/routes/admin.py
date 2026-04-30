@@ -2889,3 +2889,156 @@ def bulk_reassign_listing_rm():
         "skipped_already_on_rm": len(submission_ids) - len(updated_ids),
         "submission_ids": updated_ids,
     }), 200
+
+
+# ============================================================
+# External inventory view: collated_data (App DB) + properties (Properties DB)
+# ============================================================
+#
+# Read-only view of inventory rows that are NOT in our submissions table.
+# Merged + paginated in Python (cross-DB, can't UNION at SQL level). Used by
+# the admin "External Data" page.
+#
+# Display labels: collated_data => "D Data"; properties => "F Data".
+# ============================================================
+
+EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT = 100
+EXTERNAL_INVENTORY_PAGE_SIZE_MAX = 500
+
+
+@bp.get("/external-inventory")
+@require_staff
+def list_external_inventory():
+    """Merged read-only view of `collated_data` (App DB) + `properties`
+    (Properties DB), normalised to a single column shape.
+
+    Query string:
+      q          - substring match against society/locality/source
+      city       - exact-match (case-insensitive)
+      type       - 'D' (collated_data only) | 'F' (properties only) |
+                   anything else / omitted => both
+      page       - 1-based (default 1)
+      page_size  - default 100, capped at 500
+    """
+    q = (request.args.get("q") or "").strip()
+    city = (request.args.get("city") or "").strip() or None
+    type_filter = (request.args.get("type") or "").strip().upper() or None
+    if type_filter not in ("D", "F"):
+        type_filter = None  # "both"
+
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except ValueError:
+        page = 1
+    try:
+        page_size = int(request.args.get("page_size") or EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT)
+    except ValueError:
+        page_size = EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT
+    page_size = max(1, min(EXTERNAL_INVENTORY_PAGE_SIZE_MAX, page_size))
+
+    rows = []
+
+    # ── 1) collated_data (App DB) → "D Data" ──────────────────────
+    if type_filter in (None, "D"):
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                clauses, params = [], []
+                if city:
+                    clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
+                    params.append(city)
+                if q:
+                    clauses.append("(society ILIKE %s OR locality ILIKE %s OR source ILIKE %s)")
+                    like = f"%{q}%"
+                    params.extend([like, like, like])
+                where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+                cur.execute(f"""
+                    SELECT id, source, city, locality, society, bedrooms,
+                           area_sqft, floor, price, posting_date, listing_link
+                    FROM collated_data
+                    {where}
+                """, params)
+                for r in cur.fetchall():
+                    pd = r.get("posting_date")
+                    rows.append({
+                        "type":     "D Data",
+                        "id":       str(r["id"]) if r.get("id") is not None else None,
+                        "source":   r.get("source"),
+                        "society":  r.get("society"),
+                        "city":     r.get("city"),
+                        "locality": r.get("locality"),
+                        "bhk":      r.get("bedrooms"),
+                        "floor":    r.get("floor"),
+                        "tower":    None,
+                        "unit_no":  None,
+                        "area":     r.get("area_sqft"),
+                        "price":    float(r["price"]) if r.get("price") is not None else None,
+                        "date":     pd.isoformat() if pd else None,
+                        "listing_link": r.get("listing_link"),
+                    })
+        finally:
+            put_app_conn(conn)
+
+    # ── 2) properties (Properties DB) → "F Data" ──────────────────
+    if type_filter in (None, "F") and properties_configured():
+        pconn = get_props_conn()
+        try:
+            with pconn.cursor() as cur:
+                clauses, params = [], []
+                if city:
+                    clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
+                    params.append(city)
+                if q:
+                    clauses.append("(society_name ILIKE %s OR locality ILIKE %s OR source ILIKE %s)")
+                    like = f"%{q}%"
+                    params.extend([like, like, like])
+                # Hide rows the prod team has marked dead (is_dead=true).
+                clauses.append("COALESCE(is_dead, FALSE) = FALSE")
+                where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+                cur.execute(f"""
+                    SELECT uid, source, city, locality, society_name,
+                           configuration, area_sqft, floor, tower_no, unit_no,
+                           schedule_submitted_at
+                    FROM properties
+                    {where}
+                """, params)
+                for r in cur.fetchall():
+                    ts = r.get("schedule_submitted_at")
+                    rows.append({
+                        "type":     "F Data",
+                        "id":       r.get("uid"),
+                        "source":   r.get("source"),
+                        "society":  r.get("society_name"),
+                        "city":     r.get("city"),
+                        "locality": r.get("locality"),
+                        "bhk":      r.get("configuration"),
+                        "floor":    str(r["floor"]) if r.get("floor") is not None else None,
+                        "tower":    r.get("tower_no"),
+                        "unit_no":  r.get("unit_no"),
+                        "area":     float(r["area_sqft"]) if r.get("area_sqft") is not None else None,
+                        "price":    None,
+                        "date":     ts.isoformat() if ts else None,
+                        "listing_link": None,
+                    })
+        finally:
+            put_props_conn(pconn)
+
+    # Sort merged set by date desc; rows without date sink to the bottom.
+    rows.sort(key=lambda r: (r["date"] or ""), reverse=True)
+
+    total = len(rows)
+    start = (page - 1) * page_size
+    paged = rows[start:start + page_size]
+
+    counts = {
+        "D": sum(1 for r in rows if r["type"] == "D Data"),
+        "F": sum(1 for r in rows if r["type"] == "F Data"),
+    }
+
+    return jsonify({
+        "results":   paged,
+        "total":     total,
+        "page":      page,
+        "page_size": page_size,
+        "counts":    counts,
+    }), 200
