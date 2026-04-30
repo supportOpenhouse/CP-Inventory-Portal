@@ -7,6 +7,27 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-04-30] — Force-logout on expired/invalid token
+
+### Fixed
+- **"Token expired. Please log in again." used to leave the user
+  stranded** on a half-loaded page. Now any 401 response on a request
+  that included a JWT triggers an immediate session clear + page reload,
+  so AuthContext re-mounts with no token and the user lands on Login.
+
+  **Files:** [frontend/src/api.js](frontend/src/api.js) — added
+  `forceLogoutOnExpiredToken()` (idempotent guard against multiple
+  concurrent 401s), called from both `request()` and `downloadAdminCsv()`
+  paths. Uses `window.location.replace(...)` so the broken page isn't
+  in the back-button history.
+
+  **Scope:** only applies to authenticated requests — login /
+  send-otp / verify-otp etc. (which legitimately 401 on bad creds)
+  are unaffected because they pass `auth: false` and our guard checks
+  for the presence of a stored token.
+
+  **No schema change.**
+
 ## [2026-04-30] — Per-listing RM override (vs CP-permanent reassign)
 
 ### Added

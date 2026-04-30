@@ -2,7 +2,22 @@
  * Thin API client. Attaches JWT, parses JSON, throws ApiError on non-2xx.
  */
 
-import { getToken } from './auth';
+import { getToken, clearSession } from './auth';
+
+// Idempotent guard so multiple concurrent 401s don't fire reload() many times.
+let forceLogoutInFlight = false;
+
+function forceLogoutOnExpiredToken() {
+  if (forceLogoutInFlight) return;
+  forceLogoutInFlight = true;
+  clearSession();
+  // Full reload so AuthContext re-mounts, finds no token, and routes to Login.
+  // location.replace() drops the current history entry (no "back" button into
+  // the protected page that was 401'ing).
+  if (typeof window !== 'undefined' && window.location) {
+    window.location.replace(window.location.pathname);
+  }
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api';
 
@@ -37,6 +52,14 @@ async function request(path, { method = 'GET', body = null, auth = true } = {}) 
     data = null;
   }
   if (!res.ok) {
+    // Force-logout on auth failure: a 401 on a request that DID send a token
+    // means the token is bad / expired / revoked. Clear session and reload
+    // so the user lands on Login instead of staring at a "Token expired"
+    // message in the middle of the app. We DON'T trigger this for unauth'd
+    // requests (login, send-otp) since those legitimately 401 on bad creds.
+    if (res.status === 401 && auth && getToken()) {
+      forceLogoutOnExpiredToken();
+    }
     throw new ApiError(res.status, data || { error: `HTTP ${res.status}` });
   }
   return data;
@@ -190,6 +213,7 @@ export async function downloadAdminCsv(filters = {}) {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
+    if (res.status === 401 && token) forceLogoutOnExpiredToken();
     throw new ApiError(res.status, { error: 'Failed to export CSV' });
   }
   const blob = await res.blob();
