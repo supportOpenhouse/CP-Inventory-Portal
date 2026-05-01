@@ -1,9 +1,18 @@
 """Duplicate check against the properties DB and the submissions table.
 
-Matching sources (both checked, either match blocks):
+Matching sources for an EXACT (perfect-match) block when the CP gave
+tower/unit — only these two count, because they're the only sources
+with tower/unit columns:
   1. properties (ground truth from LSQ + legacy — in Properties DB)
   2. submissions (active CP portal submissions — in app DB,
      status NOT IN ('Price Rejected', 'Duplicate Rejected', 'Unapproved'))
+
+A third source, collated_data (external scrapers like 99acres), has no
+tower/unit columns so it can match at most at society+bhk+floor. It is
+checked and exposed as `collated_match` on the response, but it never
+drives an exact-match block on its own — that would falsely flag the
+CP's specific unit just because some other unit on the same floor was
+seen by a scraper.
 
 Matching fields:
   society (required) + bhk + floor + optionally tower + optionally unit_no
@@ -365,25 +374,11 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         "submissions_match": True,  # ← submissions_hit drove this block
                     }
 
-                # External-scraper match (99acres etc.) — collated_data has no tower/unit,
-                # so this match is at society+bhk+floor only. Pessimistically blocks:
-                # a scraped listing on the same floor could be the same unit.
-                if collated_match_flag:
-                    rm_info = _fetch_rm(city, cp_id=cp_id)
-                    return {
-                        "match_level": "exact",
-                        "block": True,
-                        "banner_title": "This unit is already\nwith Openhouse",
-                        "message": (
-                            f"This unit ({unit_label}) is already with Openhouse. "
-                            f"Please contact your Openhouse representative."
-                        ),
-                        "details": {**hard_block_details, **rm_info},
-                        "collated_match": True,
-                        "submissions_match": False,
-                    }
-
-                # No narrower match in any source — CP proceeds
+                # collated_data has no tower/unit columns, so it can never confirm
+                # a unit-level match. When the CP has given tower/unit, a
+                # society+bhk+floor hit in collated is informational at best — we
+                # do NOT promote it to an exact/perfect match. The flag is still
+                # surfaced on the response so admin tooling can see it if needed.
                 result = _no_match()
                 result["collated_match"] = collated_match_flag
                 result["submissions_match"] = False

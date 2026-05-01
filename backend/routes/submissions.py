@@ -133,21 +133,17 @@ def create_submission():
     has_submissions_match = bool(dup.get("submissions_match"))
 
     # Status logic:
-    #   - Perfect match           → Duplicate Rejected (admin sees red card; CP saw 409 + Contact RM)
-    #   - Unit-less + collated    → Unapproved (admin reviews potential dup)
-    #   - Unit-less + submissions → Unapproved (admin reviews potential dup; new May 2026 signal)
-    #   - Unit-less + clean       → Submitted (auto-approved, goes straight into pipeline)
-    #   - Normal submit           → Submitted (existing default)
-    #   - force_create on weak/collated dup (existing "Add anyway" path) → Unapproved
+    #   - Perfect match → Duplicate Rejected (admin sees red card; CP saw 409 + Contact RM)
+    #   - Unit-less     → Unapproved (always — CP didn't give tower/unit, so admin
+    #                                 must verify before the listing enters the pipeline,
+    #                                 even when no partial match was found)
+    #   - Normal submit → Submitted by default; force_create on a weak/collated dup
+    #                     (the legacy "Add anyway" path) lands in Unapproved
     force_create = bool(data.get("force_create"))
     if is_perfect_match:
         initial_status = "Duplicate Rejected"
     elif is_unit_less:
-        initial_status = (
-            "Unapproved"
-            if (has_collated_match or has_submissions_match)
-            else "Submitted"
-        )
+        initial_status = "Unapproved"
     else:
         # Normal flow with unit details: weak/collated dups go to Unapproved if force_create,
         # else Submitted. Note we still 409 on perfect match (handled above).
@@ -255,11 +251,10 @@ def create_submission():
             "public_id": public_id,
         }), 409
 
-    if is_unit_less and (has_collated_match or has_submissions_match):
-        message = "Unit submitted for admin review"
-    elif is_unit_less:
-        message = "Unit submitted for evaluation"
-    elif initial_status == "Unapproved":
+    # Message follows status: anything in Unapproved (which now includes every
+    # unit-less submission, with or without a partial match) tells the CP that
+    # admin review is pending; everything else gets the standard evaluation copy.
+    if initial_status == "Unapproved":
         message = "Unit submitted for admin review"
     else:
         message = "Unit submitted for evaluation"

@@ -415,13 +415,34 @@ def _sync_unit_details_from_properties() -> int:
         return 0
 
 
-def _list_submissions_core():
-    conn = get_app_conn()
-    try:
-        with conn.cursor() as cur:
-            scope_sql, scope_params = _scoped_city_filter(cur)
-            base_sql = f"""
-                SELECT
+def _list_submissions_core(slim: bool = False):
+    """Run the filtered admin-board query.
+
+    `slim=True` returns only the columns the Board/Table cards (and bulk
+    modals) actually render — the side panel re-fetches the full row via
+    `get_submission`. This halves the payload on large boards.
+    `slim=False` (default) keeps the full column set for callers that need
+    everything (CSV export).
+    """
+    if slim:
+        select_clause = """
+                    s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
+                    s.sqft, s.bhk,
+                    s.asking_price, s.seller_name,
+                    s.status, s.submitted_at,
+                    s.weak_match, s.collated_match, s.submissions_match,
+                    s.deleted_at, s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
+                    s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
+                    s.submitted_by_name,
+                    c.name AS city,
+                    cp.id AS cp_id,
+                    cp.cp_code, cp.name AS cp_name,
+                    rm.name AS assigned_rm_name,
+                    listing_rm.name AS listing_rm_name,
+                    acq.acq_price_lakhs, acq.acq_sqft
+        """
+    else:
+        select_clause = """
                     s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
                     s.sqft, s.bhk, s.furnishing, s.occupancy_status,
                     s.parking, s.exit_facing, s.balcony_facing, s.balcony_view,
@@ -439,6 +460,14 @@ def _list_submissions_core():
                     rm.name AS assigned_rm_name,
                     listing_rm.name AS listing_rm_name,
                     acq.acq_price_lakhs, acq.acq_sqft
+        """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            scope_sql, scope_params = _scoped_city_filter(cur)
+            base_sql = f"""
+                SELECT
+                    {select_clause}
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
@@ -545,7 +574,9 @@ def list_submissions():
     # forms_uid — field execs register the actual unit details on-site and
     # properties is the authoritative source after a visit. Always overwrites.
     _sync_unit_details_from_properties()
-    subs = _list_submissions_core()
+    # Slim payload: only the columns Board/Table cards (and bulk modals)
+    # actually render. The side panel re-fetches the full row on click.
+    subs = _list_submissions_core(slim=True)
     counts = _stage_counts()
     return jsonify({"submissions": subs, "counts": counts}), 200
 
@@ -2428,14 +2459,14 @@ def create_submission_on_behalf():
     has_submissions_match = bool(dup.get("submissions_match"))
     force_create = bool(data.get("force_create"))
 
+    # Status logic mirrors the CP-side flow in routes/submissions.py:
+    #   - Perfect match → Duplicate Rejected
+    #   - Unit-less     → Unapproved (always; no tower/unit means admin must verify)
+    #   - Otherwise     → Submitted, unless force_create is set on a blocked dup
     if is_perfect_match:
         initial_status = "Duplicate Rejected"
     elif is_unit_less:
-        initial_status = (
-            "Unapproved"
-            if (has_collated_match or has_submissions_match)
-            else "Submitted"
-        )
+        initial_status = "Unapproved"
     else:
         initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
 
