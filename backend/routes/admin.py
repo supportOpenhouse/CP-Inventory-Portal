@@ -3114,20 +3114,36 @@ def list_external_inventory():
         finally:
             put_props_conn(pconn)
 
-    # Server-side sort by chosen column. None values sink to the bottom in
-    # ascending sort, top in descending — symmetric with the existing date
-    # behaviour. The tuple (is_null, value) does this trick.
+    # Server-side sort by chosen column.
+    #
+    # Special handling:
+    #  - DATES are mixed: collated_data.posting_date is a DATE (isoformat
+    #    "YYYY-MM-DD"), properties.schedule_submitted_at is a TIMESTAMPTZ
+    #    (isoformat "YYYY-MM-DDTHH:MM:SS+00:00"). Compare just the first 10
+    #    characters so a same-day bare-date and timestamp sort together
+    #    (and so the lexicographic order genuinely reflects calendar order).
+    #  - NULLS always sink to the bottom regardless of direction. We do
+    #    this by partitioning before sort — using `reverse=True` inverts
+    #    the entire list, which would have floated nulls to the top.
     is_str = SORTABLE_COLUMNS[sort_col]["is_str"]
+
+    def _is_empty(v):
+        return v is None or (isinstance(v, str) and not v.strip())
 
     def _key(r):
         v = r.get(sort_col)
-        if v is None:
-            return (1, "" if is_str else 0)
+        if sort_col == "date":
+            return str(v)[:10]   # YYYY-MM-DD only — strips any time/TZ suffix
         if is_str:
-            return (0, str(v).lower())
-        return (0, v)
+            return str(v).lower()
+        return v
 
-    rows.sort(key=_key, reverse=(direction == "desc"))
+    non_null = [r for r in rows if not _is_empty(r.get(sort_col))]
+    null_rows = [r for r in rows if     _is_empty(r.get(sort_col))]
+    non_null.sort(key=_key)
+    if direction == "desc":
+        non_null.reverse()
+    rows = non_null + null_rows
 
     total = len(rows)
     start = (page - 1) * page_size

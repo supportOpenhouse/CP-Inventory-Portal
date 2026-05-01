@@ -7,6 +7,26 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — Date sort fix on OH Properties
+
+### Fixed
+- **Date column sort wasn't reflecting calendar order.** Two bugs:
+  - `collated_data.posting_date` is a `DATE` (ISO `YYYY-MM-DD`),
+    `properties.schedule_submitted_at` is `TIMESTAMPTZ` (ISO
+    `YYYY-MM-DDTHH:MM:SS+TZ`). Lexicographic sort of the raw ISO
+    strings put the bare-date and the timestamped same-day row in
+    a confusing order. Now the sort key for the date column
+    truncates to the first 10 chars (`YYYY-MM-DD`), so same-day
+    rows sort together regardless of which source they came from.
+  - The previous `(is_null, value)` tuple key + `reverse=True`
+    floated null-date rows to the **top** in descending order.
+    Switched to partitioning the list before sort: non-null rows
+    sorted (then reversed for desc), null rows always appended at
+    the end. Both directions now show real data first, then nulls.
+
+  Verified empirically: asc → 2022-12-05 first; desc → 2026-05-01
+  first, consistently.
+
 ## [2026-05-01] — OH Properties: per-column sort gating + actually-frozen header
 
 ### Fixed
