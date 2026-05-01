@@ -24,17 +24,17 @@ const FILTER_ROW_HEIGHT   = 60;   // city / source / bhk / floor / area / date i
 const HEADERS_TOP         = HEADER_HEIGHT + SEARCH_ROW_HEIGHT + FILTER_ROW_HEIGHT;
 
 const COLUMNS = [
-  { key: 'type',    label: 'Type'        },
-  { key: 'id',      label: 'ID'          },
-  { key: 'source',  label: 'Source'      },
-  { key: 'society', label: 'Society'     },
-  { key: 'city',    label: 'City'        },
-  { key: 'bhk',     label: 'BHK'         },
-  { key: 'floor',   label: 'Floor'       },
-  { key: 'tower',   label: 'Tower'       },
-  { key: 'unit_no', label: 'Unit'        },
-  { key: 'area',    label: 'Area (sqft)', align: 'right' },
-  { key: 'date',    label: 'Date'        },
+  { key: 'type',    label: 'Type',       sortable: false },
+  { key: 'id',      label: 'ID',         sortable: false },
+  { key: 'source',  label: 'Source',     sortable: false },
+  { key: 'society', label: 'Society',    sortable: false },
+  { key: 'city',    label: 'City',       sortable: true  },
+  { key: 'bhk',     label: 'BHK',        sortable: true  },
+  { key: 'floor',   label: 'Floor',      sortable: true  },
+  { key: 'tower',   label: 'Tower',      sortable: false },
+  { key: 'unit_no', label: 'Unit',       sortable: false },
+  { key: 'area',    label: 'Area (sqft)', sortable: true, align: 'right' },
+  { key: 'date',    label: 'Date',       sortable: true  },
 ];
 
 const DATE_PRESETS = ['All', 'Yesterday', 'This Week', 'This Month', 'Custom'];
@@ -157,7 +157,8 @@ export default function ExternalInventory({ onClose }) {
       setSortDir(col === 'date' || col === 'area' ? 'desc' : 'asc');
     }
   };
-  const sortIcon = (col) => {
+  const sortIcon = (col, isSortable) => {
+    if (!isSortable) return '';
     if (sortCol !== col) return ' ⇅';
     return sortDir === 'asc' ? ' ▲' : ' ▼';
   };
@@ -328,27 +329,28 @@ export default function ExternalInventory({ onClose }) {
         </div>
       )}
 
-      {/* Table — NO overflow wrapper; that breaks sticky.
-          Each <th> is sticky individually because <thead> sticky doesn't
-          work reliably across browsers when nested. */}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff' }}>
+      {/* Table — borderCollapse MUST be 'separate' for sticky <th> to work
+          in Chrome/Firefox. With 'collapse' the borders are shared between
+          th and td, which prevents the th from positioning independently.
+          Row separators are therefore moved from <tr> to <td>. */}
+      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13, background: '#fff' }}>
         <thead>
           <tr>
             {COLUMNS.map((c) => (
               <th
                 key={c.key}
-                onClick={() => onSort(c.key)}
+                onClick={c.sortable ? () => onSort(c.key) : undefined}
                 style={{
                   ...thStyle,
                   textAlign: c.align || 'left',
-                  cursor: 'pointer',
+                  cursor: c.sortable ? 'pointer' : 'default',
                   userSelect: 'none',
-                  background: sortCol === c.key ? '#FFEEE0' : '#FAFAF8',
-                  color: sortCol === c.key ? '#FF6B2B' : '#999',
+                  background: (c.sortable && sortCol === c.key) ? '#FFEEE0' : '#FAFAF8',
+                  color:      (c.sortable && sortCol === c.key) ? '#FF6B2B' : '#999',
                 }}
-                title={`Sort by ${c.label}`}
+                title={c.sortable ? `Sort by ${c.label}` : undefined}
               >
-                {c.label}{sortIcon(c.key)}
+                {c.label}{sortIcon(c.key, c.sortable)}
               </th>
             ))}
           </tr>
@@ -356,13 +358,13 @@ export default function ExternalInventory({ onClose }) {
         <tbody>
           {data.results.length === 0 && !loading ? (
             <tr>
-              <td colSpan={COLUMNS.length} style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+              <td colSpan={COLUMNS.length} style={{ ...tdStyle, padding: 40, textAlign: 'center', color: '#999', borderBottom: 0 }}>
                 No OH Properties match your filters.
               </td>
             </tr>
           ) : (
             data.results.map((r, i) => (
-              <tr key={`${r.type}-${r.id}-${i}`} style={{ borderBottom: '1px solid #F3F2EE' }}>
+              <tr key={`${r.type}-${r.id}-${i}`}>
                 <td style={tdStyle}>
                   <span style={{
                     display: 'inline-block',
@@ -461,7 +463,13 @@ const thStyle = {
   zIndex: 10,
   background: '#FAFAF8',
 };
-const tdStyle = { padding: '10px 14px', verticalAlign: 'top' };
+// Row separator on td (not tr) because borderCollapse is 'separate' for the
+// sticky thead to work — borders on tr don't render in that mode.
+const tdStyle = {
+  padding: '10px 14px',
+  verticalAlign: 'top',
+  borderBottom: '1px solid #F3F2EE',
+};
 function pagBtn(disabled) {
   return {
     padding: '6px 14px',

@@ -7,6 +7,25 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — OH Properties: per-column sort gating + actually-frozen header
+
+### Fixed
+- **Header row was still not freezing.** Earlier fix removed the
+  outer overflow wrapper, but `borderCollapse: collapse` on the table
+  itself prevents `position: sticky` on `<th>` from working in
+  Chrome/Firefox (the borders are shared between `<th>` and `<td>`
+  cells, which prevents independent positioning). Switched to
+  `borderCollapse: separate` + `borderSpacing: 0`. Row separator
+  borders moved from `<tr>` (don't render under `separate`) to
+  `<td>` so the visual is unchanged. Header row now stays at top
+  while body scrolls.
+
+### Changed
+- **Sortable columns are now an explicit per-column flag.** Only
+  `City`, `BHK`, `Floor`, `Area (sqft)`, and `Date` are sortable.
+  `Type`, `ID`, `Source`, `Society`, `Tower`, and `Unit` are
+  display-only — no click cursor, no sort arrow, no orange highlight.
+
 ## [2026-05-01] — OH Properties: filters + column sort + frozen-header fix
 
 ### Added
