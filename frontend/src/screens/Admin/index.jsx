@@ -11,6 +11,7 @@ import BulkScheduleVisitModal from './BulkScheduleVisitModal';
 import AddInventoryOnBehalf from './AddInventoryOnBehalf';
 import BulkReassignRmModal from './BulkReassignRmModal';
 import ExternalInventory from './ExternalInventory';
+import AdminPanel from './AdminPanel';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
@@ -43,6 +44,7 @@ export default function Admin() {
   const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
   const [addingInventory, setAddingInventory] = useState(false);
   const [externalInventoryOpen, setExternalInventoryOpen] = useState(false);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
 
   // Reset window scroll whenever the user enters or leaves a full-screen
   // subview (Add Inventory on Behalf, OH Properties). Without this, the
@@ -269,6 +271,16 @@ export default function Admin() {
               title="View OH Properties (collated_data + properties)"
             >
               📂 OH Properties
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className="filter-toggle"
+              style={{ borderColor: '#1a1a2e', color: '#1a1a2e' }}
+              onClick={() => setAdminPanelOpen(true)}
+              title="Manage staff users, permissions, force-logout"
+            >
+              ⚙ Admin Panel
             </button>
           )}
           <div className="view-toggle">
@@ -503,6 +515,10 @@ export default function Admin() {
             await reload();
           }}
         />
+      )}
+
+      {adminPanelOpen && (
+        <AdminPanel onClose={() => setAdminPanelOpen(false)} />
       )}
     </div>
   );

@@ -7,6 +7,67 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — Admin Panel: staff-user management + force logout + OH-Properties gate
+
+### Added
+- **Admin Panel modal** (admin-only, `⚙ Admin Panel` button in the
+  admin toolbar). Manages staff users — RMs, Managers, Admins. CPs are
+  not part of this panel; they have their own onboarding flow.
+
+  Capabilities:
+  - **Add user** — name + 10-digit phone + role (`RM` / `Manager` /
+    `Admin`) + optional email. Phone uniqueness enforced per-table.
+    `RM` and `Manager` go into `rms`; `Admin` goes into `channel_partners`
+    with `is_admin=TRUE`.
+  - **Change role** within the same table — `RM ↔ Manager` flips
+    `rms.is_manager`. Moves between Admin and RM/Manager are rejected
+    (different tables); the UI surfaces an alert telling the admin to
+    Remove + re-add.
+  - **OH Properties access toggle** — `can_see_oh_properties` per user.
+    `GET /api/admin/external-inventory` now 403s when this is FALSE.
+  - **Deactivate / Re-activate** — toggles `is_active`.
+  - **Force logout per user** — sets `force_logout_at = NOW()`.
+  - **Force logout all** — sets it on every active staff user (admins
+    + RMs/managers). The triggering admin is included; their next
+    request 401s and the existing force-logout-on-401 frontend handler
+    redirects them to login. Confirmation prompt prevents accidental
+    fires.
+
+  **Backend** ([backend/routes/admin.py](backend/routes/admin.py)):
+  ```
+  GET    /api/admin/staff-users
+  POST   /api/admin/staff-users
+  PATCH  /api/admin/staff-users/<source>/<id>     ('cp' | 'rm')
+  POST   /api/admin/staff-users/<source>/<id>/force-logout
+  POST   /api/admin/staff-users/force-logout-all
+  ```
+  All `@require_staff` + `@require_admin_role`.
+
+### Changed
+- **JWTs now include `iat`** (issued-at). The auth middleware
+  ([backend/auth.py](backend/auth.py)) compares it against the user's
+  `force_logout_at` on every request and rejects with `401 Session
+  ended by admin` if the token was issued before that timestamp. The
+  frontend's existing 401 handler then clears the session and reloads,
+  so the user lands on Login.
+
+### Schema
+- **Migration** [`backend/migrations/2026-05-01-admin-panel.sql`](backend/migrations/2026-05-01-admin-panel.sql)
+  adds two columns to each of `channel_partners` and `rms`:
+  - `force_logout_at TIMESTAMPTZ NULL`
+  - `can_see_oh_properties BOOLEAN NOT NULL DEFAULT TRUE`
+
+  Idempotent (`ADD COLUMN IF NOT EXISTS`). Existing rows default to
+  `can_see_oh_properties = TRUE` so nobody loses access at deploy time.
+  Must run on prod App DB **before** this code ships, per Convention #2.
+
+### Notes
+- Auth's force-logout check fails open if the DB is unreachable —
+  preferable to kicking everyone out on a transient hiccup.
+- Force-logout-all is intentionally global (including the admin who
+  pressed it). If you need a "log everyone else out" variant, that's
+  a separate endpoint we can add.
+
 ## [2026-05-01] — Admin: scroll-to-top when entering/leaving subviews
 
 ### Fixed

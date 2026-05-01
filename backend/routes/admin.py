@@ -3066,6 +3066,14 @@ def list_external_inventory():
       page        1-based (default 1)
       page_size   default 100, capped at 500
     """
+    # Per-user gate: admins can disable a staff user's access to OH Properties
+    # via the admin panel (PATCH /staff-users/.../can_see_oh_properties=false).
+    if not _user_can_see_oh_properties():
+        return jsonify({
+            "error": "Access to OH Properties is disabled for your account. "
+                     "Contact an admin if you need it.",
+        }), 403
+
     args = request.args
     q       = (args.get("q") or "").strip()
     city    = (args.get("city") or "").strip() or None
@@ -3312,3 +3320,335 @@ def list_external_inventory():
         "sort":      sort_col,
         "direction": direction,
     }), 200
+
+
+# ============================================================
+# Admin Panel: staff-user management
+# ============================================================
+#
+# A small admin-only surface to manage staff users (RMs / managers / admins),
+# their per-feature permissions, and force-logout. Backed by:
+#   - submissions / channel_partners / rms tables (existing)
+#   - `force_logout_at` and `can_see_oh_properties` columns added in
+#     migrations/2026-05-01-admin-panel.sql
+#
+# CPs are NOT shown here — they have their own onboarding flow (OTP signup)
+# and aren't part of "staff".
+# ============================================================
+
+
+def _user_can_see_oh_properties() -> bool:
+    """Look up the calling user's can_see_oh_properties flag. Defaults
+    to TRUE (the column has DEFAULT TRUE) so no row should ever lack it.
+    """
+    role = g.user.get("role", "cp")
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            if role in ("rm", "manager"):
+                rm_id = g.user.get("rm_id")
+                if not rm_id:
+                    return False
+                cur.execute(
+                    "SELECT can_see_oh_properties FROM rms WHERE id = %s",
+                    (rm_id,),
+                )
+            else:
+                cp_id = g.user.get("cp_id")
+                if not cp_id:
+                    return False
+                cur.execute(
+                    "SELECT can_see_oh_properties FROM channel_partners WHERE id = %s",
+                    (cp_id,),
+                )
+            row = cur.fetchone()
+            return bool(row and row.get("can_see_oh_properties"))
+    finally:
+        put_app_conn(conn)
+
+
+@bp.get("/staff-users")
+@require_staff
+@require_admin_role
+def list_staff_users():
+    """All staff users (admins + RMs/managers), merged into one list.
+
+    Each row carries a `source` field so the frontend can route subsequent
+    PATCH/DELETE/force-logout calls to the right table:
+      source='cp' -> channel_partners (admins, is_admin=TRUE)
+      source='rm' -> rms              (RMs and managers)
+    """
+    rows = []
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, name, phone, COALESCE(is_active, TRUE) AS is_active,
+                       COALESCE(can_see_oh_properties, TRUE) AS can_see_oh_properties,
+                       force_logout_at, created_at
+                FROM channel_partners
+                WHERE COALESCE(is_admin, FALSE) = TRUE
+                ORDER BY id
+            """)
+            for r in cur.fetchall():
+                rows.append({
+                    "source":   "cp",
+                    "id":       r["id"],
+                    "name":     r.get("name") or "",
+                    "phone":    r.get("phone") or "",
+                    "email":    None,
+                    "role":     "admin",
+                    "is_active": bool(r.get("is_active")),
+                    "can_see_oh_properties": bool(r.get("can_see_oh_properties")),
+                    "force_logout_at": (
+                        r["force_logout_at"].isoformat()
+                        if r.get("force_logout_at") else None
+                    ),
+                    "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+                })
+            cur.execute("""
+                SELECT id, name, phone, email,
+                       COALESCE(is_active, TRUE) AS is_active,
+                       COALESCE(is_manager, FALSE) AS is_manager,
+                       COALESCE(can_see_oh_properties, TRUE) AS can_see_oh_properties,
+                       force_logout_at, created_at
+                FROM rms
+                ORDER BY id
+            """)
+            for r in cur.fetchall():
+                rows.append({
+                    "source":   "rm",
+                    "id":       r["id"],
+                    "name":     r.get("name") or "",
+                    "phone":    r.get("phone") or "",
+                    "email":    r.get("email"),
+                    "role":     "manager" if r.get("is_manager") else "rm",
+                    "is_active": bool(r.get("is_active")),
+                    "can_see_oh_properties": bool(r.get("can_see_oh_properties")),
+                    "force_logout_at": (
+                        r["force_logout_at"].isoformat()
+                        if r.get("force_logout_at") else None
+                    ),
+                    "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+                })
+    finally:
+        put_app_conn(conn)
+
+    rows.sort(key=lambda r: (not r["is_active"], r["role"], r["name"].lower()))
+    return jsonify({"users": rows}), 200
+
+
+@bp.post("/staff-users")
+@require_staff
+@require_admin_role
+def add_staff_user():
+    """Add a new staff user.
+
+    Body:
+      { "name": str, "phone": str, "role": "admin"|"rm"|"manager", "email"?: str }
+
+    Phone is normalised to 10 digits; uniqueness is enforced per-table.
+    """
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    phone_raw = (data.get("phone") or "").strip()
+    role = (data.get("role") or "").strip().lower()
+    email = (data.get("email") or "").strip() or None
+
+    phone = _normalize_phone_to_10_digits(phone_raw)
+    errors = []
+    if not name:
+        errors.append("name is required")
+    if not phone or len(phone) != 10 or phone.startswith("0"):
+        errors.append("phone must be a valid 10-digit number")
+    if role not in ("admin", "rm", "manager"):
+        errors.append("role must be one of admin / rm / manager")
+    if errors:
+        return jsonify({"error": "Invalid request", "details": errors}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            if role == "admin":
+                # Channel-partner row with is_admin=TRUE.
+                cur.execute("""
+                    SELECT id FROM channel_partners
+                    WHERE RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 10) = %s
+                """, (phone,))
+                if cur.fetchone():
+                    return jsonify({
+                        "error": "A user with that phone already exists in channel_partners.",
+                    }), 409
+                # Generate a cp_code; admins use their phone-suffix or an ADMIN-XXXX form.
+                # Keeping it simple: ADMIN<6digits-of-phone>.
+                cp_code = f"ADMIN{phone[-6:]}"
+                cur.execute("""
+                    INSERT INTO channel_partners
+                        (cp_code, name, phone, role, is_admin, is_active)
+                    VALUES (%s, %s, %s, 'admin', TRUE, TRUE)
+                    RETURNING id
+                """, (cp_code, name, phone))
+                new_id = cur.fetchone()["id"]
+                source = "cp"
+            else:
+                # RM / Manager — both live in `rms` with is_manager flag.
+                cur.execute("""
+                    SELECT id FROM rms
+                    WHERE RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 10) = %s
+                """, (phone,))
+                if cur.fetchone():
+                    return jsonify({
+                        "error": "A user with that phone already exists in rms.",
+                    }), 409
+                # Per repo convention, rms.phone has '+91 ' prefix with space.
+                stored_phone = f"+91 {phone}"
+                cur.execute("""
+                    INSERT INTO rms (name, phone, email, is_manager, is_active)
+                    VALUES (%s, %s, %s, %s, TRUE)
+                    RETURNING id
+                """, (name, stored_phone, email, role == "manager"))
+                new_id = cur.fetchone()["id"]
+                source = "rm"
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "user": {
+            "source": source,
+            "id": new_id,
+            "name": name,
+            "phone": phone,
+            "email": email,
+            "role": role,
+            "is_active": True,
+            "can_see_oh_properties": True,
+        },
+    }), 201
+
+
+def _staff_table(source):
+    """Returns the SQL table name for a given source ('cp' or 'rm').
+    Raises ValueError otherwise."""
+    if source == "cp":
+        return "channel_partners"
+    if source == "rm":
+        return "rms"
+    raise ValueError(f"unknown staff source: {source!r}")
+
+
+@bp.patch("/staff-users/<source>/<int:user_id>")
+@require_staff
+@require_admin_role
+def patch_staff_user(source, user_id):
+    """Update a single staff user's permissions / role / activeness.
+
+    Body (all fields optional):
+      role                   -> 'admin'|'rm'|'manager'  (only same-table moves
+                                allowed: rm <-> manager. admin moves rejected.)
+      can_see_oh_properties  -> bool
+      is_active              -> bool
+    """
+    try:
+        table = _staff_table(source)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    data = request.get_json(silent=True) or {}
+    sets, params = [], []
+
+    if "can_see_oh_properties" in data:
+        sets.append("can_see_oh_properties = %s")
+        params.append(bool(data["can_see_oh_properties"]))
+    if "is_active" in data:
+        sets.append("is_active = %s")
+        params.append(bool(data["is_active"]))
+    if "role" in data:
+        new_role = (data["role"] or "").strip().lower()
+        if source == "rm" and new_role in ("rm", "manager"):
+            sets.append("is_manager = %s")
+            params.append(new_role == "manager")
+        elif source == "cp" and new_role == "admin":
+            pass  # already admin in channel_partners; nothing to do
+        else:
+            return jsonify({
+                "error": (
+                    "Role moves between the channel_partners (admin) and rms "
+                    "(rm/manager) tables aren't supported. Remove + re-add."
+                ),
+            }), 400
+
+    if not sets:
+        return jsonify({"error": "No supported fields provided"}), 400
+
+    params.append(user_id)
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {table} SET {', '.join(sets)} WHERE id = %s RETURNING id",
+                params,
+            )
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "User not found"}), 404
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+    return jsonify({"ok": True}), 200
+
+
+@bp.post("/staff-users/<source>/<int:user_id>/force-logout")
+@require_staff
+@require_admin_role
+def force_logout_one(source, user_id):
+    """Set force_logout_at = NOW() on a single user. Auth middleware will
+    reject any token whose `iat` is older."""
+    try:
+        table = _staff_table(source)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {table} SET force_logout_at = NOW() WHERE id = %s RETURNING id",
+                (user_id,),
+            )
+            if not cur.fetchone():
+                return jsonify({"error": "User not found"}), 404
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+    return jsonify({"ok": True}), 200
+
+
+@bp.post("/staff-users/force-logout-all")
+@require_staff
+@require_admin_role
+def force_logout_all():
+    """Force-logout every active staff user (RMs/managers + admins). The
+    admin who triggered this is INCLUDED — they'll be kicked back to login
+    on their next request, same as everyone else. That's intentional: a
+    'log everyone out' button should also affect the caller."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE channel_partners SET force_logout_at = NOW()
+                WHERE COALESCE(is_admin, FALSE) = TRUE
+                  AND COALESCE(is_active, TRUE) = TRUE
+            """)
+            cp_count = cur.rowcount
+            cur.execute("""
+                UPDATE rms SET force_logout_at = NOW()
+                WHERE COALESCE(is_active, TRUE) = TRUE
+            """)
+            rm_count = cur.rowcount
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+    log.info("[force_logout_all] admins=%d rms=%d", cp_count, rm_count)
+    return jsonify({"ok": True, "logged_out_count": cp_count + rm_count}), 200

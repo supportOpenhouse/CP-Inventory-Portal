@@ -203,6 +203,19 @@ export const api = {
   adminListExternalInventory: (filters = {}) =>
     request(`/admin/external-inventory${buildQuery(filters)}`),
 
+  // Admin Panel — staff user management (admin only).
+  adminListStaffUsers: () => request('/admin/staff-users'),
+  // body: { name, phone, role: 'admin'|'rm'|'manager', email? }
+  adminAddStaffUser: (payload) =>
+    request('/admin/staff-users', { method: 'POST', body: payload }),
+  // source: 'cp' | 'rm'.  fields: { role?, can_see_oh_properties?, is_active? }
+  adminPatchStaffUser: (source, id, fields) =>
+    request(`/admin/staff-users/${source}/${id}`, { method: 'PATCH', body: fields }),
+  adminForceLogoutUser: (source, id) =>
+    request(`/admin/staff-users/${source}/${id}/force-logout`, { method: 'POST' }),
+  adminForceLogoutAll: () =>
+    request('/admin/staff-users/force-logout-all', { method: 'POST' }),
+
   // Health
   health: () => request('/health', { auth: false }),
 };

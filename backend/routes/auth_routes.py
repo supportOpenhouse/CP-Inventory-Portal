@@ -158,6 +158,7 @@ def _generate_rm_token(rm: dict) -> str:
     import jwt
     from datetime import datetime, timedelta, timezone
     is_mgr = bool(rm.get("is_manager"))
+    now = datetime.now(timezone.utc)
     payload = {
         "rm_id": rm["id"],
         "cp_code": f"RM{rm['id']:04d}",
@@ -167,7 +168,8 @@ def _generate_rm_token(rm: dict) -> str:
         "is_manager": is_mgr,
         "manager_id": rm.get("manager_id"),
         "city_id": rm.get("city_id"),
-        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+        "iat": int(now.timestamp()),  # for force-logout check in auth middleware
+        "exp": now + timedelta(hours=24),
     }
     return jwt.encode(payload, Config.JWT_SECRET, algorithm="HS256")
 
