@@ -10,9 +10,10 @@ Each entry corresponds to one production push (one or more bundled commits).
 ## [2026-05-01] — Admin Panel: staff-user management + force logout + OH-Properties gate
 
 ### Added
-- **Admin Panel modal** (admin-only, `⚙ Admin Panel` button in the
-  admin toolbar). Manages staff users — RMs, Managers, Admins. CPs are
-  not part of this panel; they have their own onboarding flow.
+- **Admin Panel modal** (admin-only, `⚙` icon button in the topbar,
+  immediately left of the logout button). Manages staff users — RMs,
+  Managers, Admins. CPs are not part of this panel; they have their
+  own onboarding flow.
 
   Capabilities:
   - **Add user** — name + 10-digit phone + role (`RM` / `Manager` /
@@ -25,7 +26,9 @@ Each entry corresponds to one production push (one or more bundled commits).
     Remove + re-add.
   - **OH Properties access toggle** — `can_see_oh_properties` per user.
     `GET /api/admin/external-inventory` now 403s when this is FALSE.
-  - **Deactivate / Re-activate** — toggles `is_active`.
+  - **Deactivate / Re-activate** — toggles `is_active`. Action button
+    is labelled "Deactivate" (not "Remove") since the row is preserved
+    for audit and can be reactivated.
   - **Force logout per user** — sets `force_logout_at = NOW()`.
   - **Force logout all** — sets it on every active staff user (admins
     + RMs/managers). The triggering admin is included; their next

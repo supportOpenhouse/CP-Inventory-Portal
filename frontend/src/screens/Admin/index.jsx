@@ -211,10 +211,9 @@ export default function Admin() {
             <button
               className="logout-btn"
               onClick={() => setAdminPanelOpen(true)}
-              title="Manage staff users, permissions, force-logout"
-              style={{ paddingLeft: 12, paddingRight: 12 }}
+              title="Admin Panel — manage staff users, permissions, force-logout"
             >
-              ⚙ Admin
+              ⚙
             </button>
           )}
           <button className="logout-btn" onClick={logout} title="Log out">⏻</button>

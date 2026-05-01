@@ -371,7 +371,7 @@ export default function AdminPanel({ onClose }) {
                               border: '1px solid #ddd', background: '#fff', color: '#444',
                               cursor: 'pointer', fontFamily: 'inherit',
                             }}
-                          >Remove</button>
+                          >Deactivate</button>
                         ) : (
                           <button
                             onClick={() => handleReactivate(u)}
