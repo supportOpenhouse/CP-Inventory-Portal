@@ -7,6 +7,29 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — OH Properties: BHK normalisation (collapse "2 BHK" / "2BHK")
+
+### Fixed
+- **BHK dropdown showed duplicate entries** like `2 BHK` and `2BHK`,
+  `3 BHK` and `3BHK`, etc. The underlying `collated_data.bedrooms` and
+  `properties.configuration` columns store both spaced and unspaced
+  forms inconsistently. Now collapsed:
+  - **Display:** added `_canonical_bhk()` helper that matches
+    `^\s*(\d+(?:\.\d+)?)\s*BHK\s*$` (case-insensitive) and rewrites
+    to a single canonical form `<n> BHK`. Strings that don't match
+    that pattern (e.g. `Studio`) pass through trimmed.
+  - **Facets dropdown:** values from both tables are canonicalised
+    before deduping, so `2 BHK` / `2BHK` collapse into a single
+    `2 BHK` entry. Result: 9 entries (1, 2, 2.5, 3, 3.5, 4, 5, 6, 7 BHK).
+  - **Filter SQL:** `LOWER(REGEXP_REPLACE(<col>, '\s+', '', 'g'))`
+    on both column and param so picking `2 BHK` matches rows storing
+    `2 BHK`, `2BHK`, `2  BHK`, `2bhk`, etc.
+  - **Row output:** `r["bhk"]` in API responses is now the canonical
+    form so the BHK column in the table renders consistently
+    regardless of which spacing the underlying row used.
+
+  Underlying DB values are untouched.
+
 ## [2026-05-01] — OH Properties: facet dropdowns are global (not narrowed by current filters)
 
 ### Fixed

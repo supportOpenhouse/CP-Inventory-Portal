@@ -2923,6 +2923,19 @@ def _canonical_source(s):
     return re.sub(r"-[Ss]craping$", "", s).strip()
 
 
+def _canonical_bhk(s):
+    """Normalize BHK strings so '2 BHK', '2BHK', and '2bhk' all fold to
+    one canonical display: '<n> BHK'. Non-matching strings (e.g.
+    'Studio') are returned trimmed but otherwise unchanged.
+    """
+    if not s:
+        return s
+    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*BHK\s*$", str(s).strip(), re.IGNORECASE)
+    if m:
+        return f"{m.group(1)} BHK"
+    return str(s).strip()
+
+
 def _ext_inventory_global_facets():
     """All distinct sources / BHKs across both tables, regardless of the
     caller's current filters. Memoised for `_EXT_FACETS_TTL_SECONDS` so
@@ -2971,7 +2984,8 @@ def _ext_inventory_global_facets():
             put_props_conn(pc)
 
     sources = sorted({_canonical_source(s) for s in (sources_d + sources_p) if s} - {""})
-    bhks = sorted({(b or "").strip() for b in (bhks_d + bhks_p)} - {""})
+    # Collapse "2 BHK" / "2BHK" / "2bhk" duplicates via _canonical_bhk.
+    bhks = sorted({_canonical_bhk(b) for b in (bhks_d + bhks_p) if b} - {""})
 
     facets = {
         "sources": sources,
@@ -3081,7 +3095,12 @@ def list_external_inventory():
                     )
                     params.append(source)
                 if bhk:
-                    clauses.append("LOWER(TRIM(bedrooms)) = LOWER(TRIM(%s))")
+                    # Normalize whitespace on both sides so "2 BHK" matches
+                    # rows storing "2 BHK", "2BHK", "2  BHK", "2bhk", etc.
+                    clauses.append(
+                        "LOWER(REGEXP_REPLACE(COALESCE(bedrooms, ''), '\\s+', '', 'g')) "
+                        "= LOWER(REGEXP_REPLACE(%s, '\\s+', '', 'g'))"
+                    )
                     params.append(bhk)
                 if floor:
                     clauses.append("LOWER(TRIM(COALESCE(floor, ''))) = LOWER(TRIM(%s))")
@@ -3118,7 +3137,7 @@ def list_external_inventory():
                         "society":  r.get("society"),
                         "city":     r.get("city"),
                         "locality": r.get("locality"),
-                        "bhk":      r.get("bedrooms"),
+                        "bhk":      _canonical_bhk(r.get("bedrooms")),
                         "floor":    r.get("floor"),
                         "tower":    None,
                         "unit_no":  None,
@@ -3147,7 +3166,11 @@ def list_external_inventory():
                     )
                     params.append(source)
                 if bhk:
-                    clauses.append("LOWER(TRIM(configuration)) = LOWER(TRIM(%s))")
+                    # Same whitespace-collapsing as collated_data above.
+                    clauses.append(
+                        "LOWER(REGEXP_REPLACE(COALESCE(configuration, ''), '\\s+', '', 'g')) "
+                        "= LOWER(REGEXP_REPLACE(%s, '\\s+', '', 'g'))"
+                    )
                     params.append(bhk)
                 if floor:
                     # properties.floor is INT; cast both sides to text for match
@@ -3189,7 +3212,7 @@ def list_external_inventory():
                         "society":  r.get("society_name"),
                         "city":     r.get("city"),
                         "locality": r.get("locality"),
-                        "bhk":      r.get("configuration"),
+                        "bhk":      _canonical_bhk(r.get("configuration")),
                         "floor":    str(r["floor"]) if r.get("floor") is not None else None,
                         "tower":    r.get("tower_no"),
                         "unit_no":  r.get("unit_no"),
