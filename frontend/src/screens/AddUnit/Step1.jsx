@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import { formatPrice } from '../../format';
 import DuplicateCard from './DuplicateCard';
 import ForceCreateWarning from './ForceCreateWarning';
 import NoUnitDetailsWarning from './NoUnitDetailsWarning';
@@ -19,13 +18,7 @@ const FLOOR_OPTIONS = [
   ...Array.from({ length: 50 }, (_, i) => String(i + 1)),
 ];
 
-function lakhsToRupees(lakhs) {
-  const n = parseFloat(lakhs);
-  if (!isFinite(n)) return null;
-  return Math.round(n * 100000);
-}
-
-export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'cp', targetCp = null }) {
+export default function Step1({ form, setForm, onAdvance, onAbandon, mode = 'cp', targetCp = null }) {
   const { user } = useAuth();
 
   // In staff mode (RM/manager/admin submitting on behalf of a CP), the
@@ -40,12 +33,10 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
   const [searchLoading, setSearchLoading] = useState(false);
   const debouncedSearch = useDebouncedValue(search, 300);
 
-  const [submitting, setSubmitting] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [dupResult, setDupResult] = useState(null);
   const [showForceWarning, setShowForceWarning] = useState(false);
   const [showNoUnitWarning, setShowNoUnitWarning] = useState(false);
-  // If true, bypass dup check + tower/unit (set by NoUnitDetails popup)
-  const [skipMode, setSkipMode] = useState(false);
   const [apiError, setApiError] = useState('');
 
   useEffect(() => {
@@ -88,74 +79,65 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
   };
 
   // ----- validation -----
+  // Step 1 only collects property identification. Pricing/occupancy moved to Step 2.
   const hasBaseRequired =
     !!form.society?.id &&
     !!form.bhk &&
     !!(form.floor && form.floor.trim()) &&
-    !!form.sqft && form.sqft.length > 0 &&
-    !!form.askPrice;
+    !!form.sqft && form.sqft.length > 0;
 
   const hasUnitDetails =
     !!(form.tower && form.tower.trim()) &&
     !!(form.unitNo && form.unitNo.trim());
 
-  const canSubmit = hasBaseRequired && hasUnitDetails && !submitting;
-  const canSubmitWithoutUnit = hasBaseRequired && !submitting;
+  const canContinue = hasBaseRequired && hasUnitDetails && !checking;
+  const canContinueWithoutUnit = hasBaseRequired && !checking;
 
-  const buildPayload = (opts = {}) => ({
-    society_id: form.society.id,
-    society_name: form.society.name,
-    tower: opts.skipUnit ? null : (form.tower || null),
-    unit_no: opts.skipUnit ? null : (form.unitNo || null),
-    floor: form.floor || null,
-    sqft: form.sqft ? parseInt(form.sqft) : null,
-    bhk: form.bhk || null,
-    occupancy_status: form.occupancyStatus || null,
-    asking_price: lakhsToRupees(form.askPrice),
-    force_create: !!opts.forceCreate,
-    skip_unit_details: !!opts.skipUnit,
-  });
+  // Persist the path the user took (force_create / skip_unit_details) on the
+  // form so Step 2's actual submit carries the same flags into createSubmission.
+  const advanceWith = ({ forceCreate = false, skipUnit = false } = {}) => {
+    setForm((f) => ({
+      ...f,
+      forceCreate: !!forceCreate,
+      skipUnitDetails: !!skipUnit,
+    }));
+    onAdvance();
+  };
 
-  // ---------- SUBMIT WITH unit details (runs dup check server-side) ----------
-  const handleSubmit = async ({ forceCreate = false, skipUnit = false } = {}) => {
+  // ---------- CONTINUE WITH unit details — runs dup check ONLY ----------
+  const handleContinue = async () => {
+    if (!canContinue) return;
     setApiError('');
     setDupResult(null);
-    setSubmitting(true);
+    setChecking(true);
     try {
-      const payload = buildPayload({ forceCreate, skipUnit });
-      const result = mode === 'staff'
-        ? await api.adminCreateSubmissionOnBehalf({ ...payload, target_cp_id: targetCp?.id })
-        : await api.createSubmission(payload);
-      // Backend may return 201 but ask the frontend to show a Contact RM
-      // page anyway (e.g. unit-less + collated match — row IS created so admin
-      // sees it, but CP gets a "Similar match" message instead of going back
-      // to the dashboard). DuplicateCard handles the rendering.
-      if (result.show_contact_rm_page && result.duplicate) {
-        setDupResult(result.duplicate);
+      const dup = await api.checkDuplicate({
+        society_id: form.society.id,
+        bhk: form.bhk || null,
+        tower: form.tower || null,
+        unit_no: form.unitNo || null,
+        floor: form.floor || null,
+      });
+      if (dup && dup.block) {
+        setDupResult(dup);
         return;
       }
-      onSubmitted({
-        id: result.submission_id,
-        public_id: result.public_id,
-        status: result.status,
-      });
+      // Clean — clear any prior force_create / skip flags and advance.
+      advanceWith();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && err.data?.duplicate) {
-        setDupResult(err.data.duplicate);
-      } else {
-        setApiError(err instanceof ApiError ? err.message : 'Submission failed. Please try again.');
-      }
+      setApiError(err instanceof ApiError ? err.message : 'Could not check duplicates. Please try again.');
     } finally {
-      setSubmitting(false);
+      setChecking(false);
     }
   };
 
-  // ---------- SUBMIT WITHOUT unit details — opens popup ----------
+  // ---------- CONTINUE WITHOUT unit details — opens popup ----------
   const handleSubmitWithoutUnit = () => setShowNoUnitWarning(true);
   const handleNoUnitContinue = () => {
     setShowNoUnitWarning(false);
-    setSkipMode(true);
-    handleSubmit({ skipUnit: true });
+    // No dup check possible without tower/unit — let the user enter
+    // pricing on Step 2; the create call there carries skip_unit_details=true.
+    advanceWith({ skipUnit: true });
   };
   const handleNoUnitBack = () => setShowNoUnitWarning(false);
 
@@ -168,7 +150,9 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
   const handleForceCreateConfirm = () => {
     setShowForceWarning(false);
     setDupResult(null);
-    handleSubmit({ forceCreate: true });
+    // User chose to override the dup-block — record it on the form so Step 2's
+    // createSubmission posts force_create=true, then advance to pricing.
+    advanceWith({ forceCreate: true });
   };
   const handleForceCreateCancel = () => setShowForceWarning(false);
 
@@ -186,8 +170,6 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
       </div>
     );
   }
-
-  const askPriceRupees = lakhsToRupees(form.askPrice);
 
   // ---------- FORM ----------
   return (
@@ -340,54 +322,6 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
             </div>
           </div>
 
-          {/* Occupancy & Pricing card */}
-          <div className="form-card">
-            <div className="form-card-title">Occupancy & Pricing</div>
-
-            <div className="input-label">Occupancy Status <span className="required-star">*</span></div>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-              {['Vacant', 'Occupied'].map((status) => {
-                const active = form.occupancyStatus === status;
-                return (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => setForm({ ...form, occupancyStatus: status })}
-                    style={{
-                      flex: 1,
-                      padding: '12px 14px',
-                      borderRadius: 10,
-                      border: `1.5px solid ${active ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
-                      background: active ? 'var(--oh-orange-light)' : '#fff',
-                      color: active ? 'var(--oh-orange)' : 'var(--oh-charcoal)',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {status}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="input-label">Asking Price (in lakhs) <span className="required-star">*</span></div>
-            <input
-              className="input-field"
-              inputMode="decimal"
-              placeholder="e.g. 95"
-              value={form.askPrice}
-              onChange={(e) => setForm({ ...form, askPrice: e.target.value.replace(/[^0-9.]/g, '') })}
-            />
-            {askPriceRupees ? (
-              <div className="optional-hint">{formatPrice(askPriceRupees)}</div>
-            ) : (
-              <div className="optional-hint" style={{ color: 'var(--oh-gray)' }}>
-                Enter in lakhs (e.g. 95 = ₹95 lakhs; 150 = ₹1.5 Cr)
-              </div>
-            )}
-          </div>
         </>
       )}
 
@@ -395,13 +329,14 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
 
       {form.society && (
         <div style={{ display: 'flex', gap: 12, marginTop: 20 }}>
-          {/* "Submit without unit details" hidden once both tower AND unit_no are entered —
-              that path becomes pointless since a normal Submit will work. */}
+          {/* "Continue without unit details" hidden once both tower AND unit_no are
+              entered — the normal Continue path runs the dup check and works the
+              same way. */}
           {!hasUnitDetails && (
             <button
               type="button"
               onClick={handleSubmitWithoutUnit}
-              disabled={!canSubmitWithoutUnit}
+              disabled={!canContinueWithoutUnit}
               style={{
                 flex: 1,
                 padding: '14px 16px',
@@ -411,22 +346,22 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
                 color: 'var(--oh-orange)',
                 fontSize: 14,
                 fontWeight: 600,
-                cursor: canSubmitWithoutUnit ? 'pointer' : 'not-allowed',
-                opacity: canSubmitWithoutUnit ? 1 : 0.5,
+                cursor: canContinueWithoutUnit ? 'pointer' : 'not-allowed',
+                opacity: canContinueWithoutUnit ? 1 : 0.5,
                 fontFamily: 'inherit',
               }}
             >
-              Submit without unit details
+              Continue without unit details
             </button>
           )}
           <button
             type="button"
             className="primary-btn"
-            onClick={() => handleSubmit()}
-            disabled={!canSubmit}
+            onClick={handleContinue}
+            disabled={!canContinue}
             style={{ flex: 1, marginTop: 0 }}
           >
-            {submitting ? <><span className="spinner" />Submitting…</> : 'Submit'}
+            {checking ? <><span className="spinner" />Checking…</> : 'Continue'}
           </button>
         </div>
       )}
