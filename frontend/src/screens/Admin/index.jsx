@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, downloadAdminCsv } from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,6 +38,19 @@ export default function Admin() {
   const [counts, setCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Pagination state. The backend returns the top PAGE_SIZE rows of each
+  // stage on the initial load; when the user scrolls a column to the bottom,
+  // BoardView calls loadMoreStage(stage) to fetch the next PAGE_SIZE rows of
+  // *that one stage only*. `loadedByStage` tracks how many rows we currently
+  // have loaded per stage so we know the right OFFSET to send next time.
+  // `loadingByStage` is the per-stage spinner gate (also dedupes rapid
+  // sentinel triggers). `reloadGen` is bumped on every fresh reload so any
+  // in-flight load-more from a stale filter set discards its result.
+  const PAGE_SIZE = 100;
+  const [loadedByStage, setLoadedByStage] = useState({});
+  const [loadingByStage, setLoadingByStage] = useState({});
+  const reloadGen = useRef(0);
   const [selectedId, setSelectedId] = useState(null);
   const [cpHistoryId, setCpHistoryId] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -94,18 +107,86 @@ export default function Admin() {
   }, [city, search, bhk, dateFrom, dateTo, rmFilter, statusFilter]);
 
   const reload = useCallback(async () => {
+    const myGen = ++reloadGen.current;
     setLoading(true);
     setError(null);
     try {
-      const data = await api.adminListSubmissions(effectiveFilters);
-      setSubmissions(data.submissions || []);
+      const data = await api.adminListSubmissions({ ...effectiveFilters, limit: PAGE_SIZE });
+      // If a newer reload (or filter change) has fired while we were waiting,
+      // drop this stale response on the floor.
+      if (myGen !== reloadGen.current) return;
+      const subs = data.submissions || [];
+      setSubmissions(subs);
       setCounts(data.counts || {});
+      // Seed loadedByStage from the response so loadMoreStage knows the
+      // correct starting OFFSET for each stage.
+      const loaded = {};
+      for (const s of subs) {
+        loaded[s.status] = (loaded[s.status] || 0) + 1;
+      }
+      setLoadedByStage(loaded);
+      setLoadingByStage({});
     } catch (err) {
+      if (myGen !== reloadGen.current) return;
       setError(err.message || 'Failed to load');
     } finally {
-      setLoading(false);
+      if (myGen === reloadGen.current) setLoading(false);
     }
   }, [effectiveFilters]);
+
+  // Fetch the next PAGE_SIZE rows of a single stage and append. Called from
+  // BoardView's per-column scroll-to-end sentinel (and TableView's bottom
+  // sentinel when a status filter is active). Skip-counts on the wire so we
+  // don't re-run the COUNT-per-stage aggregate on every scroll trigger —
+  // counts only change when filters change, and that path goes through
+  // reload() above which fetches fresh counts.
+  const loadMoreStage = useCallback(async (stage) => {
+    if (loadingByStage[stage]) return;
+    const loaded = loadedByStage[stage] || 0;
+    const total = counts[stage] || 0;
+    if (loaded >= total) return;
+
+    const myGen = reloadGen.current;
+    setLoadingByStage((m) => ({ ...m, [stage]: true }));
+    try {
+      const data = await api.adminListSubmissions({
+        ...effectiveFilters,
+        status: stage,
+        offset: loaded,
+        limit: PAGE_SIZE,
+        skip_counts: 'true',
+      });
+      // Stale guard: if a reload happened while we were fetching, the
+      // submissions state has been reset and these rows would be junk.
+      if (myGen !== reloadGen.current) return;
+      const newRows = data.submissions || [];
+      if (newRows.length === 0) {
+        // Nothing to append — but mark as fully loaded so we stop re-firing
+        // (defensive: covers the case where counts disagree with reality).
+        setLoadedByStage((m) => ({ ...m, [stage]: total }));
+        return;
+      }
+      setSubmissions((prev) => [...prev, ...newRows]);
+      setLoadedByStage((m) => ({ ...m, [stage]: (m[stage] || 0) + newRows.length }));
+    } catch (err) {
+      // Best-effort: log and let the user retry by scrolling again.
+      // eslint-disable-next-line no-console
+      console.error('[loadMoreStage] failed for', stage, err);
+    } finally {
+      setLoadingByStage((m) => ({ ...m, [stage]: false }));
+    }
+  }, [loadingByStage, loadedByStage, counts, effectiveFilters]);
+
+  // Map of stage → boolean for "are more rows available on the server?"
+  // Used by BoardView/TableView to decide whether to render the sentinel.
+  const hasMoreByStage = useMemo(() => {
+    const m = {};
+    for (const stage of Object.keys(counts)) {
+      if (stage === 'Total') continue;
+      m[stage] = (counts[stage] || 0) > (loadedByStage[stage] || 0);
+    }
+    return m;
+  }, [counts, loadedByStage]);
 
   useEffect(() => {
     let alive = true;
@@ -486,6 +567,9 @@ export default function Admin() {
           selectedIds={selectedIds}
           onToggleSelect={toggleBulkSelect}
           isAdmin={isAdmin} isStaff={isStaff}
+          hasMoreByStage={hasMoreByStage}
+          loadingByStage={loadingByStage}
+          onLoadMore={loadMoreStage}
         />
       ) : (
         <TableView
@@ -498,6 +582,10 @@ export default function Admin() {
           onToggleSelect={toggleBulkSelect}
           onToggleAll={toggleBulkAll}
           isAdmin={isAdmin} isStaff={isStaff}
+          statusFilter={statusFilter}
+          hasMoreByStage={hasMoreByStage}
+          loadingByStage={loadingByStage}
+          onLoadMore={loadMoreStage}
         />
       )}
 

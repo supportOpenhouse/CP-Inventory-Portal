@@ -1,10 +1,50 @@
+import { useEffect, useRef } from 'react';
+
 import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
+
+/**
+ * Infinite-scroll sentinel rendered at the bottom of each kanban column.
+ * Uses IntersectionObserver to fire `onVisible` when the sentinel scrolls
+ * within `rootMargin` of the viewport. The 200px margin pre-fetches the
+ * next page before the user actually hits the bottom, so scrolling feels
+ * continuous instead of stutter-then-load.
+ *
+ * Renders nothing when there's nothing more to load — the parent column
+ * just ends. The "Loading…" line shows while a fetch is in flight so the
+ * user gets feedback during the load.
+ */
+function LoadMoreSentinel({ hasMore, loading, onVisible }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!hasMore || loading) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) onVisible();
+      },
+      { rootMargin: '200px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, loading, onVisible]);
+
+  if (!hasMore && !loading) return null;
+  return (
+    <div ref={ref} style={{ padding: '10px 4px', textAlign: 'center', fontSize: 11, color: '#999' }}>
+      {loading ? 'Loading more…' : ''}
+    </div>
+  );
+}
 
 export default function BoardView({
   submissions, loading, selectedId, onSelect,
   bulkMode = false, selectedIds = new Set(), onToggleSelect,
   isAdmin = false,
   isStaff = false,
+  hasMoreByStage = {},
+  loadingByStage = {},
+  onLoadMore,
 }) {
   // Staff (admin + manager + RM) see all stages including Unapproved
   const visibleStages = STAGES.filter((s) => isStaff || isAdmin || !s.adminOnly);
@@ -204,6 +244,17 @@ export default function BoardView({
                 </div>
               );
             })}
+
+            {/* Per-column infinite-scroll sentinel. Each kanban column
+                paginates independently — when the user scrolls down and
+                this stage's column runs out of loaded rows, the
+                IntersectionObserver fires onLoadMore for THIS stage only
+                (status=stage&offset=N on the wire). */}
+            <LoadMoreSentinel
+              hasMore={!!hasMoreByStage[stage.key]}
+              loading={!!loadingByStage[stage.key]}
+              onVisible={() => onLoadMore?.(stage.key)}
+            />
           </div>
         );
       })}

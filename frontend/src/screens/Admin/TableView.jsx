@@ -1,6 +1,38 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, stageMeta, timeAgo } from '../../format';
+
+/**
+ * Bottom-of-table infinite-scroll sentinel. Only meaningful when the user
+ * has filtered to a single status — without that filter the table mixes
+ * stages and "load more" is ambiguous (which stage's next page?). For the
+ * unfiltered view the initial 100-per-stage page already provides enough
+ * for sorting/scanning; users who want to drill down click a stat card to
+ * filter and then get infinite scroll on that single stage.
+ */
+function TableLoadMoreSentinel({ hasMore, loading, onVisible }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!hasMore || loading) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) onVisible();
+      },
+      { rootMargin: '300px' },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMore, loading, onVisible]);
+
+  if (!hasMore && !loading) return null;
+  return (
+    <div ref={ref} style={{ padding: '14px 0', textAlign: 'center', fontSize: 12, color: '#999' }}>
+      {loading ? 'Loading more…' : ''}
+    </div>
+  );
+}
 
 // How to extract the sort key for each column.
 // All accessors return primitives (number or string) so compare is predictable.
@@ -56,6 +88,10 @@ export default function TableView({
   bulkMode = false, selectedIds = new Set(), onToggleSelect, onToggleAll,
   isAdmin = false,
   isStaff = false,
+  statusFilter = '',
+  hasMoreByStage = {},
+  loadingByStage = {},
+  onLoadMore,
 }) {
   // { key, dir }  dir = 'asc' | 'desc'. Default: newest submissions first.
   const [sort, setSort] = useState({ key: 'submitted', dir: 'desc' });
@@ -320,6 +356,16 @@ export default function TableView({
           })}
         </tbody>
       </table>
+
+      {/* Infinite scroll only when one stage is selected — see the sentinel
+          component's docstring for why we skip this in unfiltered "All". */}
+      {statusFilter && (
+        <TableLoadMoreSentinel
+          hasMore={!!hasMoreByStage[statusFilter]}
+          loading={!!loadingByStage[statusFilter]}
+          onVisible={() => onLoadMore?.(statusFilter)}
+        />
+      )}
     </div>
   );
 }

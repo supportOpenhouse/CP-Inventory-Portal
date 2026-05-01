@@ -415,7 +415,7 @@ def _sync_unit_details_from_properties() -> int:
         return 0
 
 
-def _list_submissions_core(slim: bool = False):
+def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int = 0):
     """Run the filtered admin-board query.
 
     `slim=True` returns only the columns the Board/Table cards (and bulk
@@ -423,6 +423,17 @@ def _list_submissions_core(slim: bool = False):
     `get_submission`. This halves the payload on large boards.
     `slim=False` (default) keeps the full column set for callers that need
     everything (CSV export).
+
+    Pagination:
+      `limit_per_stage=None` (default) → return everything matching filters,
+        capped at LIMIT 5000 for safety. Used by the CSV export.
+      `limit_per_stage=N` → paginated for the admin board:
+        - If the request also has a `status` query param, return rows of that
+          single status sorted newest-first, paginated with LIMIT N OFFSET k.
+        - Otherwise wrap the base query in a window function that keeps the
+          top N rows of EACH stage (ROW_NUMBER() OVER PARTITION BY status).
+          `offset` is ignored here; the frontend uses the status-form for
+          load-more, one stage at a time, after the initial multi-stage page.
     """
     if slim:
         select_clause = """
@@ -490,7 +501,34 @@ def _list_submissions_core(slim: bool = False):
             """
             params = list(scope_params)
             sql, params = _apply_filters(base_sql, params)
-            sql += " ORDER BY s.submitted_at DESC LIMIT 5000"
+
+            status_filter = to_str(request.args.get("status"))
+
+            if limit_per_stage is None:
+                # Unpaginated path (CSV export). Cap at 5000 for safety.
+                sql += " ORDER BY s.submitted_at DESC LIMIT 5000"
+            elif status_filter:
+                # _apply_filters has already added "AND s.status = %s" — we just
+                # paginate the resulting single-stage list.
+                sql += " ORDER BY s.submitted_at DESC LIMIT %s OFFSET %s"
+                params.extend([limit_per_stage, max(0, int(offset))])
+            else:
+                # Top N per stage via a window function around the filtered query.
+                # All other filters in `sql` already applied; the wrapping just
+                # keeps row_number ≤ N within each status bucket.
+                sql = f"""
+                    SELECT * FROM (
+                        SELECT base.*, ROW_NUMBER() OVER (
+                            PARTITION BY base.status
+                            ORDER BY base.submitted_at DESC
+                        ) AS rn
+                        FROM ({sql}) base
+                    ) ranked
+                    WHERE rn <= %s
+                    ORDER BY ranked.submitted_at DESC
+                """
+                params.append(limit_per_stage)
+
             cur.execute(sql, params)
             return cur.fetchall()
     finally:
@@ -573,11 +611,34 @@ def list_submissions():
     # forms_uid — field execs register the actual unit details on-site and
     # properties is the authoritative source after a visit. Always overwrites.
     _sync_unit_details_from_properties()
+
+    # Pagination: default 100 per stage, capped at 500 for safety. Frontend
+    # passes `offset` only when paginating a single stage (status filter is
+    # set in the query string).
+    try:
+        limit = int(request.args.get("limit", 100))
+    except (TypeError, ValueError):
+        limit = 100
+    limit = max(1, min(limit, 500))
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+    offset = max(0, offset)
+
     # Slim payload: only the columns Board/Table cards (and bulk modals)
     # actually render. The side panel re-fetches the full row on click.
-    subs = _list_submissions_core(slim=True)
-    counts = _stage_counts()
-    return jsonify({"submissions": subs, "counts": counts}), 200
+    subs = _list_submissions_core(slim=True, limit_per_stage=limit, offset=offset)
+
+    # `skip_counts=true` is set by load-more requests so we don't re-run the
+    # COUNT-per-stage aggregate every scroll trigger. Counts only need to
+    # change when filters change (handled by a fresh reload, not a load-more).
+    skip_counts = request.args.get("skip_counts", "false").lower() == "true"
+    counts = None if skip_counts else _stage_counts()
+    payload = {"submissions": subs}
+    if counts is not None:
+        payload["counts"] = counts
+    return jsonify(payload), 200
 
 
 @bp.get("/submissions/<int:sid>")
