@@ -258,9 +258,9 @@ export default function Admin() {
               className="filter-toggle"
               style={{ borderColor: '#6366F1', color: '#6366F1' }}
               onClick={() => setExternalInventoryOpen(true)}
-              title="View external inventory (collated_data + properties)"
+              title="View OH Data (collated_data + properties)"
             >
-              📂 External Data
+              📂 OH Data
             </button>
           )}
           <div className="view-toggle">

@@ -7,6 +7,27 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — OH Data page polish (rename + sticky-header fix)
+
+### Fixed
+- **First data row was peeking out from under the column headers** on
+  the OH Data page (regression from the sticky `<thead>` introduced
+  yesterday). The thead's `top: 56px` didn't account for the variable
+  height of the page header + filter bar, so the first row rendered
+  above the column-header row visually. Removed `position: sticky`
+  on the thead — pagination at 100/page makes the table short enough
+  that not-sticky is fine; the page header itself stays sticky.
+
+### Changed
+- **Renamed user-facing label "External Data" → "OH Data"** in:
+  - The toolbar button (`📂 OH Data`)
+  - The page header
+  - README admin pages table
+
+  The internal API path stays `/api/admin/external-inventory` and the
+  React component file stays `ExternalInventory.jsx` for stability;
+  only the user-visible text changed.
+
 ## [2026-04-30] — External Data page (collated_data + properties viewer)
 
 ### Added

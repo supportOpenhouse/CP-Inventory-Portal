@@ -5,12 +5,14 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { formatDateOnly } from '../../format';
 
 /**
- * Admin "External Data" page — read-only view of inventory rows that are NOT
+ * Admin "OH Data" page — read-only view of inventory rows that are NOT
  * in our submissions table:
  *   - "D Data" => collated_data (App DB; 99acres etc. scrape)
  *   - "F Data" => properties      (Properties DB; the prod inventory pool)
  *
  * Server-side merged + paginated via GET /api/admin/external-inventory.
+ * (The endpoint name kept as 'external-inventory' for stability; only the
+ * user-facing label is "OH Data".)
  *
  * Props:
  *   onClose: () => void   // back to admin board
@@ -84,7 +86,7 @@ export default function ExternalInventory({ onClose }) {
           }}
         >← Back</button>
         <span style={{ fontSize: 16, fontWeight: 600, color: '#222' }}>
-          External Data{' '}
+          OH Data{' '}
           <span style={{ fontWeight: 400, color: '#888' }}>
             (collated · D Data · {data.counts.D} &nbsp;·&nbsp; properties · F Data · {data.counts.F})
           </span>
@@ -150,10 +152,14 @@ export default function ExternalInventory({ onClose }) {
         </div>
       )}
 
-      {/* Table */}
+      {/* Table — thead intentionally NOT sticky. Sticky-thead with a
+          variable-height filter bar above caused the first data row to
+          peek out from under the headers (looked broken on first paint).
+          With pagination at 100/page the table is short enough that
+          scroll-back is fine. */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff' }}>
-          <thead style={{ position: 'sticky', top: 56, zIndex: 5, background: '#FAFAF8' }}>
+          <thead style={{ background: '#FAFAF8' }}>
             <tr>
               <th style={thStyle}>Type</th>
               <th style={thStyle}>ID</th>
