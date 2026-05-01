@@ -26,6 +26,12 @@ export default function Admin() {
 
   const defaultCity = isAdmin ? 'All' : user.city || 'All';
   const [city, setCity] = useState(defaultCity);
+  // `searchInput` is what the user is currently typing; `search` is the
+  // committed value that actually filters the list. They diverge until the
+  // user presses Enter (keyboard or the Search button), at which point the
+  // committed value catches up and a reload fires. This avoids a request
+  // per keystroke on a multi-thousand-row dataset.
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [view, setView] = useState('board');
   const [submissions, setSubmissions] = useState([]);
@@ -238,12 +244,35 @@ export default function Admin() {
           ) : (
             <div className="admin-scope-pill">Showing {user.city} only</div>
           )}
-          <input
-            className="search-box"
-            placeholder="Search society, CP, unit, seller…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          {/* Submitting the form is the single trigger for "search now":
+              fires for both the keyboard Enter key (PC + mobile virtual
+              keyboard's Go/Search action) and a click on the Search button.
+              type="search" hints mobile keyboards to render a Search key
+              and shows the native clear-X. */}
+          <form
+            className="search-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setSearch(searchInput.trim());
+            }}
+            role="search"
+          >
+            <input
+              type="search"
+              className="search-box"
+              placeholder="Search society, CP, unit, seller…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              enterKeyHint="search"
+            />
+            <button
+              type="submit"
+              className="search-btn"
+              title="Search (Enter)"
+            >
+              Search
+            </button>
+          </form>
           <button
             className={`filter-toggle ${showFilters ? 'active' : ''} ${activeFilterCount > 0 ? 'has-active' : ''}`}
             onClick={() => setShowFilters(!showFilters)}

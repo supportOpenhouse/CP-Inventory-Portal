@@ -251,9 +251,13 @@ export const css = `
   .city-tab.active { background: #222; color: #fff; }
   .city-tab:hover:not(.active) { color: #222; }
   .admin-scope-pill { padding: 6px 12px; background: #F3F2EE; border-radius: 6px; font-size: 12px; color: #666; font-weight: 500; }
+  .search-form { display: flex; align-items: stretch; gap: 6px; }
   .search-box { padding: 8px 14px; border: 1px solid #E8E6E0; border-radius: 8px; font-size: 13px; width: 240px; outline: none; font-family: inherit; color: #222; background: #FAFAF8; }
   .search-box:focus { border-color: var(--oh-orange); box-shadow: 0 0 0 2px rgba(255,107,43,0.08); }
   .search-box::placeholder { color: #B5B5B5; }
+  .search-btn { padding: 0 14px; border: 1px solid var(--oh-orange); border-radius: 8px; background: var(--oh-orange); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background 0.15s, border-color 0.15s; }
+  .search-btn:hover:not(:disabled) { background: #E55A1F; border-color: #E55A1F; }
+  .search-btn:disabled { opacity: 0.45; cursor: default; }
   .view-toggle { display: flex; gap: 2px; background: #F3F2EE; border-radius: 6px; padding: 2px; }
   .view-btn { padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; border: none; background: transparent; color: #888; font-family: inherit; }
   .view-btn.active { background: #fff; color: #222; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
@@ -745,7 +749,8 @@ export const css = `
     .admin-stats { padding: 12px 16px 0; gap: 8px; }
     .stat-card { min-width: 90px; padding: 12px; }
     .stat-num { font-size: 22px; }
-    .search-box { width: 100%; }
+    .search-form { flex: 1; min-width: 0; }
+    .search-box { width: 100%; min-width: 0; flex: 1; }
     .admin-panel { width: 100vw; }
     .admin-panel-section { padding: 14px 18px; }
     .admin-detail-grid { gap: 10px; }
