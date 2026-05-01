@@ -2905,6 +2905,83 @@ def bulk_reassign_listing_rm():
 EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT = 100
 EXTERNAL_INVENTORY_PAGE_SIZE_MAX = 500
 
+# Facet dropdowns (Source, BHK) on the OH Properties page must show the
+# FULL set of options regardless of the user's current filters. If we
+# narrowed facets by the active filters, picking City=Gurgaon would hide
+# any BHK that doesn't exist in Gurgaon and the user couldn't switch
+# from one value to another without first clearing. We cache the full
+# distinct-value lists in memory with a small TTL.
+_EXT_FACETS_CACHE = {"data": None, "expires_at": 0.0}
+_EXT_FACETS_TTL_SECONDS = 300
+
+
+def _canonical_source(s):
+    """Strip trailing '-Scraping' (case-insensitive) so e.g. '99acres' and
+    '99acres-Scraping' fold to one canonical value."""
+    if not s:
+        return s
+    return re.sub(r"-[Ss]craping$", "", s).strip()
+
+
+def _ext_inventory_global_facets():
+    """All distinct sources / BHKs across both tables, regardless of the
+    caller's current filters. Memoised for `_EXT_FACETS_TTL_SECONDS` so
+    we don't hit the DB on every paginated query.
+    """
+    import time
+    now = time.time()
+    if _EXT_FACETS_CACHE["data"] and _EXT_FACETS_CACHE["expires_at"] > now:
+        return _EXT_FACETS_CACHE["data"]
+
+    sources_d, bhks_d = [], []
+    ac = get_app_conn()
+    try:
+        with ac.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT source FROM collated_data "
+                "WHERE source IS NOT NULL AND TRIM(source) <> ''"
+            )
+            sources_d = [r["source"] for r in cur.fetchall()]
+            cur.execute(
+                "SELECT DISTINCT bedrooms FROM collated_data "
+                "WHERE bedrooms IS NOT NULL AND TRIM(bedrooms) <> ''"
+            )
+            bhks_d = [r["bedrooms"] for r in cur.fetchall()]
+    finally:
+        put_app_conn(ac)
+
+    sources_p, bhks_p = [], []
+    if properties_configured():
+        pc = get_props_conn()
+        try:
+            with pc.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT source FROM properties "
+                    "WHERE source IS NOT NULL AND TRIM(source) <> '' "
+                    "  AND COALESCE(is_dead, FALSE) = FALSE"
+                )
+                sources_p = [r["source"] for r in cur.fetchall()]
+                cur.execute(
+                    "SELECT DISTINCT configuration FROM properties "
+                    "WHERE configuration IS NOT NULL AND TRIM(configuration) <> '' "
+                    "  AND COALESCE(is_dead, FALSE) = FALSE"
+                )
+                bhks_p = [r["configuration"] for r in cur.fetchall()]
+        finally:
+            put_props_conn(pc)
+
+    sources = sorted({_canonical_source(s) for s in (sources_d + sources_p) if s} - {""})
+    bhks = sorted({(b or "").strip() for b in (bhks_d + bhks_p)} - {""})
+
+    facets = {
+        "sources": sources,
+        "bhks":    bhks,
+        "cities":  ["Gurgaon", "Noida", "Ghaziabad"],  # well-known short list
+    }
+    _EXT_FACETS_CACHE["data"] = facets
+    _EXT_FACETS_CACHE["expires_at"] = now + _EXT_FACETS_TTL_SECONDS
+    return facets
+
 
 SORTABLE_COLUMNS = {
     "type":    {"is_str": True},
@@ -3164,21 +3241,12 @@ def list_external_inventory():
         "F": sum(1 for r in rows if r["type"] == "F"),
     }
 
-    # Facet values for the filter dropdowns. Computed from the FILTERED
-    # row set so the dropdowns reflect what's actually visible. Sorted +
-    # capped to keep payload reasonable.
-    #
-    # Source facets collapse "X" + "X-Scraping" into a single canonical
-    # entry — the user wants those treated as the same source. Stripping
-    # is case-insensitive on the suffix.
-    def _canonical_source(s):
-        if not s:
-            return s
-        return re.sub(r"-[Ss]craping$", "", s).strip()
-
-    sources = sorted({_canonical_source(r["source"]) for r in rows if r.get("source")} - {""})[:200]
-    cities  = sorted({r["city"]                for r in rows if r.get("city")})[:50]
-    bhks    = sorted({r["bhk"]                 for r in rows if r.get("bhk")})[:50]
+    # Facet values for the filter dropdowns — pulled from the GLOBAL
+    # distinct-value cache, NOT from the filtered row set. Otherwise
+    # picking one filter narrows the other dropdowns and the user can't
+    # switch values without first going back to "All". See
+    # _ext_inventory_global_facets() for the cache.
+    facets = _ext_inventory_global_facets()
 
     return jsonify({
         "results":   paged,
@@ -3186,11 +3254,7 @@ def list_external_inventory():
         "page":      page,
         "page_size": page_size,
         "counts":    counts,
-        "facets":    {
-            "sources": sources,
-            "cities":  cities,
-            "bhks":    bhks,
-        },
+        "facets":    facets,
         "sort":      sort_col,
         "direction": direction,
     }), 200

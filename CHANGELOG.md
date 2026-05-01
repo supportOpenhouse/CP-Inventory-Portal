@@ -7,6 +7,32 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — OH Properties: facet dropdowns are global (not narrowed by current filters)
+
+### Fixed
+- **You couldn't switch from one filter value to another without first
+  going to "All".** Source / BHK dropdowns were populated from the
+  current filtered row set, so picking `City: Gurgaon` would shrink
+  the BHK options to only what existed in Gurgaon — and once you'd
+  picked `BHK: 2 BHK`, the Source list shrank further to only what
+  existed for "Gurgaon + 2 BHK", etc. To swap to a different value
+  you had to first clear the existing filter back to All.
+
+  Fix: the Source / BHK / City facet lists are now the **global**
+  set of distinct values across both tables, regardless of the
+  caller's current filters. Implemented as
+  `_ext_inventory_global_facets()` with a 5-minute in-memory TTL
+  cache (4 lightweight `SELECT DISTINCT` queries; refreshed lazily).
+
+  Filter behaviour itself is unchanged — the result rows are still
+  narrowed by every active filter; just the dropdown options no
+  longer narrow alongside.
+
+### Note
+- The cache is process-local; in a multi-worker deploy each worker
+  warms its own cache independently. Acceptable for this read-only
+  page.
+
 ## [2026-05-01] — OH Properties: split filter rows + bolder column-header bar
 
 ### Changed
