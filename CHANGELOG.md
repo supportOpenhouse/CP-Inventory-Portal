@@ -7,7 +7,25 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
-## [2026-05-01] — OH Properties: shorter type labels + collapse "-Scraping" sources
+## [2026-05-01] — OH Properties: split filter rows + bolder column-header bar
+
+### Changed
+- **Filter row split into two explicit sticky rows.** The previous
+  single wrap-around filter row was taller than its declared `height`
+  whenever it broke onto a second line, which let the column-header
+  row's `top: 172` slip up under the actual bottom of the filter row.
+  Now:
+  - Row 1 (sticky `top: 112`, height 56): City · Source · BHK · Floor · Area (sqft)
+  - Row 2 (sticky `top: 168`, height 56): Date chips + custom range + Clear filters
+  Both rows are `flex-wrap: nowrap` with horizontal scroll on overflow,
+  so they never grow taller than declared.
+- **Column-header row is now visually heavier** — dark navy background
+  (`#1a1a2e`) with white uppercase text, slightly bigger letter-spacing,
+  thicker bottom border. The active sort column highlights orange
+  (`#FF6B2B`) against the dark base. This creates a clear "data table
+  starts here" delimiter beneath the lighter filter bars above.
+- Column-headers `top` is now `224` (= page header 56 + search 56 +
+  filter1 56 + filter2 56).
 
 ### Changed
 - **Type labels shortened** from "D Data" / "F Data" to just **"D"** / **"F"**.
