@@ -204,7 +204,7 @@ README.md      this file
 |---|---|---|
 | **Inventory board** (default) | `/` after admin login | All `submissions` rows — kanban + table, filters, bulk actions |
 | **Add Inventory (on behalf)** | `+ Add Inventory` button in admin toolbar (staff only) | CP search + the AddUnit form, mode='staff' |
-| **OH Data** | `📂 OH Data` button in admin toolbar (staff only) | Merged read-only view of `collated_data` (App DB; "D Data") + `properties` (Properties DB; "F Data"). Filters: search, city, type. Server-side paginated 100/page. |
+| **OH Properties** | `📂 OH Properties` button in admin toolbar (staff only) | Merged read-only view of `collated_data` (App DB; "D Data") + `properties` (Properties DB; "F Data"). Filters: search, city, type. Server-side paginated 100/page. Sticky page header + filter row + table-column headers so columns stay readable as you scroll. |
 
 ## External services & dashboards
 

@@ -7,26 +7,33 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
-## [2026-05-01] — OH Data page polish (rename + sticky-header fix)
-
-### Fixed
-- **First data row was peeking out from under the column headers** on
-  the OH Data page (regression from the sticky `<thead>` introduced
-  yesterday). The thead's `top: 56px` didn't account for the variable
-  height of the page header + filter bar, so the first row rendered
-  above the column-header row visually. Removed `position: sticky`
-  on the thead — pagination at 100/page makes the table short enough
-  that not-sticky is fine; the page header itself stays sticky.
+## [2026-05-01] — OH Properties page polish (rename + frozen header row)
 
 ### Changed
-- **Renamed user-facing label "External Data" → "OH Data"** in:
-  - The toolbar button (`📂 OH Data`)
+- **Renamed user-facing label** to "**OH Properties**" (was briefly
+  "External Data" / "OH Data" yesterday — final name). Applies to:
+  - The toolbar button (`📂 OH Properties`)
   - The page header
   - README admin pages table
 
   The internal API path stays `/api/admin/external-inventory` and the
   React component file stays `ExternalInventory.jsx` for stability;
   only the user-visible text changed.
+
+### Fixed
+- **Frozen header row** — page header, filter row, and table column
+  headers all stay visible as the table body scrolls. Implemented as a
+  cascading sticky stack:
+  - Page header at `top: 0` (z-index 30)
+  - Filter row at `top: 56` (z-index 20)
+  - Table column headers at `top: 112` (z-index 10)
+
+  Sticky is applied per `<th>` rather than on `<thead>` because some
+  browsers don't honor `position: sticky` on `<thead>` reliably when
+  the table is inside a scrolling parent.
+
+  Replaces yesterday's intermediate fix that just removed the sticky
+  thead entirely (reverted).
 
 ## [2026-04-30] — External Data page (collated_data + properties viewer)
 

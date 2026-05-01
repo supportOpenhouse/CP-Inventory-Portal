@@ -5,20 +5,26 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { formatDateOnly } from '../../format';
 
 /**
- * Admin "OH Data" page — read-only view of inventory rows that are NOT
- * in our submissions table:
+ * Admin "OH Properties" page — read-only view of inventory rows that are
+ * NOT in our submissions table:
  *   - "D Data" => collated_data (App DB; 99acres etc. scrape)
  *   - "F Data" => properties      (Properties DB; the prod inventory pool)
  *
  * Server-side merged + paginated via GET /api/admin/external-inventory.
  * (The endpoint name kept as 'external-inventory' for stability; only the
- * user-facing label is "OH Data".)
+ * user-facing label is "OH Properties".)
  *
  * Props:
  *   onClose: () => void   // back to admin board
  */
 const PAGE_SIZE = 100;
 const CITY_OPTIONS = ['', 'Noida', 'Gurgaon', 'Ghaziabad'];
+
+// Layout offsets for the cascading sticky bars. Tuned to the actual heights
+// of the elements above the table; if the page header or filter row padding
+// changes, bump these to match.
+const HEADER_HEIGHT = 56;       // page-header sticky bar
+const FILTER_ROW_HEIGHT = 56;   // search/city/toggle filter bar
 
 export default function ExternalInventory({ onClose }) {
   const [searchInput, setSearchInput] = useState('');
@@ -67,12 +73,13 @@ export default function ExternalInventory({ onClose }) {
 
   return (
     <div className="app-shell" style={{ maxWidth: 'none' }}>
-      {/* Header */}
+      {/* Header — sticky at the very top of the viewport */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 10,
+        position: 'sticky', top: 0, zIndex: 30,
         background: '#fff', borderBottom: '1px solid #eee',
         padding: '12px 20px',
         display: 'flex', alignItems: 'center', gap: 12,
+        height: HEADER_HEIGHT, boxSizing: 'border-box',
       }}>
         <button
           onClick={onClose}
@@ -86,18 +93,20 @@ export default function ExternalInventory({ onClose }) {
           }}
         >← Back</button>
         <span style={{ fontSize: 16, fontWeight: 600, color: '#222' }}>
-          OH Data{' '}
+          OH Properties{' '}
           <span style={{ fontWeight: 400, color: '#888' }}>
             (collated · D Data · {data.counts.D} &nbsp;·&nbsp; properties · F Data · {data.counts.F})
           </span>
         </span>
       </div>
 
-      {/* Filter row */}
+      {/* Filter row — sticky just below the page header */}
       <div style={{
+        position: 'sticky', top: HEADER_HEIGHT, zIndex: 20,
         display: 'flex', gap: 12, padding: '12px 20px',
         alignItems: 'center', flexWrap: 'wrap',
         borderBottom: '1px solid #eee', background: '#fafafa',
+        height: FILTER_ROW_HEIGHT, boxSizing: 'border-box',
       }}>
         <input
           type="search"
@@ -152,14 +161,17 @@ export default function ExternalInventory({ onClose }) {
         </div>
       )}
 
-      {/* Table — thead intentionally NOT sticky. Sticky-thead with a
-          variable-height filter bar above caused the first data row to
-          peek out from under the headers (looked broken on first paint).
-          With pagination at 100/page the table is short enough that
-          scroll-back is fine. */}
+      {/* Table — column headers stick just below the (also-sticky) filter
+          row. Cascading sticky offsets:
+            page header @ top: 0
+            filter row @ top: HEADER_HEIGHT
+            thead      @ top: HEADER_HEIGHT + FILTER_ROW_HEIGHT
+          Each `<th>` carries its own position:sticky+top because <thead>
+          itself doesn't honor sticky in many browsers when the table is
+          inside a scrolling parent — so we apply it per-th. */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, background: '#fff' }}>
-          <thead style={{ background: '#FAFAF8' }}>
+          <thead>
             <tr>
               <th style={thStyle}>Type</th>
               <th style={thStyle}>ID</th>
@@ -251,6 +263,11 @@ const thStyle = {
   fontSize: 11, fontWeight: 600, color: '#999',
   textTransform: 'uppercase', letterSpacing: 0.4,
   borderBottom: '2px solid #E8E6E0',
+  // Sticky just below page header + filter row.
+  position: 'sticky',
+  top: HEADER_HEIGHT + FILTER_ROW_HEIGHT,
+  zIndex: 10,
+  background: '#FAFAF8',
 };
 const tdStyle = { padding: '10px 14px', verticalAlign: 'top' };
 function pagBtn(disabled) {
