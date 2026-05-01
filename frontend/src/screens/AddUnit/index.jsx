@@ -4,7 +4,6 @@ import Step1 from './Step1';
 import SuccessScreen from './SuccessScreen';
 
 // Single-step flow: all fields on Step 1, single Submit.
-// Step 2, 3, 4 files are kept on disk but no longer routed.
 
 export default function AddUnit({ onDone }) {
   const [submittedResult, setSubmittedResult] = useState(null);
@@ -16,12 +15,6 @@ export default function AddUnit({ onDone }) {
     sqft: '',
     bhk: '',
     floor: '',
-    // Legacy fields (kept in state for back-compat with Step4 file if it's ever re-enabled)
-    exitFacing: '',
-    balconyFacing: '',
-    view: '',
-    parking: '',
-    features: [],
     occupancyStatus: 'Vacant',
     askPrice: '',      // user enters in LAKHS; stored to DB in rupees
     photos: [],

@@ -14,11 +14,6 @@ const EDITABLE_FIELDS = [
   { key: 'floor',                label: 'Floor',            type: 'text'   },
   { key: 'sqft',                 label: 'Area (sqft)',      type: 'number' },
   { key: 'bhk',                  label: 'BHK',              type: 'text'   },
-  { key: 'furnishing',           label: 'Furnishing',       type: 'text'   },
-  { key: 'exit_facing',          label: 'Exit facing',      type: 'text'   },
-  { key: 'balcony_facing',       label: 'Balcony facing',   type: 'text'   },
-  { key: 'balcony_view',         label: 'Balcony view',     type: 'text'   },
-  { key: 'parking',              label: 'Parking',          type: 'text'   },
   { key: 'occupancy_status',     label: 'Occupancy',        type: 'text'   },
   { key: 'asking_price',         label: 'Asking price (₹)', type: 'number' },
   { key: 'seller_name',          label: 'Seller name',      type: 'text'   },
@@ -430,18 +425,6 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   <Row label="Area" value={s.sqft ? `${s.sqft} sqft` : null} />
                   <Row label="Floor" value={s.floor} />
                   <Row label="Occupancy" value={s.occupancy_status} />
-                  <Row label="Parking" value={s.parking} optional />
-                  <Row label="Furnishing" value={s.furnishing} optional />
-                  <Row label="Exit facing" value={s.exit_facing} optional />
-                  <Row label="Balcony view" value={s.balcony_view} optional />
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <div className="admin-panel-label">Extra rooms</div>
-                    <div className="admin-panel-val">
-                      {Array.isArray(s.extra_rooms) && s.extra_rooms.length > 0
-                        ? s.extra_rooms.join(', ')
-                        : '—'}
-                    </div>
-                  </div>
                 </div>
               </div>
 

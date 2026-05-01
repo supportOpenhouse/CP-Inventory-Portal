@@ -10,7 +10,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import re
 import sys
@@ -42,7 +41,6 @@ COLUMN_MAP = {
     "Config.":                  "bhk",                 # Gurgaon CSV alias
     "Size":                     "sqft",
     "Ask Price":                "asking_price",
-    "Exit Facing - main gate":  "exit_facing",
     "Flat Status":              "occupancy_status",
     "Additional Comments":      "additional_comments",
     "Floor":                    "floor",
@@ -130,55 +128,28 @@ def parse_sqft(v) -> Optional[int]:
         return None
 
 
-def parse_config(v) -> tuple[Optional[str], list]:
+def parse_config(v) -> Optional[str]:
     """
-    Split 'Configuration' into (bhk, extra_rooms).
+    Parse a 'Configuration' cell into a normalized BHK string.
 
-    '2BHK'            -> ('2 BHK', [])
-    '3BHK'            -> ('3 BHK', [])
-    '2BHK + Study'    -> ('2 BHK', ['Study Room'])
-    '3BHK + Servant'  -> ('3 BHK', ['Servant Room'])
-    '2bhk'            -> ('2 BHK', [])
-    'Story '          -> (None, [])   # garbage fallback
+    '2BHK'            -> '2 BHK'
+    '3BHK'            -> '3 BHK'
+    '2BHK + Study'    -> '2 BHK'   (extras dropped — extra_rooms field removed)
+    '2bhk'            -> '2 BHK'
+    'Story '          -> None      # garbage fallback
     """
     s = clean_str(v)
     if not s:
-        return None, []
+        return None
 
-    # Split on +
-    parts = [p.strip() for p in s.split("+")]
-    if not parts:
-        return None, []
-
-    # First part = BHK
-    base = parts[0]
+    # Take only the part before any '+'; extras (Study/Servant/etc.) are no
+    # longer captured.
+    base = s.split("+", 1)[0].strip()
     m = re.match(r"^(\d+)\s*(BHK|RK|BR)$", base, re.IGNORECASE)
     if m:
-        bhk = f"{m.group(1)} {m.group(2).upper()}"
-    else:
-        m = re.match(r"^(\d+)", base)
-        bhk = f"{m.group(1)} BHK" if m else None
-
-    # Remaining parts = extras
-    extras = []
-    for extra in parts[1:]:
-        extra = extra.strip()
-        if not extra:
-            continue
-        low = extra.lower()
-        if "study" in low:
-            extras.append("Study Room")
-        elif "servant" in low or "sq" in low:
-            extras.append("Servant Room")
-        elif "puja" in low or "pooja" in low:
-            extras.append("Puja Room")
-        elif "store" in low:
-            extras.append("Store Room")
-        else:
-            # Unknown extra — capitalize and pass through
-            extras.append(extra.title())
-
-    return bhk, extras
+        return f"{m.group(1)} {m.group(2).upper()}"
+    m = re.match(r"^(\d+)", base)
+    return f"{m.group(1)} BHK" if m else None
 
 
 def parse_timestamp(v) -> Optional[datetime]:
@@ -354,7 +325,7 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
 
         tower, unit_no = split_tower_unit(row_dict.get("unit_no"))
 
-        bhk, extra_rooms = parse_config(row_dict.get("bhk"))
+        bhk = parse_config(row_dict.get("bhk"))
 
         comments_parts = []
         for field_name in ("additional_comments", "comment"):
@@ -378,8 +349,6 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
             "floor":               clean_str(row_dict.get("floor"), 50),
             "sqft":                parse_sqft(row_dict.get("sqft")),
             "bhk":                 bhk,
-            "extra_rooms":         extra_rooms,
-            "exit_facing":         clean_str(row_dict.get("exit_facing"), 50),
             "occupancy_status":    clean_str(row_dict.get("occupancy_status"), 20),
             "asking_price":        parse_price_lakhs(row_dict.get("asking_price")),
             "seller_name":         None,
@@ -401,23 +370,23 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
                 cur.execute("""
                     INSERT INTO submissions (
                         cp_id, society_id, society_name, city_id,
-                        tower, unit_no, floor, sqft, bhk, extra_rooms,
-                        exit_facing, occupancy_status,
+                        tower, unit_no, floor, sqft, bhk,
+                        occupancy_status,
                         asking_price,
                         seller_name, seller_phone,
                         additional_comments, referred_by_email, weak_match,
                         status, submitted_at
                     ) VALUES (
                         %(cp_id)s, %(society_id)s, %(society_name)s, %(city_id)s,
-                        %(tower)s, %(unit_no)s, %(floor)s, %(sqft)s, %(bhk)s, %(extra_rooms)s::jsonb,
-                        %(exit_facing)s, %(occupancy_status)s,
+                        %(tower)s, %(unit_no)s, %(floor)s, %(sqft)s, %(bhk)s,
+                        %(occupancy_status)s,
                         %(asking_price)s,
                         %(seller_name)s, %(seller_phone)s,
                         %(additional_comments)s, %(referred_by_email)s, %(weak_match)s,
                         %(status)s, %(submitted_at)s
                     )
                     RETURNING id
-                """, {**payload, "extra_rooms": json.dumps(payload["extra_rooms"])})
+                """, payload)
                 new_id = cur.fetchone()["id"]
 
                 cur.execute("""

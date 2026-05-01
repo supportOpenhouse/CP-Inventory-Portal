@@ -74,12 +74,6 @@ CREATE TABLE IF NOT EXISTS submissions (
     floor            VARCHAR(20),              -- optional, kept as string (handles "G", "B1")
     sqft             INTEGER,                  -- optional
     bhk              VARCHAR(20),              -- optional
-    furnishing       VARCHAR(50),
-    exit_facing      VARCHAR(50),
-    balcony_facing   VARCHAR(50),
-    balcony_view     VARCHAR(100),
-    parking          VARCHAR(50),
-    extra_rooms      JSONB DEFAULT '[]'::jsonb,  -- e.g. ["Puja Room", "Study Room"]
     occupancy_status VARCHAR(20),                  -- 'Vacant' | 'Occupied' (replaces legacy registry_status)
     registry_status  VARCHAR(20),                  -- DEPRECATED; kept for back-compat, no longer written
     asking_price     BIGINT,
@@ -135,7 +129,7 @@ INSERT INTO faqs (category, question, answer, display_order) VALUES
                'We aim to share an offer within 48 hours of submission. Complex units may take up to 5 working days.',
                3),
 ('Form',       'What info do I need to submit a unit?',
-               'Society is mandatory. Tower, unit number, floor, sqft, BHK, facings, parking, registry status, asking price, and closing price are helpful but optional.',
+               'Society is mandatory. Tower, unit number, floor, sqft, BHK, occupancy status, and asking price are helpful but optional.',
                4),
 ('Commission', 'What commission does Openhouse pay CPs?',
                'Commission is paid on successful closure. The exact percentage is shared by your RM based on the deal structure.',

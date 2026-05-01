@@ -140,14 +140,6 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             <Row label="Unit No" value={s.unit_no} />
             <Row label="Area" value={s.sqft ? `${s.sqft} sqft` : null} />
             <Row label="Occupancy" value={s.occupancy_status} />
-            {s.furnishing && <Row label="Furnishing" value={s.furnishing} />}
-            {s.parking && <Row label="Parking" value={s.parking} />}
-            {s.exit_facing && <Row label="Exit facing" value={s.exit_facing} />}
-            {s.balcony_facing && <Row label="Balcony facing" value={s.balcony_facing} />}
-            {s.balcony_view && <Row label="Balcony view" value={s.balcony_view} />}
-            {Array.isArray(s.extra_rooms) && s.extra_rooms.length > 0 && (
-              <Row label="Extras" value={s.extra_rooms.join(', ')} colSpan={2} />
-            )}
           </DetailGrid>
 
           {/* Pricing */}

@@ -30,8 +30,7 @@ def list_my_submissions():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT id, public_id, society_id, society_name, tower, unit_no, floor,
-                       sqft, bhk, furnishing, occupancy_status, parking, extra_rooms,
-                       exit_facing, balcony_facing, balcony_view,
+                       sqft, bhk, occupancy_status,
                        asking_price,
                        status, photos, submitted_at,
                        counter_offer_price, counter_offer_status, counter_offer_at,
@@ -172,17 +171,15 @@ def create_submission():
             cur.execute("""
                 INSERT INTO submissions (
                     cp_id, society_id, society_name, city_id, public_id,
-                    tower, unit_no, floor, sqft, bhk, furnishing,
-                    exit_facing, balcony_facing, balcony_view,
-                    parking, extra_rooms, occupancy_status,
+                    tower, unit_no, floor, sqft, bhk,
+                    occupancy_status,
                     asking_price, seller_name, seller_phone, photos,
                     status, collated_match, submissions_match,
                     unit_less, perfect_match_at_submit
                 ) VALUES (
                     %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s::jsonb, %s,
+                    %s, %s, %s, %s, %s,
+                    %s,
                     %s, %s, %s, %s::jsonb,
                     %s, %s, %s,
                     %s, %s
@@ -199,12 +196,6 @@ def create_submission():
                 to_str(data.get("floor"), 20),
                 to_int(data.get("sqft")),
                 to_str(data.get("bhk"), 20),
-                to_str(data.get("furnishing"), 50),
-                to_str(data.get("exit_facing"), 50),
-                to_str(data.get("balcony_facing"), 50),
-                to_str(data.get("balcony_view"), 100),
-                to_str(data.get("parking"), 50),
-                json.dumps(data.get("extra_rooms") or []),
                 to_str(data.get("occupancy_status"), 20),
                 to_int(data.get("asking_price")),
                 to_str(data.get("seller_name"), 200),
