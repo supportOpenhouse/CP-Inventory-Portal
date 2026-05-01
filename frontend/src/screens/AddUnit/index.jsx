@@ -1,17 +1,13 @@
 import { useState } from 'react';
 
 import Step1 from './Step1';
-import Step2 from './Step2';
 import SuccessScreen from './SuccessScreen';
 
-// Two-step flow:
-//   Step 1: property identification (society, tower, unit, BHK, floor, area)
-//           + duplicate check. User must clear the dup check before advancing.
-//   Step 2: occupancy + pricing (asking, closing) + actual submit.
+// Single-step flow: Step1 collects everything (identification + occupancy +
+// asking price) and submits in one shot. Server-side dup check still runs.
 
 export default function AddUnit({ onDone }) {
   const [submittedResult, setSubmittedResult] = useState(null);
-  const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     city: '',
     society: null,
@@ -44,33 +40,17 @@ export default function AddUnit({ onDone }) {
     <div className="app-shell">
       <div className="header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            className="back-btn"
-            onClick={() => (step === 2 ? setStep(1) : onDone())}
-          >
-            ←
-          </button>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>
-            Add Unit · Step {step} of 2
-          </span>
+          <button className="back-btn" onClick={onDone}>←</button>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>Add Unit</span>
         </div>
       </div>
 
-      {step === 1 ? (
-        <Step1
-          form={form}
-          setForm={setForm}
-          onAdvance={() => setStep(2)}
-          onAbandon={onDone}
-        />
-      ) : (
-        <Step2
-          form={form}
-          setForm={setForm}
-          onBack={() => setStep(1)}
-          onSubmitted={setSubmittedResult}
-        />
-      )}
+      <Step1
+        form={form}
+        setForm={setForm}
+        onSubmitted={setSubmittedResult}
+        onAbandon={onDone}
+      />
     </div>
   );
 }

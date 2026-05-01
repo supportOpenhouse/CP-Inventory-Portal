@@ -1,19 +1,16 @@
 import { useState } from 'react';
 
 import Step1 from '../AddUnit/Step1';
-import Step2 from '../AddUnit/Step2';
 import SuccessScreen from '../AddUnit/SuccessScreen';
 import CpSelector from './CpSelector';
 
 /**
  * Full-screen flow for RM/Manager/Admin to submit a listing on behalf of a CP.
  *
- * Mirrors the CP-side AddUnit two-step flow:
- *   Step 1 (AddUnit/Step1, mode="staff"): property identification + dup-check.
- *   Step 2 (AddUnit/Step2, mode="staff"): occupancy + asking + closing prices,
- *                                         then POSTs adminCreateSubmissionOnBehalf.
- *
- * Both steps only render once a target CP has been picked via CpSelector.
+ * Single-step: reuses AddUnit/Step1 with mode="staff", which collects
+ * identification + occupancy + asking price and posts
+ * adminCreateSubmissionOnBehalf in one shot. Only renders once a target
+ * CP has been picked via CpSelector.
  *
  * Props:
  *   onClose: () => void  // back to admin board (called from header back-btn,
@@ -22,7 +19,6 @@ import CpSelector from './CpSelector';
 export default function AddInventoryOnBehalf({ onClose }) {
   const [targetCp, setTargetCp] = useState(null);
   const [submittedResult, setSubmittedResult] = useState(null);
-  const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     city: '',
     society: null,
@@ -99,25 +95,14 @@ export default function AddInventoryOnBehalf({ onClose }) {
       </div>
 
       {targetCp ? (
-        step === 1 ? (
-          <Step1
-            form={form}
-            setForm={setForm}
-            onAdvance={() => setStep(2)}
-            onAbandon={onClose}
-            mode="staff"
-            targetCp={targetCp}
-          />
-        ) : (
-          <Step2
-            form={form}
-            setForm={setForm}
-            onBack={() => setStep(1)}
-            onSubmitted={setSubmittedResult}
-            mode="staff"
-            targetCp={targetCp}
-          />
-        )
+        <Step1
+          form={form}
+          setForm={setForm}
+          onSubmitted={setSubmittedResult}
+          onAbandon={onClose}
+          mode="staff"
+          targetCp={targetCp}
+        />
       ) : (
         <div style={{ padding: 16, maxWidth: 720, margin: '0 auto', color: '#888', fontSize: 13, textAlign: 'center' }}>
           Pick a CP above to start entering inventory details.
