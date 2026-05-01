@@ -44,6 +44,14 @@ export default function Admin() {
   const [addingInventory, setAddingInventory] = useState(false);
   const [externalInventoryOpen, setExternalInventoryOpen] = useState(false);
 
+  // Reset window scroll whenever the user enters or leaves a full-screen
+  // subview (Add Inventory on Behalf, OH Properties). Without this, the
+  // scrollY they left behind on one screen carries over to the next, so
+  // returning to the admin board lands them mid-page instead of at the top.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [addingInventory, externalInventoryOpen]);
+
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
   const [bhk, setBhk] = useState('');

@@ -7,6 +7,16 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — Admin: scroll-to-top when entering/leaving subviews
+
+### Fixed
+- Returning from the **OH Properties** page (or **Add Inventory on
+  Behalf**) to the admin board kept whatever `window.scrollY` was
+  left behind, so the board landed mid-page instead of at the top.
+  Added a single effect in `Admin/index.jsx` that scrolls the
+  window to top whenever the `addingInventory` or
+  `externalInventoryOpen` flag toggles in either direction.
+
 ## [2026-05-01] — OH Properties: BHK normalisation (collapse "2 BHK" / "2BHK")
 
 ### Fixed
