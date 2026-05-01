@@ -207,6 +207,16 @@ export default function Admin() {
             <div className="admin-topbar-avatar">{(user.name || '?')[0]}</div>
             <span>{(user.name || '').split(' ')[0]}</span>
           </div>
+          {isAdmin && (
+            <button
+              className="logout-btn"
+              onClick={() => setAdminPanelOpen(true)}
+              title="Manage staff users, permissions, force-logout"
+              style={{ paddingLeft: 12, paddingRight: 12 }}
+            >
+              ⚙ Admin
+            </button>
+          )}
           <button className="logout-btn" onClick={logout} title="Log out">⏻</button>
         </div>
       </div>
@@ -271,16 +281,6 @@ export default function Admin() {
               title="View OH Properties (collated_data + properties)"
             >
               📂 OH Properties
-            </button>
-          )}
-          {isAdmin && (
-            <button
-              className="filter-toggle"
-              style={{ borderColor: '#1a1a2e', color: '#1a1a2e' }}
-              onClick={() => setAdminPanelOpen(true)}
-              title="Manage staff users, permissions, force-logout"
-            >
-              ⚙ Admin Panel
             </button>
           )}
           <div className="view-toggle">
