@@ -2906,6 +2906,21 @@ EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT = 100
 EXTERNAL_INVENTORY_PAGE_SIZE_MAX = 500
 
 
+SORTABLE_COLUMNS = {
+    "type":    {"is_str": True},
+    "id":      {"is_str": True},
+    "source":  {"is_str": True},
+    "society": {"is_str": True},
+    "city":    {"is_str": True},
+    "bhk":     {"is_str": True},
+    "floor":   {"is_str": True},   # mixed text/numeric across sources; treat as string
+    "tower":   {"is_str": True},
+    "unit_no": {"is_str": True},
+    "area":    {"is_str": False},
+    "date":    {"is_str": True},   # ISO strings sort lexicographically = chronologically
+}
+
+
 @bp.get("/external-inventory")
 @require_staff
 def list_external_inventory():
@@ -2913,25 +2928,57 @@ def list_external_inventory():
     (Properties DB), normalised to a single column shape.
 
     Query string:
-      q          - substring match against society/locality/source
-      city       - exact-match (case-insensitive)
-      type       - 'D' (collated_data only) | 'F' (properties only) |
-                   anything else / omitted => both
-      page       - 1-based (default 1)
-      page_size  - default 100, capped at 500
+      q           substring match against society/locality/source
+      city        exact-match (case-insensitive)
+      source      exact-match (case-insensitive) on the row's source
+      bhk         exact-match (case-insensitive) on bedrooms/configuration
+      floor       exact-match string against floor (case/whitespace-insensitive)
+      area_min    minimum area_sqft (inclusive)
+      area_max    maximum area_sqft (inclusive)
+      date_from   YYYY-MM-DD inclusive lower bound (against posting_date /
+                  schedule_submitted_at)
+      date_to     YYYY-MM-DD inclusive upper bound
+      type        'D' | 'F' | omitted (both)
+      sort        column name (see SORTABLE_COLUMNS)
+      direction   'asc' | 'desc'  (default desc)
+      page        1-based (default 1)
+      page_size   default 100, capped at 500
     """
-    q = (request.args.get("q") or "").strip()
-    city = (request.args.get("city") or "").strip() or None
-    type_filter = (request.args.get("type") or "").strip().upper() or None
+    args = request.args
+    q       = (args.get("q") or "").strip()
+    city    = (args.get("city") or "").strip() or None
+    source  = (args.get("source") or "").strip() or None
+    bhk     = (args.get("bhk") or "").strip() or None
+    floor   = (args.get("floor") or "").strip() or None
+    type_filter = (args.get("type") or "").strip().upper() or None
     if type_filter not in ("D", "F"):
-        type_filter = None  # "both"
+        type_filter = None
+    sort_col = (args.get("sort") or "date").strip().lower()
+    if sort_col not in SORTABLE_COLUMNS:
+        sort_col = "date"
+    direction = (args.get("direction") or "desc").strip().lower()
+    if direction not in ("asc", "desc"):
+        direction = "desc"
+
+    def _to_int(v):
+        try: return int(v) if v not in (None, "") else None
+        except (TypeError, ValueError): return None
+    area_min = _to_int(args.get("area_min"))
+    area_max = _to_int(args.get("area_max"))
+
+    def _validate_date(s):
+        s = (s or "").strip()
+        if not s: return None
+        return s if re.match(r"^\d{4}-\d{2}-\d{2}$", s) else None
+    date_from = _validate_date(args.get("date_from"))
+    date_to   = _validate_date(args.get("date_to"))
 
     try:
-        page = max(1, int(request.args.get("page") or 1))
+        page = max(1, int(args.get("page") or 1))
     except ValueError:
         page = 1
     try:
-        page_size = int(request.args.get("page_size") or EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT)
+        page_size = int(args.get("page_size") or EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT)
     except ValueError:
         page_size = EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT
     page_size = max(1, min(EXTERNAL_INVENTORY_PAGE_SIZE_MAX, page_size))
@@ -2947,6 +2994,27 @@ def list_external_inventory():
                 if city:
                     clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
                     params.append(city)
+                if source:
+                    clauses.append("LOWER(TRIM(source)) = LOWER(TRIM(%s))")
+                    params.append(source)
+                if bhk:
+                    clauses.append("LOWER(TRIM(bedrooms)) = LOWER(TRIM(%s))")
+                    params.append(bhk)
+                if floor:
+                    clauses.append("LOWER(TRIM(COALESCE(floor, ''))) = LOWER(TRIM(%s))")
+                    params.append(floor)
+                if area_min is not None:
+                    clauses.append("COALESCE(area_sqft, 0) >= %s")
+                    params.append(area_min)
+                if area_max is not None:
+                    clauses.append("COALESCE(area_sqft, 0) <= %s")
+                    params.append(area_max)
+                if date_from:
+                    clauses.append("posting_date >= %s::date")
+                    params.append(date_from)
+                if date_to:
+                    clauses.append("posting_date <= %s::date")
+                    params.append(date_to)
                 if q:
                     clauses.append("(society ILIKE %s OR locality ILIKE %s OR source ILIKE %s)")
                     like = f"%{q}%"
@@ -2988,6 +3056,29 @@ def list_external_inventory():
                 if city:
                     clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
                     params.append(city)
+                if source:
+                    clauses.append("LOWER(TRIM(source)) = LOWER(TRIM(%s))")
+                    params.append(source)
+                if bhk:
+                    clauses.append("LOWER(TRIM(configuration)) = LOWER(TRIM(%s))")
+                    params.append(bhk)
+                if floor:
+                    # properties.floor is INT; cast both sides to text for match
+                    clauses.append("LOWER(TRIM(COALESCE(floor::text, ''))) = LOWER(TRIM(%s))")
+                    params.append(floor)
+                if area_min is not None:
+                    clauses.append("COALESCE(area_sqft, 0) >= %s")
+                    params.append(area_min)
+                if area_max is not None:
+                    clauses.append("COALESCE(area_sqft, 0) <= %s")
+                    params.append(area_max)
+                if date_from:
+                    clauses.append("schedule_submitted_at >= %s::date")
+                    params.append(date_from)
+                if date_to:
+                    # Inclusive end-of-day so a single-day filter catches the full day
+                    clauses.append("schedule_submitted_at < (%s::date + interval '1 day')")
+                    params.append(date_to)
                 if q:
                     clauses.append("(society_name ILIKE %s OR locality ILIKE %s OR source ILIKE %s)")
                     like = f"%{q}%"
@@ -3023,8 +3114,20 @@ def list_external_inventory():
         finally:
             put_props_conn(pconn)
 
-    # Sort merged set by date desc; rows without date sink to the bottom.
-    rows.sort(key=lambda r: (r["date"] or ""), reverse=True)
+    # Server-side sort by chosen column. None values sink to the bottom in
+    # ascending sort, top in descending — symmetric with the existing date
+    # behaviour. The tuple (is_null, value) does this trick.
+    is_str = SORTABLE_COLUMNS[sort_col]["is_str"]
+
+    def _key(r):
+        v = r.get(sort_col)
+        if v is None:
+            return (1, "" if is_str else 0)
+        if is_str:
+            return (0, str(v).lower())
+        return (0, v)
+
+    rows.sort(key=_key, reverse=(direction == "desc"))
 
     total = len(rows)
     start = (page - 1) * page_size
@@ -3035,10 +3138,24 @@ def list_external_inventory():
         "F": sum(1 for r in rows if r["type"] == "F Data"),
     }
 
+    # Facet values for the filter dropdowns. Computed from the FILTERED
+    # row set so the dropdowns reflect what's actually visible. Sorted +
+    # capped to keep payload reasonable.
+    sources = sorted({r["source"] for r in rows if r.get("source")})[:200]
+    cities  = sorted({r["city"]   for r in rows if r.get("city")})[:50]
+    bhks    = sorted({r["bhk"]    for r in rows if r.get("bhk")})[:50]
+
     return jsonify({
         "results":   paged,
         "total":     total,
         "page":      page,
         "page_size": page_size,
         "counts":    counts,
+        "facets":    {
+            "sources": sources,
+            "cities":  cities,
+            "bhks":    bhks,
+        },
+        "sort":      sort_col,
+        "direction": direction,
     }), 200

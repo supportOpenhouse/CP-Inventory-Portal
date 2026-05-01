@@ -7,6 +7,55 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — OH Properties: filters + column sort + frozen-header fix
+
+### Added
+- **Filter row** on the OH Properties page (sticky, just below the
+  search row). Each filter affects the merged result set
+  server-side:
+  - **City** — dropdown, populated from current result facets
+  - **Source** — dropdown, populated from facets
+  - **BHK** — dropdown, populated from facets
+  - **Floor** — text input (exact-text match, case/whitespace-insensitive)
+  - **Area (sqft)** — `min`–`max` numeric range
+  - **Date** — quick-pick chips `All / Yesterday / This Week / This Month / Custom`,
+    plus an inline `from–to` date range that becomes editable when **Custom**
+    is selected. Applies to `posting_date` (collated_data) and
+    `schedule_submitted_at` (properties).
+  - **Clear filters** button appears when any filter is set.
+
+- **Sortable columns** — click any column header to sort the merged set
+  ascending; click again to flip to descending. Active column is
+  highlighted in orange. Server-side sort, so it spans all pages.
+  Default = `date` desc.
+
+### Changed
+- The page header subtitle (`(collated · D Data · X · properties · F Data · Y)`)
+  is removed — those counts already appear on the Both/D/F toggle in
+  the search row.
+
+### Fixed
+- **Frozen header row was actually broken in the previous commit.** The
+  table was wrapped in a `<div style="overflow-x: auto">`, which makes
+  the div a scrolling ancestor for sticky purposes — so sticky `top`
+  values inside resolve relative to that div, not the viewport. Removed
+  the wrapper and applied `position: sticky` per-`<th>` (which works
+  reliably across browsers, unlike `<thead>` sticky inside a scrolling
+  parent). Page header / search row / filter row / column-headers now
+  cascade properly:
+  - page header @ `top: 0`     (z-index 30)
+  - search row  @ `top: 56`    (z-index 25)
+  - filter row  @ `top: 112`   (z-index 20)
+  - column ths  @ `top: 172`   (z-index 10)
+
+### Backend
+- `GET /api/admin/external-inventory` accepts new query params:
+  `source`, `bhk`, `floor`, `area_min`, `area_max`, `date_from`,
+  `date_to`, `sort`, `direction`. Response now also includes
+  `facets: {sources, cities, bhks}` (computed from the filtered
+  result set, capped at 50–200 entries) and the active `sort` /
+  `direction` echo.
+
 ## [2026-05-01] — OH Properties page polish (rename + frozen header row)
 
 ### Changed
