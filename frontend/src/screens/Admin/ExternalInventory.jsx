@@ -53,6 +53,14 @@ function startOfWeekMonday(d) {
   monday.setHours(0, 0, 0, 0);
   return monday;
 }
+/** Strip the "-Scraping" suffix used by some collated_data rows so
+ *  "99acres-Scraping" displays as "99acres". User-facing only — the
+ *  backend keeps the raw value but matches both forms when filtering. */
+function canonicalSource(s) {
+  if (!s) return s;
+  return s.replace(/-Scraping$/i, '');
+}
+
 function rangeForPreset(preset) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -210,8 +218,8 @@ export default function ExternalInventory({ onClose }) {
         <div style={{ display: 'inline-flex', border: '1px solid #ddd', borderRadius: 6, overflow: 'hidden' }}>
           {[
             { val: '',  label: 'Both' },
-            { val: 'D', label: `D Data (${data.counts.D})` },
-            { val: 'F', label: `F Data (${data.counts.F})` },
+            { val: 'D', label: `D (${data.counts.D})` },
+            { val: 'F', label: `F (${data.counts.F})` },
           ].map((opt) => {
             const active = typeFilter === opt.val;
             return (
@@ -368,16 +376,16 @@ export default function ExternalInventory({ onClose }) {
                 <td style={tdStyle}>
                   <span style={{
                     display: 'inline-block',
-                    padding: '2px 8px', borderRadius: 3,
+                    padding: '2px 10px', borderRadius: 3,
                     fontSize: 11, fontWeight: 700, letterSpacing: 0.3,
-                    background: r.type === 'D Data' ? '#EEF2FF' : '#FFF3ED',
-                    color:      r.type === 'D Data' ? '#6366F1' : '#FF6B2B',
+                    background: r.type === 'D' ? '#EEF2FF' : '#FFF3ED',
+                    color:      r.type === 'D' ? '#6366F1' : '#FF6B2B',
                   }}>{r.type}</span>
                 </td>
                 <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, color: '#555' }}>
                   {r.id || '—'}
                 </td>
-                <td style={tdStyle}>{r.source || '—'}</td>
+                <td style={tdStyle}>{canonicalSource(r.source) || '—'}</td>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>
                   {r.society || '—'}
                   {r.locality && (

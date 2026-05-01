@@ -7,6 +7,31 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-01] — OH Properties: shorter type labels + collapse "-Scraping" sources
+
+### Changed
+- **Type labels shortened** from "D Data" / "F Data" to just **"D"** / **"F"**.
+  Applies to:
+  - The type-pill badge in the table (a touch wider padding so the
+    one-letter pill still has visible body)
+  - The Both / D / F filter toggle buttons (`D (X)` instead of `D Data (X)`)
+  - The backend response's `type` field (now the canonical value too)
+
+- **`-Scraping` source variants collapse into their base name.** The
+  scrape pipeline emits both "99acres" and "99acres-Scraping" for the
+  same logical source (same for "magicbricks" / "magicbricks-Scraping"
+  and "housing" / "housing-Scraping"). They're now treated as one source:
+  - **Source filter dropdown** shows only the canonical name. Picking
+    `99acres` matches *both* `99acres` and `99acres-Scraping` rows.
+  - **Source cell** in the table strips the `-Scraping` suffix on
+    display.
+
+  Backend match uses `REGEXP_REPLACE(source, '-[Ss]craping$', '')` on
+  both the column and the param, so the comparison is symmetric. Facet
+  list is deduped after the same canonicalisation.
+
+  Underlying DB values are unchanged.
+
 ## [2026-05-01] — Date sort fix on OH Properties
 
 ### Fixed

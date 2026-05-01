@@ -2995,7 +2995,13 @@ def list_external_inventory():
                     clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
                     params.append(city)
                 if source:
-                    clauses.append("LOWER(TRIM(source)) = LOWER(TRIM(%s))")
+                    # "-Scraping" variants collapse into their base name —
+                    # 99acres + 99acres-Scraping are treated as the same source
+                    # by the user. Strip the suffix on both sides for the match.
+                    clauses.append(
+                        "LOWER(TRIM(REGEXP_REPLACE(COALESCE(source, ''), '-[Ss]craping$', ''))) "
+                        "= LOWER(TRIM(REGEXP_REPLACE(%s, '-[Ss]craping$', '')))"
+                    )
                     params.append(source)
                 if bhk:
                     clauses.append("LOWER(TRIM(bedrooms)) = LOWER(TRIM(%s))")
@@ -3029,7 +3035,7 @@ def list_external_inventory():
                 for r in cur.fetchall():
                     pd = r.get("posting_date")
                     rows.append({
-                        "type":     "D Data",
+                        "type":     "D",
                         "id":       str(r["id"]) if r.get("id") is not None else None,
                         "source":   r.get("source"),
                         "society":  r.get("society"),
@@ -3057,7 +3063,11 @@ def list_external_inventory():
                     clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
                     params.append(city)
                 if source:
-                    clauses.append("LOWER(TRIM(source)) = LOWER(TRIM(%s))")
+                    # Same -Scraping collapsing as collated_data above.
+                    clauses.append(
+                        "LOWER(TRIM(REGEXP_REPLACE(COALESCE(source, ''), '-[Ss]craping$', ''))) "
+                        "= LOWER(TRIM(REGEXP_REPLACE(%s, '-[Ss]craping$', '')))"
+                    )
                     params.append(source)
                 if bhk:
                     clauses.append("LOWER(TRIM(configuration)) = LOWER(TRIM(%s))")
@@ -3096,7 +3106,7 @@ def list_external_inventory():
                 for r in cur.fetchall():
                     ts = r.get("schedule_submitted_at")
                     rows.append({
-                        "type":     "F Data",
+                        "type":     "F",
                         "id":       r.get("uid"),
                         "source":   r.get("source"),
                         "society":  r.get("society_name"),
@@ -3150,16 +3160,25 @@ def list_external_inventory():
     paged = rows[start:start + page_size]
 
     counts = {
-        "D": sum(1 for r in rows if r["type"] == "D Data"),
-        "F": sum(1 for r in rows if r["type"] == "F Data"),
+        "D": sum(1 for r in rows if r["type"] == "D"),
+        "F": sum(1 for r in rows if r["type"] == "F"),
     }
 
     # Facet values for the filter dropdowns. Computed from the FILTERED
     # row set so the dropdowns reflect what's actually visible. Sorted +
     # capped to keep payload reasonable.
-    sources = sorted({r["source"] for r in rows if r.get("source")})[:200]
-    cities  = sorted({r["city"]   for r in rows if r.get("city")})[:50]
-    bhks    = sorted({r["bhk"]    for r in rows if r.get("bhk")})[:50]
+    #
+    # Source facets collapse "X" + "X-Scraping" into a single canonical
+    # entry — the user wants those treated as the same source. Stripping
+    # is case-insensitive on the suffix.
+    def _canonical_source(s):
+        if not s:
+            return s
+        return re.sub(r"-[Ss]craping$", "", s).strip()
+
+    sources = sorted({_canonical_source(r["source"]) for r in rows if r.get("source")} - {""})[:200]
+    cities  = sorted({r["city"]                for r in rows if r.get("city")})[:50]
+    bhks    = sorted({r["bhk"]                 for r in rows if r.get("bhk")})[:50]
 
     return jsonify({
         "results":   paged,
