@@ -52,11 +52,16 @@ def require_admin_or_manager(f):
 
     Used by per-listing RM override endpoints — managers can route work
     within their own team, but plain RMs cannot.
+
+    JWT shapes we accept:
+      - role='admin'                              → admin
+      - role='manager'   (auth_routes.py default) → manager
+      - role='rm', is_manager=True (defensive)    → manager
     """
     @wraps(f)
     def wrapper(*args, **kwargs):
         role = g.user.get("role")
-        if role == "admin":
+        if role in ("admin", "manager"):
             return f(*args, **kwargs)
         if role == "rm" and bool(g.user.get("is_manager")):
             return f(*args, **kwargs)
