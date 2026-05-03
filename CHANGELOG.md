@@ -7,6 +7,30 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-03] — Fix: status change 500'd for RM users
+
+### Fixed
+- **`POST /api/admin/submissions/<id>/status` returned 500 for any
+  RM user** (and the same was true for several other staff endpoints).
+  An RM in the field reported it while moving a listing from
+  Submitted → Visit Scheduled.
+
+  Root cause: five staff-callable endpoints used `g.user["cp_id"]`
+  (subscript access) when writing to `submission_events.actor_cp_id`.
+  The JWT for an RM only has `rm_id`, not `cp_id`, so subscript
+  raised `KeyError` → Flask returned 500.
+
+  Fix: switched every `submission_events` insert path to
+  `g.user.get("cp_id")`, matching the existing pattern in
+  `set_listing_rm` / `bulk_reassign_listing_rm` (the column already
+  accepts NULL — RM-actored events store NULL). Endpoints touched:
+  `change_status`, `send_counter_offer` event row, `add_comment`,
+  `edit_submission` event row, `bulk_status` event row.
+
+  Admin-only endpoints (`delete_submission`, `add_cp_note`) and the
+  `submissions.counter_offer_by` UPDATE on `send_counter_offer` were
+  left as-is — they're not currently exposed to managers via UI.
+
 ## [2026-05-03] — Managers get full reassign parity with Admins
 
 ### Added

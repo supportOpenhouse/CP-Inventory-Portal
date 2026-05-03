@@ -777,7 +777,7 @@ def change_status(sid: int):
                 INSERT INTO submission_events
                     (submission_id, actor_cp_id, kind, from_status, to_status)
                 VALUES (%s, %s, 'status_change', %s, %s)
-            """, (sid, g.user["cp_id"], old_status, new_status))
+            """, (sid, g.user.get("cp_id"), old_status, new_status))
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -857,7 +857,7 @@ def send_counter_offer(sid: int):
                     (submission_id, actor_cp_id, kind, text)
                 VALUES (%s, %s, 'counter_offer', %s)
                 """,
-                (sid, g.user["cp_id"], f"Counter offer sent: ₹{price_rupees:,}"),
+                (sid, g.user.get("cp_id"), f"Counter offer sent: ₹{price_rupees:,}"),
             )
             conn.commit()
     finally:
@@ -894,7 +894,7 @@ def add_comment(sid: int):
                 INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
                 VALUES (%s, %s, 'comment', %s)
                 RETURNING id, created_at
-            """, (sid, g.user["cp_id"], text.strip()))
+            """, (sid, g.user.get("cp_id"), text.strip()))
             row = cur.fetchone()
             conn.commit()
     finally:
@@ -984,7 +984,7 @@ def edit_submission(sid: int):
             cur.execute("""
                 INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
                 VALUES (%s, %s, 'comment', %s)
-            """, (sid, g.user["cp_id"], "Edited: " + "; ".join(changes)))
+            """, (sid, g.user.get("cp_id"), "Edited: " + "; ".join(changes)))
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -2238,7 +2238,7 @@ def bulk_status():
                     INSERT INTO submission_events
                         (submission_id, actor_cp_id, kind, from_status, to_status, text)
                     VALUES (%s, %s, 'status_change', %s, %s, 'Bulk action')
-                """, (sid, g.user["cp_id"], old_status, new_status))
+                """, (sid, g.user.get("cp_id"), old_status, new_status))
                 updated += 1
 
             out_of_scope = len(clean_ids) - len(in_scope)
