@@ -216,6 +216,14 @@ export const api = {
   adminForceLogoutAll: () =>
     request('/admin/staff-users/force-logout-all', { method: 'POST' }),
 
+  // Activity Log — admin-only feed of all mutations across the dashboard.
+  // Filters: { action, category, actor_email, actor_name, search, date_from, date_to, page, page_size }
+  adminListActivityLog: (filters = {}) =>
+    request(`/admin/activity-log${buildQuery(filters)}`),
+  // Distinct values for the filter dropdowns. Computed over the whole table,
+  // not the current filter set (same anti-narrowing rule as OH Properties).
+  adminListActivityLogFacets: () => request('/admin/activity-log/facets'),
+
   // Health
   health: () => request('/health', { auth: false }),
 };

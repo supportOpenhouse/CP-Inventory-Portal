@@ -7,6 +7,70 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-03] — Activity Logs: dashboard-wide mutation feed (admin)
+
+### Added
+- **`📜 Activity Logs` page** in the admin topbar (left of the
+  ⚙ Admin Panel button). Mirrors the org-wide activity-log UX —
+  Timestamp / UID / Actor / Action / Category / Dashboard / Details
+  with filters for action, category, actor email/name, UID search,
+  and date range. Server-side paginated; hard cap of 500 results
+  (matches the "narrow your filters" prompt from the org-wide log).
+
+- **`activity_log` table** is the new single source of truth for
+  who did what when, separate from the per-submission
+  `submission_events` timeline. Every staff or CP-actored mutation
+  appends one row.
+
+- **`log_activity()` helper** in `backend/activity_log.py`. Inserts
+  into the caller's transaction (so the audit row is committed/rolled
+  back together with the mutation). Reads the actor from `flask.g.user`
+  and never raises — a transient hiccup must not break business logic.
+
+- **Wired into ~17 mutation sites:**
+
+  | Action | Category |
+  |---|---|
+  | status_change, status_change_bulk | submission |
+  | counter_offer_sent | submission |
+  | comment_added | submission |
+  | submission_edited | submission |
+  | submission_deleted | submission |
+  | submission_created (CP), submission_created_on_behalf | submission |
+  | submission_withdrawn (CP) | submission |
+  | counter_offer_accepted, counter_offer_rejected (CP) | submission |
+  | visit_scheduled, visit_scheduled_bulk | submission |
+  | listing_rm_set, listing_rm_cleared (single + bulk) | submission |
+  | cp_rm_changed, cp_rm_changed_bulk | cp_rm |
+  | cp_note_added, cp_note_deleted | note |
+  | staff_user_added, staff_user_updated, force_logout_user, force_logout_all | staff_user |
+
+### Endpoints
+- `GET /api/admin/activity-log` — admin only. Filters listed above;
+  default page_size 100, hard cap 500.
+- `GET /api/admin/activity-log/facets` — distinct values for the
+  filter dropdowns. Computed over the entire table (NOT the current
+  filter set), so dropdowns don't narrow as filters are applied —
+  same anti-narrowing rule we settled on for OH Properties.
+
+### Schema
+- **Migration** [`backend/migrations/2026-05-03-activity-log.sql`](backend/migrations/2026-05-03-activity-log.sql).
+  Idempotent (`CREATE TABLE IF NOT EXISTS`). Adds the table plus
+  five indexes (created_at, action, category, actor, entity_uid).
+  Must run on prod App DB **before** this code ships, per Convention #2.
+
+### Notes
+- Actor name + email are JOINed at read time from
+  `channel_partners` / `rms` (we don't snapshot them on insert
+  because the JWT only carries phone+id). If a user is later renamed
+  or deleted, historical log rows will reflect the *current* state
+  of the row — this matches how the org-wide log behaves and keeps
+  the UI clean. Phone is snapshotted (free from the JWT) as a
+  stable identifier in case the row is gone entirely.
+- `dashboard` column defaults to `'CP Inventory'` so rows are
+  shape-compatible with the centralized aggregator if you later
+  pipe them upstream.
+
 ## [2026-05-03] — Fix: status change 500'd for RM users
 
 ### Fixed

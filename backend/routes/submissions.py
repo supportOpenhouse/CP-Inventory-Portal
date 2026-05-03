@@ -4,6 +4,7 @@ import json
 
 from flask import Blueprint, g, jsonify, request
 
+from activity_log import log_activity
 from auth import require_auth
 from db import get_app_conn, put_app_conn
 from duplicate_check import check_duplicate
@@ -221,6 +222,14 @@ def create_submission():
                 VALUES (%s, %s, 'system', %s, %s)
             """, (new_id, g.user["cp_id"], initial_status, event_text))
 
+            cur.execute("SELECT public_id FROM submissions WHERE id = %s", (new_id,))
+            pid_row = cur.fetchone() or {}
+            log_activity(
+                cur, action="submission_created", category="submission",
+                entity_uid=pid_row.get("public_id"), entity_type="submission", entity_id=new_id,
+                details={"initial_status": initial_status},
+            )
+
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -330,7 +339,7 @@ def withdraw_submission(sid):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, cp_id, deleted_at, unit_less, perfect_match_at_submit
+                SELECT id, public_id, cp_id, deleted_at, unit_less, perfect_match_at_submit
                 FROM submissions
                 WHERE id = %s
             """, (sid,))
@@ -362,6 +371,10 @@ def withdraw_submission(sid):
                     (submission_id, actor_cp_id, kind, text)
                 VALUES (%s, %s, 'system', 'CP withdrew the submission')
             """, (sid, cp_id))
+            log_activity(
+                cur, action="submission_withdrawn", category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+            )
 
             conn.commit()
     finally:
@@ -405,7 +418,7 @@ def counter_offer_response(sid):
             # Lock the row + verify it belongs to this CP and has a pending offer
             cur.execute(
                 """
-                SELECT id, cp_id, counter_offer_status, status
+                SELECT id, public_id, cp_id, counter_offer_status, status
                 FROM submissions
                 WHERE id = %s
                 FOR UPDATE
@@ -437,6 +450,13 @@ def counter_offer_response(sid):
                 VALUES (%s, %s, 'system', %s, %s)
                 """,
                 (sid, g.user["cp_id"], new_status, event_text),
+            )
+            log_activity(
+                cur,
+                action=("counter_offer_accepted" if new_co_status == "accepted" else "counter_offer_rejected"),
+                category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"comment": comment or None},
             )
             conn.commit()
     finally:

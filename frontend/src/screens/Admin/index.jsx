@@ -11,6 +11,7 @@ import BulkScheduleVisitModal from './BulkScheduleVisitModal';
 import AddInventoryOnBehalf from './AddInventoryOnBehalf';
 import BulkReassignRmModal from './BulkReassignRmModal';
 import ExternalInventory from './ExternalInventory';
+import ActivityLog from './ActivityLog';
 import AdminPanel from './AdminPanel';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
@@ -63,15 +64,16 @@ export default function Admin() {
   const [bulkReassignOpen, setBulkReassignOpen] = useState(false);
   const [addingInventory, setAddingInventory] = useState(false);
   const [externalInventoryOpen, setExternalInventoryOpen] = useState(false);
+  const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
 
   // Reset window scroll whenever the user enters or leaves a full-screen
-  // subview (Add Inventory on Behalf, OH Properties). Without this, the
-  // scrollY they left behind on one screen carries over to the next, so
-  // returning to the admin board lands them mid-page instead of at the top.
+  // subview (Add Inventory on Behalf, OH Properties, Activity Logs).
+  // Without this, the scrollY they left behind on one screen carries over
+  // to the next, so returning to the admin board lands them mid-page.
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [addingInventory, externalInventoryOpen]);
+  }, [addingInventory, externalInventoryOpen, activityLogOpen]);
 
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
@@ -277,6 +279,11 @@ export default function Admin() {
     return <ExternalInventory onClose={() => setExternalInventoryOpen(false)} />;
   }
 
+  // Activity Log feed. Admin only; gated server-side too.
+  if (activityLogOpen) {
+    return <ActivityLog onClose={() => setActivityLogOpen(false)} />;
+  }
+
   return (
     <div className="admin-root">
       {/* Top bar */}
@@ -294,6 +301,15 @@ export default function Admin() {
             <div className="admin-topbar-avatar">{(user.name || '?')[0]}</div>
             <span>{(user.name || '').split(' ')[0]}</span>
           </div>
+          {isAdmin && (
+            <button
+              className="logout-btn"
+              onClick={() => setActivityLogOpen(true)}
+              title="Activity Logs — feed of all dashboard mutations"
+            >
+              📜
+            </button>
+          )}
           {isAdmin && (
             <button
               className="logout-btn"

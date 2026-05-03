@@ -25,6 +25,7 @@ from functools import wraps
 import requests
 from flask import Blueprint, Response, g, jsonify, request
 
+from activity_log import log_activity
 from auth import require_staff
 from config import Config
 from db import get_app_conn, put_app_conn, get_props_conn, put_props_conn, properties_configured
@@ -764,7 +765,7 @@ def change_status(sid: int):
         with conn.cursor() as cur:
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
-                SELECT s.id, s.status FROM submissions s
+                SELECT s.id, s.public_id, s.status FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}
                 FOR UPDATE OF s
@@ -783,6 +784,11 @@ def change_status(sid: int):
                     (submission_id, actor_cp_id, kind, from_status, to_status)
                 VALUES (%s, %s, 'status_change', %s, %s)
             """, (sid, g.user.get("cp_id"), old_status, new_status))
+            log_activity(
+                cur, action="status_change", category="submission",
+                entity_uid=existing.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"from": old_status, "to": new_status},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -829,7 +835,7 @@ def send_counter_offer(sid: int):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, status, counter_offer_status
+                SELECT id, public_id, status, counter_offer_status
                 FROM submissions
                 WHERE id = %s
                 FOR UPDATE
@@ -864,6 +870,11 @@ def send_counter_offer(sid: int):
                 """,
                 (sid, g.user.get("cp_id"), f"Counter offer sent: ₹{price_rupees:,}"),
             )
+            log_activity(
+                cur, action="counter_offer_sent", category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"price_rupees": price_rupees},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -886,13 +897,14 @@ def add_comment(sid: int):
         with conn.cursor() as cur:
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
-                SELECT s.id FROM submissions s
+                SELECT s.id, s.public_id FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = %s
                   AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn')
                   {scope_sql}
             """, [sid, *scope_params])
-            if not cur.fetchone():
+            sub = cur.fetchone()
+            if not sub:
                 return jsonify({"error": "Not found or out of scope"}), 404
 
             cur.execute("""
@@ -901,6 +913,11 @@ def add_comment(sid: int):
                 RETURNING id, created_at
             """, (sid, g.user.get("cp_id"), text.strip()))
             row = cur.fetchone()
+            log_activity(
+                cur, action="comment_added", category="submission",
+                entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"text": text.strip()[:500]},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -977,10 +994,11 @@ def edit_submission(sid: int):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id FROM submissions WHERE id = %s AND deleted_at IS NULL",
+                "SELECT id, public_id FROM submissions WHERE id = %s AND deleted_at IS NULL",
                 (sid,),
             )
-            if not cur.fetchone():
+            sub = cur.fetchone()
+            if not sub:
                 return jsonify({"error": "Not found"}), 404
 
             sql = f"UPDATE submissions SET {', '.join(set_fragments)} WHERE id = %s"
@@ -990,6 +1008,11 @@ def edit_submission(sid: int):
                 INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
                 VALUES (%s, %s, 'comment', %s)
             """, (sid, g.user.get("cp_id"), "Edited: " + "; ".join(changes)))
+            log_activity(
+                cur, action="submission_edited", category="submission",
+                entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"changes": changes, "fields": list(allowed.keys())},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -1005,7 +1028,7 @@ def delete_submission(sid: int):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, deleted_at FROM submissions WHERE id = %s",
+                "SELECT id, public_id, deleted_at FROM submissions WHERE id = %s",
                 (sid,),
             )
             row = cur.fetchone()
@@ -1019,6 +1042,10 @@ def delete_submission(sid: int):
                 INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
                 VALUES (%s, %s, 'system', 'Submission archived by admin')
             """, (sid, g.user["cp_id"]))
+            log_activity(
+                cur, action="submission_deleted", category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -1467,6 +1494,17 @@ def schedule_visit(sid: int):
                 f"Visit scheduled for {schedule_date} {schedule_time} with {field_exec_name}. "
                 f"Forms UID: {forms_uid}{' (already existed)' if already_existed else ''}",
             ))
+            log_activity(
+                cur, action="visit_scheduled", category="submission",
+                entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
+                details={
+                    "schedule_date": str(schedule_date),
+                    "schedule_time": str(schedule_time),
+                    "field_exec_name": field_exec_name,
+                    "forms_uid": forms_uid,
+                    "already_existed": already_existed,
+                },
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -1976,6 +2014,17 @@ def bulk_schedule_visit():
                         f"with {s['field_exec_name']}. Forms UID: {s['uid']}"
                         f"{' (already existed)' if s['already_existed'] else ''}",
                     ))
+                # One bulk-level activity row, summarising the batch.
+                log_activity(
+                    cur, action="visit_scheduled_bulk", category="submission",
+                    entity_type="submission_bulk",
+                    details={
+                        "schedule_date": str(schedule_date),
+                        "n_scheduled": len(new_results),
+                        "n_already_scheduled": len(already_scheduled),
+                        "submission_ids": [s["sid"] for s in new_results][:50],
+                    },
+                )
                 conn.commit()
         finally:
             put_app_conn(conn)
@@ -2178,6 +2227,13 @@ def set_cp_rm(cp_id: int):
                 "UPDATE channel_partners SET rm_id = %s WHERE id = %s",
                 (new_rm_id, cp_id),
             )
+            cur.execute("SELECT cp_code FROM channel_partners WHERE id = %s", (cp_id,))
+            cp_row = cur.fetchone() or {}
+            log_activity(
+                cur, action="cp_rm_changed", category="cp_rm",
+                entity_uid=cp_row.get("cp_code"), entity_type="channel_partner", entity_id=cp_id,
+                details={"new_rm_id": new_rm_id},
+            )
             conn.commit()
     except Exception as e:
         conn.rollback()
@@ -2247,6 +2303,17 @@ def bulk_status():
                 updated += 1
 
             out_of_scope = len(clean_ids) - len(in_scope)
+            log_activity(
+                cur, action="status_change_bulk", category="submission",
+                entity_type="submission_bulk",
+                details={
+                    "to": new_status,
+                    "updated": updated,
+                    "skipped_same_status": skipped,
+                    "out_of_scope_or_deleted": out_of_scope,
+                    "ids": list(in_scope.keys())[:50],
+                },
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -2297,8 +2364,9 @@ def add_cp_note(cp_id: int):
     try:
         with conn.cursor() as cur:
             # Ensure CP exists
-            cur.execute("SELECT id FROM channel_partners WHERE id = %s", (cp_id,))
-            if not cur.fetchone():
+            cur.execute("SELECT id, cp_code FROM channel_partners WHERE id = %s", (cp_id,))
+            cp_row = cur.fetchone()
+            if not cp_row:
                 return jsonify({"error": "CP not found"}), 404
 
             cur.execute("""
@@ -2307,6 +2375,11 @@ def add_cp_note(cp_id: int):
                 RETURNING id, created_at
             """, (cp_id, g.user["cp_id"], text.strip()))
             row = cur.fetchone()
+            log_activity(
+                cur, action="cp_note_added", category="note",
+                entity_uid=cp_row.get("cp_code"), entity_type="channel_partner", entity_id=cp_id,
+                details={"note_id": row["id"], "text": text.strip()[:500]},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -2326,9 +2399,15 @@ def delete_cp_note(note_id: int):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM cp_notes WHERE id = %s RETURNING id", (note_id,))
-            if not cur.fetchone():
+            cur.execute("DELETE FROM cp_notes WHERE id = %s RETURNING id, cp_id", (note_id,))
+            row = cur.fetchone()
+            if not row:
                 return jsonify({"error": "Not found"}), 404
+            log_activity(
+                cur, action="cp_note_deleted", category="note",
+                entity_type="cp_note", entity_id=note_id,
+                details={"cp_id": row.get("cp_id")},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -2660,6 +2739,20 @@ def create_submission_on_behalf():
                 VALUES (%s, %s, 'system', %s, %s)
             """, (new_id, target_cp_id, initial_status, event_text))
 
+            # Look up the public_id (assigned by trigger / default) for the log row.
+            cur.execute("SELECT public_id FROM submissions WHERE id = %s", (new_id,))
+            pid_row = cur.fetchone() or {}
+            log_activity(
+                cur, action="submission_created_on_behalf", category="submission",
+                entity_uid=pid_row.get("public_id"), entity_type="submission", entity_id=new_id,
+                details={
+                    "target_cp_id": target_cp_id,
+                    "target_cp_name": target_cp_name,
+                    "initial_status": initial_status,
+                    "submitted_by_name": staff_name,
+                },
+            )
+
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -2828,7 +2921,19 @@ def bulk_reassign_rm():
                     "UPDATE channel_partners SET rm_id = %s WHERE id = ANY(%s)",
                     (target_rm_id, updated_ids),
                 )
-                conn.commit()
+            log_activity(
+                cur, action="cp_rm_changed_bulk", category="cp_rm",
+                entity_type="channel_partner_bulk",
+                details={
+                    "target_rm_id": target_rm_id,
+                    "target_rm_name": target_rm_name,
+                    "reassigned": len(updated_ids),
+                    "skipped": sum(1 for r in results if r.get("skipped")),
+                    "not_found": sum(1 for r in results if not r.get("ok")),
+                    "cp_ids": updated_ids[:50],
+                },
+            )
+            conn.commit()
     finally:
         put_app_conn(conn)
 
@@ -2916,7 +3021,7 @@ def set_listing_rm(sid: int):
 
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(
-                f"SELECT s.id, s.listing_rm_id FROM submissions s "
+                f"SELECT s.id, s.public_id, s.listing_rm_id FROM submissions s "
                 f"WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}",
                 [sid, *scope_params],
             )
@@ -2937,6 +3042,13 @@ def set_listing_rm(sid: int):
                 f"Listing RM override set to {rm_name}"
                 if target_rm_id is not None
                 else "Listing RM override cleared (CP's permanent RM applies)"
+            )
+            log_activity(
+                cur,
+                action=("listing_rm_set" if target_rm_id is not None else "listing_rm_cleared"),
+                category="submission",
+                entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"target_rm_id": target_rm_id, "target_rm_name": rm_name},
             )
             cur.execute("""
                 INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
@@ -3030,6 +3142,19 @@ def bulk_reassign_listing_rm():
                     INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
                     VALUES (%s, %s, 'system', %s)
                 """, (sid, g.user.get("cp_id"), event_text))
+            log_activity(
+                cur,
+                action=("listing_rm_set_bulk" if target_rm_id is not None else "listing_rm_cleared_bulk"),
+                category="submission",
+                entity_type="submission_bulk",
+                details={
+                    "target_rm_id": target_rm_id,
+                    "target_rm_name": target_rm_name,
+                    "updated_count": len(updated_ids),
+                    "requested": len(submission_ids),
+                    "ids": updated_ids[:50],
+                },
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -3637,6 +3762,11 @@ def add_staff_user():
                 """, (name, stored_phone, email, role == "manager"))
                 new_id = cur.fetchone()["id"]
                 source = "rm"
+            log_activity(
+                cur, action="staff_user_added", category="staff_user",
+                entity_type=("channel_partner" if source == "cp" else "rm"), entity_id=new_id,
+                details={"name": name, "phone": phone, "role": role, "email": email},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -3721,6 +3851,11 @@ def patch_staff_user(source, user_id):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "User not found"}), 404
+            log_activity(
+                cur, action="staff_user_updated", category="staff_user",
+                entity_type=("channel_partner" if source == "cp" else "rm"), entity_id=user_id,
+                details={k: v for k, v in data.items() if k in ("role", "is_active", "can_see_oh_properties")},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -3746,6 +3881,10 @@ def force_logout_one(source, user_id):
             )
             if not cur.fetchone():
                 return jsonify({"error": "User not found"}), 404
+            log_activity(
+                cur, action="force_logout_user", category="staff_user",
+                entity_type=("channel_partner" if source == "cp" else "rm"), entity_id=user_id,
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -3774,8 +3913,162 @@ def force_logout_all():
                 WHERE COALESCE(is_active, TRUE) = TRUE
             """)
             rm_count = cur.rowcount
+            log_activity(
+                cur, action="force_logout_all", category="staff_user",
+                details={"admins": cp_count, "rms": rm_count},
+            )
             conn.commit()
     finally:
         put_app_conn(conn)
     log.info("[force_logout_all] admins=%d rms=%d", cp_count, rm_count)
     return jsonify({"ok": True, "logged_out_count": cp_count + rm_count}), 200
+
+
+# ============================================================
+# Activity Log — admin-only feed of mutations across the dashboard
+# ============================================================
+#
+# Mirrors the org-wide activity-log shape (Timestamp / UID / Actor /
+# Action / Category / Dashboard / Details). Server-side paginated;
+# default page_size = 100, hard cap = 500 to match the user's other
+# dashboard's "first 500 results" behaviour.
+#
+# Actor display name + email are JOINed from channel_partners /
+# rms at read time — we don't snapshot them on insert.
+# ============================================================
+
+
+_ACTIVITY_LOG_HARD_CAP = 500
+
+
+@bp.get("/activity-log")
+@require_staff
+@require_admin_role
+def list_activity_log():
+    """Filter + paginate activity_log rows.
+
+    Query params (all optional):
+      action       — exact match
+      category     — exact match
+      actor_email  — exact match (from joined CP / RM table)
+      actor_name   — case-insensitive contains (from joined table)
+      search       — entity_uid LIKE %q% (matches OHLNC0091, RM0007, etc.)
+      date_from    — ISO date, inclusive
+      date_to      — ISO date, inclusive (interpreted as end of day)
+      page         — 1-based, default 1
+      page_size    — default 100, max 500
+    """
+    action = to_str(request.args.get("action"))
+    category = to_str(request.args.get("category"))
+    actor_email = to_str(request.args.get("actor_email"))
+    actor_name = to_str(request.args.get("actor_name"))
+    search = to_str(request.args.get("search"))
+    date_from = to_str(request.args.get("date_from"))
+    date_to = to_str(request.args.get("date_to"))
+    page = max(1, request.args.get("page", default=1, type=int) or 1)
+    page_size = request.args.get("page_size", default=100, type=int) or 100
+    page_size = max(1, min(page_size, _ACTIVITY_LOG_HARD_CAP))
+
+    where, params = ["1=1"], []
+    if action:
+        where.append("a.action = %s"); params.append(action)
+    if category:
+        where.append("a.category = %s"); params.append(category)
+    if search:
+        where.append("a.entity_uid ILIKE %s"); params.append(f"%{search}%")
+    if date_from:
+        where.append("a.created_at >= %s::date"); params.append(date_from)
+    if date_to:
+        where.append("a.created_at < (%s::date + interval '1 day')"); params.append(date_to)
+    if actor_email:
+        where.append("(cp.email = %s OR rm.email = %s)"); params.extend([actor_email, actor_email])
+    if actor_name:
+        where.append("(cp.name ILIKE %s OR rm.name ILIKE %s)")
+        params.extend([f"%{actor_name}%", f"%{actor_name}%"])
+
+    where_sql = " AND ".join(where)
+    offset = (page - 1) * page_size
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Total (capped — anything past the cap is a "narrow your filters" prompt).
+            cur.execute(f"""
+                SELECT COUNT(*) AS n FROM activity_log a
+                LEFT JOIN channel_partners cp
+                       ON a.actor_type IN ('admin', 'cp') AND cp.id = a.actor_id
+                LEFT JOIN rms rm
+                       ON a.actor_type IN ('rm', 'manager') AND rm.id = a.actor_id
+                WHERE {where_sql}
+            """, params)
+            total_row = cur.fetchone()
+            total = int(total_row["n"]) if total_row else 0
+
+            cur.execute(f"""
+                SELECT a.id, a.created_at, a.action, a.category, a.dashboard,
+                       a.actor_id, a.actor_type, a.actor_phone,
+                       a.entity_uid, a.entity_type, a.entity_id,
+                       a.details,
+                       COALESCE(cp.name, rm.name)        AS actor_name,
+                       COALESCE(cp.email, rm.email)      AS actor_email
+                FROM activity_log a
+                LEFT JOIN channel_partners cp
+                       ON a.actor_type IN ('admin', 'cp') AND cp.id = a.actor_id
+                LEFT JOIN rms rm
+                       ON a.actor_type IN ('rm', 'manager') AND rm.id = a.actor_id
+                WHERE {where_sql}
+                ORDER BY a.created_at DESC, a.id DESC
+                LIMIT %s OFFSET %s
+            """, params + [page_size, offset])
+            rows = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "rows": rows,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "has_more": offset + len(rows) < total,
+        "cap_reached": total >= _ACTIVITY_LOG_HARD_CAP,
+    }), 200
+
+
+@bp.get("/activity-log/facets")
+@require_staff
+@require_admin_role
+def list_activity_log_facets():
+    """Distinct values used to populate the filter dropdowns. Computed
+    over the entire table, NOT the current filter set, so dropdowns
+    don't narrow as you select things (same gotcha we hit on OH Properties)."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT action FROM activity_log ORDER BY action")
+            actions = [r["action"] for r in cur.fetchall() if r.get("action")]
+            cur.execute("SELECT DISTINCT category FROM activity_log ORDER BY category")
+            categories = [r["category"] for r in cur.fetchall() if r.get("category")]
+            cur.execute("SELECT DISTINCT dashboard FROM activity_log ORDER BY dashboard")
+            dashboards = [r["dashboard"] for r in cur.fetchall() if r.get("dashboard")]
+
+            # Actor names + emails — only those that have ever appeared in the log.
+            cur.execute("""
+                SELECT DISTINCT cp.name AS name, cp.email AS email
+                FROM activity_log a JOIN channel_partners cp ON cp.id = a.actor_id
+                WHERE a.actor_type IN ('admin','cp') AND cp.name IS NOT NULL
+                UNION
+                SELECT DISTINCT rm.name AS name, rm.email AS email
+                FROM activity_log a JOIN rms rm ON rm.id = a.actor_id
+                WHERE a.actor_type IN ('rm','manager') AND rm.name IS NOT NULL
+                ORDER BY name
+            """)
+            actor_rows = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "actions": actions,
+        "categories": categories,
+        "dashboards": dashboards,
+        "actors": actor_rows,
+    }), 200
