@@ -78,21 +78,45 @@ def _scoped_city_filter(cur):
     city_id_legacy = g.user.get("city_id") if not rm_id else None
 
     if rm_id:
-        # Subquery avoids needing a `cp` join alias in the outer query.
+        # Effective RM = COALESCE(s.listing_rm_id, channel_partners.rm_id).
+        # When a per-listing override is set, it WINS over the CP's permanent
+        # RM — that's the whole point of the override. So the scope must:
+        #   - match if s.listing_rm_id targets me (override hands it to me), OR
+        #   - match if no override is set AND the CP's permanent RM is me.
+        # Without this, overrides silently fail on the receiving RM's side
+        # (the listing stays visible only to the CP's permanent RM).
         if is_manager:
+            # "Me + my team" applies to BOTH the override match and the
+            # permanent-RM fallback. Team = rms.id where manager_id = me.
             clause = (
-                "s.cp_id IN ("
-                "  SELECT id FROM channel_partners "
-                "  WHERE rm_id = %s "
-                "     OR rm_id IN (SELECT id FROM rms WHERE manager_id = %s)"
+                "("
+                "  s.listing_rm_id IN ("
+                "    SELECT id FROM rms WHERE id = %s OR manager_id = %s"
+                "  )"
+                "  OR ("
+                "    s.listing_rm_id IS NULL"
+                "    AND s.cp_id IN ("
+                "      SELECT id FROM channel_partners"
+                "      WHERE rm_id = %s"
+                "         OR rm_id IN (SELECT id FROM rms WHERE manager_id = %s)"
+                "    )"
+                "  )"
+                ")"
+            )
+            params = [rm_id, rm_id, rm_id, rm_id]
+        else:
+            clause = (
+                "("
+                "  s.listing_rm_id = %s"
+                "  OR ("
+                "    s.listing_rm_id IS NULL"
+                "    AND s.cp_id IN ("
+                "      SELECT id FROM channel_partners WHERE rm_id = %s"
+                "    )"
+                "  )"
                 ")"
             )
             params = [rm_id, rm_id]
-        else:
-            clause = (
-                "s.cp_id IN (SELECT id FROM channel_partners WHERE rm_id = %s)"
-            )
-            params = [rm_id]
         # Staff see all stages including Unapproved (full visibility into their CPs' funnel).
         return f"AND {clause}", params
 
@@ -165,11 +189,18 @@ def _apply_filters(base_sql: str, params: list):
         params.append(cp_id)
 
     if rm_id:
-        # Filter by the CP's assigned RM (channel_partners.rm_id), which is
-        # the canonical "owner" relationship. Note: this is distinct from
-        # submissions.assigned_rm_id (legacy per-listing assignment).
-        base_sql += " AND cp.rm_id = %s"
-        params.append(rm_id)
+        # Filter by EFFECTIVE RM:
+        #   - if s.listing_rm_id is set, the override wins, so match on it.
+        #   - else fall back to the CP's permanent rm_id.
+        # Without this, the admin's "filter by RM" dropdown would miss any
+        # listing that's been redirected to a different RM via override.
+        base_sql += (
+            " AND ("
+            "  s.listing_rm_id = %s"
+            "  OR (s.listing_rm_id IS NULL AND cp.rm_id = %s)"
+            ")"
+        )
+        params.extend([rm_id, rm_id])
 
     if bhk:
         base_sql += " AND s.bhk = %s"

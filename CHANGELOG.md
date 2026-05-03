@@ -7,6 +7,33 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-03] — Fix: per-listing RM override never reached the receiving RM
+
+### Fixed
+- **Per-listing RM override silently failed on the receiving RM's side.**
+  When admin used "This listing only" reassignment to push a single
+  submission to a different RM, `submissions.listing_rm_id` got set
+  correctly and the activity log showed the override — but the target
+  RM never saw the listing in their portal. The CP's permanent RM
+  continued to see it.
+
+  Root cause: the RM scope filter in [backend/routes/admin.py](backend/routes/admin.py)
+  (`_scoped_city_filter`) and the admin's "filter by RM" branch in
+  `_apply_filters` both matched only on `channel_partners.rm_id` (the
+  CP's permanent RM). Neither path consulted `s.listing_rm_id`, so
+  the override was effectively write-only.
+
+  Fix: both paths now match on **effective RM** =
+  `COALESCE(s.listing_rm_id, cp.rm_id)`. A listing is visible to RM X
+  iff either (a) `listing_rm_id = X`, or (b) `listing_rm_id IS NULL`
+  and the CP's permanent `rm_id = X`. Manager scope expands the same
+  rule across `me + manager_id = me`. Flows through every endpoint
+  that uses the scope helper — list, count, detail, CSV, dashboard.
+
+  Repro: admin sets "This listing only" → Aman Dixit on a CP whose
+  permanent RM is Kavita Rawat. Before this fix, Aman saw nothing;
+  Kavita still saw it. After: Aman sees it, Kavita does not.
+
 ## [2026-05-01] — Admin Panel: staff-user management + force logout + OH-Properties gate
 
 ### Added
