@@ -129,6 +129,7 @@ def _rm_user_response(rm: dict) -> dict:
     is_mgr = bool(rm.get("is_manager"))
     return {
         "id": f"rm-{rm['id']}",
+        "rm_id": rm["id"],   # numeric — used by UI gates that need to identify "me" against the rms table (e.g. "RMs in my team")
         "cp_code": f"RM{rm['id']:04d}",
         "name": rm.get("name") or "RM",
         "phone": rm["phone"],

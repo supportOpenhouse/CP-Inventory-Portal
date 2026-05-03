@@ -36,5 +36,11 @@ build/
 .next/
 *.log
 
+# Vite PWA dev build output
+frontend/dev-dist/
+
+# Local debug / scratch scripts (not part of the deployable app)
+backend/scripts/
+
 
 .claude/

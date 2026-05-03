@@ -47,6 +47,43 @@ def require_admin_role(f):
     return wrapper
 
 
+def require_admin_or_manager(f):
+    """Admin or Manager only. Use AFTER require_staff.
+
+    Used by per-listing RM override endpoints — managers can route work
+    within their own team, but plain RMs cannot.
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        role = g.user.get("role")
+        if role == "admin":
+            return f(*args, **kwargs)
+        if role == "rm" and bool(g.user.get("is_manager")):
+            return f(*args, **kwargs)
+        return jsonify({"error": "Admin or Manager only"}), 403
+    return wrapper
+
+
+def _allowed_target_rm_ids_for_user(cur):
+    """Returns the set of RM ids the current user is allowed to target with
+    a per-listing override.
+
+    - Admin           : returns None (sentinel meaning "no restriction").
+    - Manager         : {self} ∪ {rms.id where manager_id = self}.
+    - Plain RM / CP   : empty set (caller already gated by decorator).
+    """
+    if g.user.get("role") == "admin":
+        return None
+    rm_id = g.user.get("rm_id")
+    if bool(g.user.get("is_manager")) and rm_id:
+        cur.execute(
+            "SELECT id FROM rms WHERE id = %s OR manager_id = %s",
+            (rm_id, rm_id),
+        )
+        return {r["id"] for r in cur.fetchall()}
+    return set()
+
+
 # ---- helpers ----
 
 def _scoped_city_filter(cur):
@@ -2072,7 +2109,8 @@ def list_rms():
                 cur.execute("""
                     SELECT r.id, r.name, r.phone, r.email,
                            r.city_id, c.name AS city,
-                           COALESCE(r.is_manager, FALSE) AS is_manager
+                           COALESCE(r.is_manager, FALSE) AS is_manager,
+                           r.manager_id
                     FROM rms r
                     LEFT JOIN cities c ON r.city_id = c.id
                     WHERE COALESCE(r.is_active, TRUE) = TRUE
@@ -2081,11 +2119,12 @@ def list_rms():
                 rows = cur.fetchall()
             except Exception:
                 conn.rollback()
-                # Fallback for schemas missing city_id / is_manager
+                # Fallback for schemas missing city_id / is_manager / manager_id
                 cur.execute("""
                     SELECT r.id, r.name, r.phone, r.email,
                            NULL::integer AS city_id, NULL::varchar AS city,
-                           FALSE AS is_manager
+                           FALSE AS is_manager,
+                           NULL::integer AS manager_id
                     FROM rms r
                     WHERE COALESCE(r.is_active, TRUE) = TRUE
                     ORDER BY r.name ASC, r.id ASC
@@ -2846,7 +2885,7 @@ def _validate_target_rm(cur, target_rm_id):
 
 @bp.patch("/submissions/<int:sid>/listing-rm")
 @require_staff
-@require_admin_role  # admin only — same gate as the CP-permanent reassign
+@require_admin_or_manager  # admin: any RM. manager: only within their team.
 def set_listing_rm(sid: int):
     """Set or clear the per-listing RM override for a single submission.
 
@@ -2857,6 +2896,11 @@ def set_listing_rm(sid: int):
       submissions.listing_rm_id := target_rm_id (NULL clears).
       The CP's permanent rm_id on channel_partners is NOT touched.
       Effective RM falls back to channel_partners.rm_id when listing_rm_id is NULL.
+
+    Manager constraints (admin is unrestricted):
+      - target_rm_id must be self or a direct report (rms.manager_id = self).
+      - the submission must be within the manager's scope (same rule as
+        list/detail visibility).
     """
     data = request.get_json(silent=True) or {}
     raw = data.get("target_rm_id", "__missing__")
@@ -2874,13 +2918,21 @@ def set_listing_rm(sid: int):
                 body, status = err
                 return jsonify(body), status
 
+            allowed = _allowed_target_rm_ids_for_user(cur)
+            if allowed is not None and target_rm_id is not None and target_rm_id not in allowed:
+                return jsonify({
+                    "error": "You can only reassign listings to RMs within your own team."
+                }), 403
+
+            scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(
-                "SELECT id, listing_rm_id FROM submissions WHERE id = %s AND deleted_at IS NULL",
-                (sid,),
+                f"SELECT s.id, s.listing_rm_id FROM submissions s "
+                f"WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}",
+                [sid, *scope_params],
             )
             sub = cur.fetchone()
             if not sub:
-                return jsonify({"error": "Submission not found or deleted"}), 404
+                return jsonify({"error": "Submission not found or out of scope"}), 404
             if sub["listing_rm_id"] == target_rm_id:
                 return jsonify({
                     "ok": True, "unchanged": True,
@@ -2914,7 +2966,7 @@ def set_listing_rm(sid: int):
 
 @bp.post("/submissions/bulk-reassign-listing-rm")
 @require_staff
-@require_admin_role
+@require_admin_or_manager  # admin: any RM. manager: only within their team.
 def bulk_reassign_listing_rm():
     """Set or clear the per-listing RM override for many submissions in one call.
 
@@ -2923,6 +2975,11 @@ def bulk_reassign_listing_rm():
         "submission_ids": [int],   # required, non-empty, max 100
         "target_rm_id":   int | null  # null clears
       }
+
+    Manager constraints (admin is unrestricted):
+      - target_rm_id must be self or a direct report.
+      - submissions outside the manager's scope are silently skipped (counted
+        as not_found in the response).
 
     Idempotent on already-target rows; returns updated count.
     """
@@ -2958,13 +3015,24 @@ def bulk_reassign_listing_rm():
                 body, status = err
                 return jsonify(body), status
 
-            cur.execute("""
-                UPDATE submissions
+            allowed = _allowed_target_rm_ids_for_user(cur)
+            if allowed is not None and target_rm_id is not None and target_rm_id not in allowed:
+                return jsonify({
+                    "error": "You can only reassign listings to RMs within your own team."
+                }), 403
+
+            # Scope filter — admins get "" (no extra clause); managers get a
+            # WHERE chunk that restricts to their team's listings. The clause
+            # uses the `s` alias so we have to alias the UPDATE target.
+            scope_sql, scope_params = _scoped_city_filter(cur)
+            cur.execute(f"""
+                UPDATE submissions AS s
                 SET listing_rm_id = %s
-                WHERE id = ANY(%s) AND deleted_at IS NULL
-                  AND COALESCE(listing_rm_id, -1) IS DISTINCT FROM COALESCE(%s, -1)
-                RETURNING id
-            """, (target_rm_id, submission_ids, target_rm_id))
+                WHERE s.id = ANY(%s) AND s.deleted_at IS NULL
+                  AND COALESCE(s.listing_rm_id, -1) IS DISTINCT FROM COALESCE(%s, -1)
+                  {scope_sql}
+                RETURNING s.id
+            """, [target_rm_id, submission_ids, target_rm_id, *scope_params])
             updated = cur.fetchall()
             updated_ids = [r["id"] for r in updated]
 

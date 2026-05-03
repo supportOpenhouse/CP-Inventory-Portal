@@ -45,7 +45,15 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
 
   const user = getUser();
   const isAdmin = user?.role === 'admin';
+  const isManager = !isAdmin && (user?.role === 'manager' || user?.isManager);
   const isStaff = isAdmin || user?.role === 'manager' || user?.role === 'rm';
+
+  // RMs available for the listing-RM override dropdown.
+  // - Admins: any active RM.
+  // - Managers: only their team (self + direct reports).
+  const reassignableRms = (isManager && user?.rm_id)
+    ? rms.filter((r) => r.id === user.rm_id || r.manager_id === user.rm_id)
+    : rms;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -613,9 +621,10 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </div>
               </div>
 
-              {/* Assigned RM — admin picks scope (this listing only OR CP's
-                  permanent RM). Read-only for non-admins; effective RM is the
-                  listing override if set, else the CP's permanent RM. */}
+              {/* Assigned RM —
+                    Admin   : full picker (this listing OR CP's permanent RM).
+                    Manager : listing-only override, restricted to their team.
+                    RM      : read-only effective RM. */}
               <div className="admin-panel-section">
                 <div className="admin-panel-section-title">Assigned RM</div>
                 {isAdmin ? (
@@ -670,7 +679,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       <option value="">
                         {rmAssignMode === 'listing' ? '— No override (use CP\'s RM) —' : '— Unassigned —'}
                       </option>
-                      {rms.map((rm) => (
+                      {reassignableRms.map((rm) => (
                         <option key={rm.id} value={rm.id}>
                           {rm.name}{rm.city ? ` · ${rm.city}` : ''}{rm.is_manager ? ' · Manager' : ''}
                         </option>
@@ -680,6 +689,26 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       {rmAssignMode === 'listing'
                         ? `Override for THIS listing only. The CP's permanent RM (${s.cp_rm_name || 'unassigned'}) is unchanged.`
                         : `Changes this CP's permanent RM. Affects ALL of their submissions — past and future, not just this one.`}
+                    </div>
+                  </>
+                ) : isManager ? (
+                  <>
+                    <select
+                      className="status-select"
+                      value={s.listing_rm_id || ''}
+                      onChange={(e) => assignListingRm(e.target.value)}
+                      disabled={busy}
+                    >
+                      <option value="">— No override (use CP's RM) —</option>
+                      {reassignableRms.map((rm) => (
+                        <option key={rm.id} value={rm.id}>
+                          {rm.name}{rm.city ? ` · ${rm.city}` : ''}{rm.is_manager ? ' · Manager' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
+                      Override for THIS listing only, within your team. The CP's
+                      permanent RM ({s.cp_rm_name || 'unassigned'}) is unchanged.
                     </div>
                   </>
                 ) : (

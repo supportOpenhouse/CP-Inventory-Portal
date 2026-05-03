@@ -7,6 +7,44 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-03] — Managers can reassign listings within their team
+
+### Added
+- **Bulk "Reassign RM…" button is now visible to Managers** (previously
+  admin-only). Managers can route the selected listings to any RM in
+  their own team — the button opens the same modal admins use, but in
+  a constrained mode (listing-only, team-only).
+- **Per-listing RM override on the detail panel is now usable by
+  Managers** for the same reasons.
+
+### Changed
+- **`POST /api/admin/submissions/bulk-reassign-listing-rm`** and
+  **`PATCH /api/admin/submissions/<id>/listing-rm`** are now gated by
+  `@require_admin_or_manager` (new helper) instead of `@require_admin_role`.
+  Manager constraints, enforced server-side:
+  1. `target_rm_id` must be the manager themself or a direct report
+     (`rms.manager_id = me`). Out-of-team targets return 403.
+  2. The submission(s) being modified must be within the manager's
+     scope (same rule as list/detail visibility). Out-of-scope rows
+     are silently skipped in bulk and return 404 in single-listing.
+- **`GET /api/admin/rms`** now also returns each RM's `manager_id`
+  so the modal can filter the dropdown to a manager's team without
+  a separate roundtrip.
+- **`GET /api/me`** for an RM now also returns numeric `rm_id` (it
+  previously only had `id` formatted as `rm-{N}`). The frontend uses
+  this to identify "self" against the rms table.
+- **CP-permanent reassign (`POST /api/admin/cps/bulk-reassign-rm`)
+  remains admin-only.** That endpoint changes `channel_partners.rm_id`
+  which fundamentally moves a CP between books, so it stays an
+  admin-level operation.
+
+### Why
+Managers reported that the Reassign-RM bulk option was no longer
+available. It actually never was — the feature was admin-only since
+introduction (`0d9725c`). But routing work between RMs in one's own
+team is a normal manager activity, and the per-listing override
+(blast radius: one row) is the right primitive for it.
+
 ## [2026-05-03] — Fix: per-listing RM override never reached the receiving RM
 
 ### Fixed

@@ -535,13 +535,15 @@ export default function Admin() {
           >
             📅 Schedule visits…
           </button>
-          {isAdmin && (
+          {(isAdmin || user.isManager) && (
             <button
               className="btn-secondary-sm"
               style={{ borderColor: '#7C3AED', color: '#7C3AED' }}
               onClick={() => setBulkReassignOpen(true)}
               disabled={bulkBusy}
-              title="Move the selected CPs to a different RM (admin only)"
+              title={isAdmin
+                ? 'Reassign the selected listings or CPs to a different RM'
+                : 'Reassign the selected listings to an RM in your team'}
             >
               👤 Reassign RM…
             </button>
