@@ -64,24 +64,6 @@ def require_admin_or_manager(f):
     return wrapper
 
 
-def _allowed_target_rm_ids_for_user(cur):
-    """Returns the set of RM ids the current user is allowed to target with
-    a per-listing override.
-
-    - Admin           : returns None (sentinel meaning "no restriction").
-    - Manager         : {self} ∪ {rms.id where manager_id = self}.
-    - Plain RM / CP   : empty set (caller already gated by decorator).
-    """
-    if g.user.get("role") == "admin":
-        return None
-    rm_id = g.user.get("rm_id")
-    if bool(g.user.get("is_manager")) and rm_id:
-        cur.execute(
-            "SELECT id FROM rms WHERE id = %s OR manager_id = %s",
-            (rm_id, rm_id),
-        )
-        return {r["id"] for r in cur.fetchall()}
-    return set()
 
 
 # ---- helpers ----
@@ -2137,22 +2119,20 @@ def list_rms():
 
 @bp.patch("/channel-partners/<int:cp_id>/rm")
 @require_staff
+@require_admin_or_manager
 def set_cp_rm(cp_id: int):
-    """Admin-only: set channel_partners.rm_id for a CP.
+    """Admin or Manager: set channel_partners.rm_id for a CP.
 
     Request body: { rm_id: <rms.id> | null }
     Response:     { ok: true, rm_id: <value> }
 
-    Managers/RMs can VIEW the CP\u2019s current RM (via submission detail) but
-    cannot CHANGE it. Only role='admin' passes the guard.
+    Plain RMs can VIEW the CP\u2019s current RM (via submission detail) but
+    cannot CHANGE it. Managers can change CPs within their own scope
+    (their team\u2019s CPs); admins can change any CP. Target RM may be anyone.
 
     If rm_id is null/omitted, clears the CP\u2019s RM assignment (no-RM state).
     If rm_id is provided, we validate it exists in the `rms` table.
     """
-    # Extra guard on top of require_staff — only true admins may reassign
-    if g.user.get("role") != "admin":
-        return jsonify({"error": "Only admins can change a CP's RM assignment"}), 403
-
     data = request.get_json(silent=True) or {}
     rm_id_raw = data.get("rm_id")
     if rm_id_raw in ("", None):
@@ -2166,10 +2146,15 @@ def set_cp_rm(cp_id: int):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            # Verify CP exists
-            cur.execute("SELECT id FROM channel_partners WHERE id = %s", (cp_id,))
+            # Verify CP exists AND is in the caller’s scope (no-op for admins,
+            # restricts managers to their team’s CPs).
+            cp_scope_sql, cp_scope_params = _scoped_cp_filter()
+            cur.execute(
+                f"SELECT cp.id FROM channel_partners cp WHERE cp.id = %s {cp_scope_sql}",
+                [cp_id, *cp_scope_params],
+            )
             if cur.fetchone() is None:
-                return jsonify({"error": "Channel partner not found"}), 404
+                return jsonify({"error": "Channel partner not found or out of scope"}), 404
 
             # If setting to a specific RM, verify that RM exists + is active
             if new_rm_id is not None:
@@ -2739,7 +2724,7 @@ def create_submission_on_behalf():
 
 @bp.post("/cps/bulk-reassign-rm")
 @require_staff
-@require_admin_role  # admin only — affects the canonical CP-RM ownership
+@require_admin_or_manager  # admins: any CP. Managers: their team's CPs only.
 def bulk_reassign_rm():
     """Reassign a batch of CPs to a different RM.
 
@@ -2751,10 +2736,13 @@ def bulk_reassign_rm():
 
     Behavior:
       - Validates target_rm_id exists in `rms` and is_active=TRUE.
-      - Validates every cp_id exists in `channel_partners` (no scope check
-        because admin only). Inactive CPs are accepted but flagged in the
-        response so the admin can see what they did.
-      - Updates rm_id on every cp atomically (single UPDATE with ANY).
+      - Loads CPs that match the caller's CP-scope (no-op for admins;
+        restricts managers to their own team's CPs). Out-of-scope ids
+        come back as "CP not found" in the per-CP results.
+      - Inactive CPs are accepted but flagged in the response.
+      - Updates rm_id on every in-scope CP atomically (single UPDATE
+        with ANY). Target RM may be anyone — managers have the same
+        target freedom as admins.
       - Returns counts + list of updated CP ids.
     """
     data = request.get_json(silent=True) or {}
@@ -2794,12 +2782,15 @@ def bulk_reassign_rm():
                 return jsonify({"error": f"RM id={target_rm_id} ({rm_row.get('name')}) is inactive"}), 400
             target_rm_name = rm_row["name"]
 
-            # 2. Load existing CPs to report per-CP outcome
-            cur.execute("""
-                SELECT id, name, cp_code, phone, rm_id, is_active
-                FROM channel_partners
-                WHERE id = ANY(%s)
-            """, (cp_ids,))
+            # 2. Load existing CPs to report per-CP outcome — scoped to the
+            # caller (no-op for admins). Out-of-scope rows are simply absent
+            # from `existing_by_id` and surface as "CP not found".
+            cp_scope_sql, cp_scope_params = _scoped_cp_filter()
+            cur.execute(f"""
+                SELECT cp.id, cp.name, cp.cp_code, cp.phone, cp.rm_id, cp.is_active
+                FROM channel_partners cp
+                WHERE cp.id = ANY(%s) {cp_scope_sql}
+            """, [cp_ids, *cp_scope_params])
             existing = cur.fetchall()
             existing_by_id = {r["id"]: r for r in existing}
 
@@ -2897,10 +2888,10 @@ def set_listing_rm(sid: int):
       The CP's permanent rm_id on channel_partners is NOT touched.
       Effective RM falls back to channel_partners.rm_id when listing_rm_id is NULL.
 
-    Manager constraints (admin is unrestricted):
-      - target_rm_id must be self or a direct report (rms.manager_id = self).
+    Manager constraint (admin is unrestricted):
       - the submission must be within the manager's scope (same rule as
-        list/detail visibility).
+        list/detail visibility). Target RM may be anyone — managers have
+        the same target freedom as admins.
     """
     data = request.get_json(silent=True) or {}
     raw = data.get("target_rm_id", "__missing__")
@@ -2917,12 +2908,6 @@ def set_listing_rm(sid: int):
             if err:
                 body, status = err
                 return jsonify(body), status
-
-            allowed = _allowed_target_rm_ids_for_user(cur)
-            if allowed is not None and target_rm_id is not None and target_rm_id not in allowed:
-                return jsonify({
-                    "error": "You can only reassign listings to RMs within your own team."
-                }), 403
 
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(
@@ -2976,10 +2961,10 @@ def bulk_reassign_listing_rm():
         "target_rm_id":   int | null  # null clears
       }
 
-    Manager constraints (admin is unrestricted):
-      - target_rm_id must be self or a direct report.
-      - submissions outside the manager's scope are silently skipped (counted
-        as not_found in the response).
+    Manager constraint (admin is unrestricted):
+      - submissions outside the manager's scope are silently skipped
+        (counted as not_found in the response). Target RM may be anyone —
+        managers have the same target freedom as admins.
 
     Idempotent on already-target rows; returns updated count.
     """
@@ -3014,12 +2999,6 @@ def bulk_reassign_listing_rm():
             if err:
                 body, status = err
                 return jsonify(body), status
-
-            allowed = _allowed_target_rm_ids_for_user(cur)
-            if allowed is not None and target_rm_id is not None and target_rm_id not in allowed:
-                return jsonify({
-                    "error": "You can only reassign listings to RMs within your own team."
-                }), 403
 
             # Scope filter — admins get "" (no extra clause); managers get a
             # WHERE chunk that restricts to their team's listings. The clause

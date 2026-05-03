@@ -7,43 +7,51 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
-## [2026-05-03] — Managers can reassign listings within their team
+## [2026-05-03] — Managers get full reassign parity with Admins
 
 ### Added
-- **Bulk "Reassign RM…" button is now visible to Managers** (previously
-  admin-only). Managers can route the selected listings to any RM in
-  their own team — the button opens the same modal admins use, but in
-  a constrained mode (listing-only, team-only).
-- **Per-listing RM override on the detail panel is now usable by
-  Managers** for the same reasons.
+- **Managers can now reassign listings or CPs to any RM**, with the
+  same UI admins see. The "👤 Reassign RM…" bulk button on the admin
+  board is visible to both `role=admin` and `role=manager`. The same
+  applies to single-listing reassign on the detail panel.
 
-### Changed
-- **`POST /api/admin/submissions/bulk-reassign-listing-rm`** and
-  **`PATCH /api/admin/submissions/<id>/listing-rm`** are now gated by
-  `@require_admin_or_manager` (new helper) instead of `@require_admin_role`.
-  Manager constraints, enforced server-side:
-  1. `target_rm_id` must be the manager themself or a direct report
-     (`rms.manager_id = me`). Out-of-team targets return 403.
-  2. The submission(s) being modified must be within the manager's
-     scope (same rule as list/detail visibility). Out-of-scope rows
-     are silently skipped in bulk and return 404 in single-listing.
+### Changed — endpoints opened to managers
+All four reassign endpoints are now gated by the new
+`@require_admin_or_manager` decorator (instead of `@require_admin_role`):
+
+  | Endpoint | What it does |
+  |---|---|
+  | `PATCH /api/admin/submissions/<id>/listing-rm` | Single listing-RM override |
+  | `POST  /api/admin/submissions/bulk-reassign-listing-rm` | Bulk listing-RM override |
+  | `PATCH /api/admin/channel-partners/<cp_id>/rm` | Single CP-permanent RM |
+  | `POST  /api/admin/cps/bulk-reassign-rm` | Bulk CP-permanent RM |
+
+### Manager constraints (admin is unrestricted)
+The only manager-vs-admin difference is **scope of subjects** — i.e.
+which listings / CPs the caller may act on. Target RM is unrestricted
+for both:
+
+- **Listing-RM endpoints** apply `_scoped_city_filter` (the same rule
+  that powers list / detail visibility). Out-of-scope rows are silently
+  skipped in bulk and return 404 in single-listing.
+- **CP-permanent endpoints** apply `_scoped_cp_filter` against the
+  `channel_partners cp` alias. Out-of-scope CPs come back as
+  "CP not found or out of scope" / are absent from per-CP results.
+
+### Other plumbing
 - **`GET /api/admin/rms`** now also returns each RM's `manager_id`
-  so the modal can filter the dropdown to a manager's team without
-  a separate roundtrip.
+  (kept from the team-filter iteration; harmless when unused).
 - **`GET /api/me`** for an RM now also returns numeric `rm_id` (it
-  previously only had `id` formatted as `rm-{N}`). The frontend uses
-  this to identify "self" against the rms table.
-- **CP-permanent reassign (`POST /api/admin/cps/bulk-reassign-rm`)
-  remains admin-only.** That endpoint changes `channel_partners.rm_id`
-  which fundamentally moves a CP between books, so it stays an
-  admin-level operation.
+  previously only had `id` formatted as `rm-{N}`). Useful for the
+  frontend when it needs to identify "self" against the rms table.
 
 ### Why
-Managers reported that the Reassign-RM bulk option was no longer
-available. It actually never was — the feature was admin-only since
-introduction (`0d9725c`). But routing work between RMs in one's own
-team is a normal manager activity, and the per-listing override
-(blast radius: one row) is the right primitive for it.
+A manager asked why "Reassign RM…" was no longer available on the
+bulk toolbar. It actually never was — admin-only since introduction
+(`0d9725c`). User then asked for "complete functionality of
+re-assigning… same as admin" — i.e. full parity, not a constrained
+subset. So the listing-only / team-only intermediate version that
+shipped earlier in this branch is replaced with the parity model.
 
 ## [2026-05-03] — Fix: per-listing RM override never reached the receiving RM
 

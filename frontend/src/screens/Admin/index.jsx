@@ -541,9 +541,7 @@ export default function Admin() {
               style={{ borderColor: '#7C3AED', color: '#7C3AED' }}
               onClick={() => setBulkReassignOpen(true)}
               disabled={bulkBusy}
-              title={isAdmin
-                ? 'Reassign the selected listings or CPs to a different RM'
-                : 'Reassign the selected listings to an RM in your team'}
+              title="Reassign the selected listings, or change each CP's permanent RM"
             >
               👤 Reassign RM…
             </button>

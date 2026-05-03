@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../../api';
-import { getUser } from '../../auth';
 
 /**
  * Bulk RM reassignment with two modes:
@@ -19,13 +18,6 @@ import { getUser } from '../../auth';
  *   onSuccess: () => void   // parent should clear selection + reload
  */
 export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSuccess }) {
-  const me = getUser();
-  const isAdmin = me?.role === 'admin';
-  const isManager = !isAdmin && (me?.role === 'manager' || me?.isManager);
-
-  // Managers are constrained to per-listing reassignment within their team —
-  // they can't change a CP's permanent RM (that's an admin-only org change).
-  // Force the mode to 'listings' for them and hide the picker.
   const [mode, setMode] = useState('listings');  // 'listings' (default) | 'cps'
   const [rms, setRms] = useState([]);
   const [loadingRms, setLoadingRms] = useState(true);
@@ -34,19 +26,13 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
   const [error, setError] = useState('');
   const [resultSummary, setResultSummary] = useState(null);
 
-  // Load RM list on mount. For managers, filter the list to their own team
-  // (self + direct reports) so they can't accidentally pick an out-of-team RM
-  // — the backend enforces the same rule, but the UI shouldn't even offer it.
+  // Load RM list on mount. Backend already returns only active RMs.
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const data = await api.adminListRms();
-        const all = data?.rms || [];
-        const filtered = isManager && me?.rm_id
-          ? all.filter((r) => r.id === me.rm_id || r.manager_id === me.rm_id)
-          : all;
-        if (alive) setRms(filtered);
+        if (alive) setRms(data?.rms || []);
       } catch (e) {
         if (alive) setError(e instanceof ApiError ? e.message : 'Failed to load RMs');
       } finally {
@@ -54,7 +40,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
       }
     })();
     return () => { alive = false; };
-  }, [isManager, me?.rm_id]);
+  }, []);
 
   // Group selected submissions by CP so we can show the per-CP impact
   const cpSummary = useMemo(() => {
@@ -176,55 +162,49 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
 
           {!submitted ? (
             <>
-              {/* Mode picker — admins see both options. Managers can only do
-                  per-listing reassignment within their team (CP-permanent RM
-                  changes are admin-only because they affect org ownership). */}
-              {isAdmin ? (
-                <div style={{ marginBottom: 16, padding: 12, border: '1px solid #e5e5e5', borderRadius: 6 }}>
-                  <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>
-                    What do you want to reassign?
-                  </div>
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '6px 0' }}>
-                    <input
-                      type="radio"
-                      name="reassign-mode"
-                      value="listings"
-                      checked={mode === 'listings'}
-                      onChange={() => setMode('listings')}
-                      disabled={submitting}
-                      style={{ marginTop: 3 }}
-                    />
-                    <span>
-                      <strong>These listings only</strong>
-                      {' '}<span style={{ color: '#888', fontSize: 13 }}>(default)</span>
-                      <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                        Reassigns the selected {selectedSubmissions.length} listing{selectedSubmissions.length === 1 ? '' : 's'} to the chosen RM. Each CP's permanent RM assignment is unchanged — their other listings stay put.
-                      </div>
-                    </span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '6px 0' }}>
-                    <input
-                      type="radio"
-                      name="reassign-mode"
-                      value="cps"
-                      checked={mode === 'cps'}
-                      onChange={() => setMode('cps')}
-                      disabled={submitting}
-                      style={{ marginTop: 3 }}
-                    />
-                    <span>
-                      <strong>Each CP's permanent RM</strong>
-                      <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                        Changes the CP's permanent RM. <em>All</em> of each CP's listings — past and future, not just the {selectedSubmissions.length} you selected — will appear under the new RM going forward.
-                      </div>
-                    </span>
-                  </label>
+              {/* Mode picker — admins and managers both see both options.
+                  Listing-only is the default; CP-permanent RM is destructive
+                  (touches all of a CP's listings) so we keep the warning. */}
+              <div style={{ marginBottom: 16, padding: 12, border: '1px solid #e5e5e5', borderRadius: 6 }}>
+                <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>
+                  What do you want to reassign?
                 </div>
-              ) : (
-                <div style={{ marginBottom: 16, padding: 12, background: '#F3F0FF', border: '1px solid #DDD6FE', borderRadius: 6, fontSize: 13, color: '#4C1D95' }}>
-                  Reassigning <strong>{selectedSubmissions.length} listing{selectedSubmissions.length === 1 ? '' : 's'}</strong> to an RM in your team. Each CP's permanent RM is unchanged.
-                </div>
-              )}
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '6px 0' }}>
+                  <input
+                    type="radio"
+                    name="reassign-mode"
+                    value="listings"
+                    checked={mode === 'listings'}
+                    onChange={() => setMode('listings')}
+                    disabled={submitting}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <strong>These listings only</strong>
+                    {' '}<span style={{ color: '#888', fontSize: 13 }}>(default)</span>
+                    <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                      Reassigns the selected {selectedSubmissions.length} listing{selectedSubmissions.length === 1 ? '' : 's'} to the chosen RM. Each CP's permanent RM assignment is unchanged — their other listings stay put.
+                    </div>
+                  </span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '6px 0' }}>
+                  <input
+                    type="radio"
+                    name="reassign-mode"
+                    value="cps"
+                    checked={mode === 'cps'}
+                    onChange={() => setMode('cps')}
+                    disabled={submitting}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <strong>Each CP's permanent RM</strong>
+                    <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                      Changes the CP's permanent RM. <em>All</em> of each CP's listings — past and future, not just the {selectedSubmissions.length} you selected — will appear under the new RM going forward.
+                    </div>
+                  </span>
+                </label>
+              </div>
 
               {mode === 'cps' && (
                 <div style={{ background: '#FFF8E1', color: '#7C4A03', padding: 12, borderRadius: 4, fontSize: 13, marginBottom: 16 }}>
