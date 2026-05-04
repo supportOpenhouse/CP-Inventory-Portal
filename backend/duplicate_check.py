@@ -1,8 +1,7 @@
 """Duplicate check against the properties DB and the submissions table.
 
-Matching sources for an EXACT (perfect-match) block when the CP gave
-tower/unit — only these two count, because they're the only sources
-with tower/unit columns:
+Matching sources for an EXACT (perfect-match) block — only these two
+count, because they're the only sources with tower/unit columns:
   1. properties (ground truth from LSQ + legacy — in Properties DB)
   2. submissions (active CP portal submissions — in app DB,
      status NOT IN ('Price Rejected', 'Duplicate Rejected', 'Unapproved'))
@@ -17,20 +16,24 @@ seen by a scraper.
 Matching fields:
   society (required) + bhk + floor + optionally tower + optionally unit_no
 
-Decision table (applies to BOTH sources):
+Decision table:
   CP inputs                                     Match found?        Result
-  ────────────────────────────────────────────  ─────────────────   ──────────────────
-  society+bhk+floor (no tower/unit)             soc+bhk+floor       BLOCK "floor already has unit"
-  society+bhk+floor (no tower/unit)             no match            proceed
-  society+bhk+floor+tower (no unit)             soc+bhk+floor+tower BLOCK "unit already exists"
-  society+bhk+floor+tower (no unit)             no finer match      proceed
-  society+bhk+floor+unit (no tower)             soc+bhk+floor+unit  BLOCK "unit already exists"
-  society+bhk+floor+unit (no tower)             no finer match      proceed
-  society+bhk+floor+tower+unit                  full exact match    BLOCK "unit already exists"
-  society+bhk+floor+tower+unit                  partial only        proceed
+  ────────────────────────────────────────────  ─────────────────   ─────────────────────────────
+  society+bhk+floor+tower+unit                  full exact match    EXACT block (Duplicate Rejected)
+  society+bhk+floor+tower+unit                  soc+bhk+floor only  PARTIAL (informational, no block)
+  society+bhk+floor+tower (no unit)             any match           PARTIAL (informational, no block)
+  society+bhk+floor+unit (no tower)             any match           PARTIAL (informational, no block)
+  society+bhk+floor (no tower/unit)             any match           PARTIAL (informational, no block)
+  any input                                     no match            none
 
-Every duplicate hit is a hard block with Contact RM + Edit buttons.
-There is no soft-warning / Continue Anyway path.
+EXACT match (match_level='exact', block=True) requires the CP to supply
+BOTH tower AND unit_no AND for a matching row in properties or submissions
+to share society+bhk+floor+tower+unit. This is the only path that drives
+"Duplicate Rejected" status downstream. If either tower or unit_no is
+missing on the CP side — or the inventory has only a coarser match — the
+result is reported as 'partial': the dup signal is surfaced (collated_match
+/ submissions_match flags, banner copy) but block=False so callers route
+the submission through the normal path instead of auto-rejecting.
 
 BHK is normalized by stripping "BHK" and matching digits only:
   "2 BHK" -> "2", "2BHK" -> "2", "2" -> "2"
@@ -308,43 +311,55 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     base_params = [city, society_name, bhk_n, floor_n]
 
     hard_block_details = {"society": society_name, "city": city}
-    unit_label = society_name
-    if tower:
-        unit_label += f", Tower {tower}"
-    if unit_no:
-        unit_label += f", Unit {unit_no}"
+
+    def _partial(submissions_hit: bool):
+        """Build a partial-match response: signal surfaced, no hard block.
+
+        Returned when society+bhk+floor matches somewhere but we can't
+        confirm a full 5-field (society+bhk+floor+tower+unit) match — either
+        because the CP didn't supply both tower and unit, or because the
+        inventory only has a coarser match. Caller decides what to do; the
+        downstream status logic treats only match_level=='exact' as a
+        perfect-match auto-reject.
+        """
+        rm_info = _fetch_rm(city, cp_id=cp_id)
+        return {
+            "match_level": "partial",
+            "block": False,
+            "banner_title": "Similar unit may\nbe with Openhouse",
+            "message": (
+                f"A {bhk_n} BHK unit on floor {floor_n} at {society_name} "
+                f"may already be with Openhouse."
+            ),
+            "details": {**hard_block_details, **rm_info},
+            "collated_match": collated_match_flag,
+            "submissions_match": submissions_hit,
+        }
 
     pconn = get_props_conn()
     try:
         with pconn.cursor() as cur:
-            # ---------- HARD BLOCK: society+bhk+floor + (tower AND/OR unit) ----------
-            if tower or unit_no:
-                conditions = [base_where]
-                params = list(base_params)
+            # ---------- EXACT BLOCK: requires CP to supply BOTH tower AND unit ----------
+            # Only a full 5-field match (society+bhk+floor+tower+unit) qualifies as
+            # an exact/perfect match. Anything coarser falls through to the partial
+            # path. Exact is the only result that drives Duplicate Rejected.
+            if tower and unit_no:
+                conditions = [
+                    base_where,
+                    "UPPER(TRIM(REGEXP_REPLACE(COALESCE(tower_no, ''), '^0+', ''))) "
+                    "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))",
+                    "UPPER(TRIM(REGEXP_REPLACE(COALESCE(unit_no, ''), '^0+', ''))) "
+                    "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))",
+                ]
+                params = [*base_params, tower, unit_no]
 
-                if tower:
-                    conditions.append(
-                        "UPPER(TRIM(REGEXP_REPLACE(COALESCE(tower_no, ''), '^0+', ''))) "
-                        "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))"
-                    )
-                    params.append(tower)
-                if unit_no:
-                    conditions.append(
-                        "UPPER(TRIM(REGEXP_REPLACE(COALESCE(unit_no, ''), '^0+', ''))) "
-                        "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))"
-                    )
-                    params.append(unit_no)
-
-                sql = (
-                    "SELECT uid FROM properties "
-                    f"WHERE {' AND '.join(conditions)} "
-                    "LIMIT 1"
+                cur.execute(
+                    f"SELECT uid FROM properties WHERE {' AND '.join(conditions)} LIMIT 1",
+                    params,
                 )
-                cur.execute(sql, params)
-                hit = cur.fetchone()
-
-                if hit:
+                if cur.fetchone():
                     rm_info = _fetch_rm(city, cp_id=cp_id)
+                    unit_label = f"{society_name}, Tower {tower}, Unit {unit_no}"
                     return {
                         "match_level": "exact",
                         "block": True,
@@ -355,12 +370,12 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         ),
                         "details": {**hard_block_details, **rm_info},
                         "collated_match": collated_match_flag,
-                        "submissions_match": False,  # properties hit, not submissions
+                        "submissions_match": False,
                     }
 
-                # Not in properties — also check pending submissions from all CPs
                 if _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
                     rm_info = _fetch_rm(city, cp_id=cp_id)
+                    unit_label = f"{society_name}, Tower {tower}, Unit {unit_no}"
                     return {
                         "match_level": "exact",
                         "block": True,
@@ -371,47 +386,24 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                         ),
                         "details": {**hard_block_details, **rm_info},
                         "collated_match": collated_match_flag,
-                        "submissions_match": True,  # ← submissions_hit drove this block
+                        "submissions_match": True,
                     }
+                # Fall through: tower+unit given but no full match — may still be partial.
 
-                # collated_data has no tower/unit columns, so it can never confirm
-                # a unit-level match. When the CP has given tower/unit, a
-                # society+bhk+floor hit in collated is informational at best — we
-                # do NOT promote it to an exact/perfect match. The flag is still
-                # surfaced on the response so admin tooling can see it if needed.
-                result = _no_match()
-                result["collated_match"] = collated_match_flag
-                result["submissions_match"] = False
-                return result
-
-            # ---------- HARD BLOCK: society+bhk+floor match (no tower/unit given) ----------
-            # Per spec, this is treated the same as an exact match — "already in inventory"
-            # with Contact RM + Edit buttons. No soft warning / Continue Anyway.
+            # ---------- PARTIAL: society+bhk+floor matches anywhere ----------
+            # Reaching here means either the CP didn't supply both tower+unit, or
+            # they did but the full 5-field match missed. If anything matches at
+            # the society+bhk+floor scope (properties / active submissions /
+            # collated), report it as a partial signal — informational only.
             cur.execute(
-                f"SELECT COUNT(*) AS cnt FROM properties WHERE {base_where}",
+                f"SELECT 1 FROM properties WHERE {base_where} LIMIT 1",
                 base_params,
             )
-            row = cur.fetchone()
-            properties_hit = bool(row and row["cnt"] > 0)
-
-            # Also check pending submissions from all CPs
+            properties_hit = cur.fetchone() is not None
             submissions_hit = _check_submissions(society_id, bhk_n, floor_n, None, None)
 
             if properties_hit or submissions_hit or collated_match_flag:
-                rm_info = _fetch_rm(city, cp_id=cp_id)
-                return {
-                    "match_level": "exact",
-                    "block": True,
-                    "banner_title": "A unit on this floor\nis already with Openhouse",
-                    "message": (
-                        f"A {bhk_n} BHK unit on floor {floor_n} at {society_name} "
-                        f"is already with Openhouse. Please contact your Openhouse "
-                        f"representative."
-                    ),
-                    "details": {**hard_block_details, **rm_info},
-                    "collated_match": collated_match_flag,
-                    "submissions_match": submissions_hit,
-                }
+                return _partial(submissions_hit)
     finally:
         put_props_conn(pconn)
 
