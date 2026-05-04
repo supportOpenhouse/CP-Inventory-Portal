@@ -42,5 +42,8 @@ frontend/dev-dist/
 # Local debug / scratch scripts (not part of the deployable app)
 backend/scripts/
 
+# Local UI design previews (open in browser, never deployed)
+frontend/CardPreview.html
+
 
 .claude/
