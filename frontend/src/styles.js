@@ -279,7 +279,7 @@ export const css = `
   .col-title { font-size: 13px; font-weight: 600; color: #222; }
   .col-count { font-size: 11px; color: #999; background: #F3F2EE; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
   .col-empty { font-size: 12px; color: #CCC; text-align: center; padding: 20px; }
-  .board-card { background: #fff; border: 1px solid #E8E6E0; border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer; transition: all 0.15s; position: relative; }
+  .board-card { background: #fff; border: 1px solid #E8E6E0; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; cursor: pointer; transition: all 0.15s; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
   .board-card:hover { border-color: #CCC; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transform: translateY(-1px); }
   .board-card.active { border-color: var(--oh-orange); box-shadow: 0 0 0 2px rgba(255,107,43,0.12); }
 
@@ -287,7 +287,6 @@ export const css = `
   .board-card.weak-match { border-color: #FCA5A5; background: #FFF8F8; }
   .board-card.weak-match:hover { border-color: #DC2626; }
   .board-card.weak-match.active { border-color: #DC2626; box-shadow: 0 0 0 2px rgba(220,38,38,0.15); }
-  .board-card-weak-badge { position: absolute; top: 8px; right: 8px; font-size: 14px; color: #DC2626; font-weight: 700; }
   .admin-table tbody tr.weak-match { background: #FFF8F8; }
   .admin-table tbody tr.weak-match:hover { background: #FEE2E2; }
   .admin-table tbody tr.weak-match.active { background: #FECACA; }
@@ -297,20 +296,46 @@ export const css = `
   .board-column.is-rejected .col-dot { box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
   .board-column.is-rejected .col-count { background: #FEE2E2; color: #DC2626; font-weight: 700; }
   .status-pill.is-rejected { background: #FEE2E2 !important; color: #DC2626 !important; font-weight: 700; }
-  .board-card-flag { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: #D64045; }
-  .board-card-society { font-size: 14px; font-weight: 600; color: #222; margin-bottom: 2px; padding-right: 96px; word-break: break-word; }
-  /* Top-right corner block: city (uppercase) on top, public_id (monospace) below */
-  .board-card-corner { position: absolute; top: 14px; right: 22px; text-align: right; max-width: 90px; }
-  .board-card-city-text { font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
-  .board-card-pubid-text { font-size: 10px; font-weight: 600; color: #BBB; font-family: monospace; letter-spacing: 0.3px; margin-top: 2px; white-space: nowrap; }
-  .board-card-meta { font-size: 12px; color: #888; margin-bottom: 8px; }
-  .board-card-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-  .board-chip { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 500; }
-  .board-chip-plain { background: #F3F2EE; color: #666; }
-  .board-card-bottom { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #F3F2EE; padding-top: 8px; gap: 8px; }
-  .board-card-price { font-size: 14px; font-weight: 700; color: var(--oh-orange); }
-  .board-card-date { font-size: 11px; color: #BBB; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .board-card-skel { height: 120px; background: #fff; border: 1px solid #E8E6E0; border-radius: 10px; margin-bottom: 10px; position: relative; overflow: hidden; }
+
+  /* ----- Card layout (board view only) -----
+     Header is a flex row: society name flexes on the left, the city + public_id
+     stack sits on the right. Tower/floor lives on its own meta line below.
+     Chips, schedule pill, divider, then a 2-column price grid (Asking + Acq)
+     followed by a footer row with submitted date and the on-behalf chip.
+     This replaces the old absolutely-positioned corner + cramped bottom row,
+     which clipped the date / "via X" chip when all fields were populated. */
+  .board-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .board-card-society { font-size: 14px; font-weight: 700; color: #222; line-height: 1.3; flex: 1; min-width: 0; word-break: break-word; }
+  .board-card-corner { text-align: right; flex-shrink: 0; line-height: 1.25; }
+  .board-card-city-text { font-size: 10px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+  .board-card-pubid-text { font-size: 10px; font-weight: 600; color: #BBB; font-family: ui-monospace, monospace; letter-spacing: 0.3px; margin-top: 2px; white-space: nowrap; }
+  .board-card-flag { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #D64045; margin-left: 6px; vertical-align: 1px; }
+
+  .board-card-meta { font-size: 12px; color: #888; margin-top: 4px; }
+
+  .board-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .board-chip { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; line-height: 1.5; }
+  .board-chip-sqft { background: #F3F2EE; color: #555; }
+  .board-chip-collated { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+  .board-chip-submissions { background: #EDE9FE; color: #5B21B6; border: 1px solid #C4B5FD; }
+  .board-chip-weak { background: #FEE2E2; color: #B91C1C; border: 1px solid #FCA5A5; }
+
+  .board-card-schedule { margin-top: 10px; padding: 6px 10px; background: #ECFDF5; border: 1px solid #6EE7B7; border-radius: 8px; font-size: 11px; font-weight: 600; color: #047857; line-height: 1.4; }
+
+  .board-card-divider { margin-top: 12px; border-top: 1px solid #F0EEE9; }
+  .board-card-prices { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 10px; row-gap: 6px; }
+  .board-card-prices.solo { grid-template-columns: 1fr; }
+  .board-card-price-label { font-size: 9.5px; font-weight: 700; color: #999; letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 2px; }
+  .board-card-price-value { font-size: 15px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+  .board-card-price-value.asking { color: var(--oh-orange); }
+  .board-card-price-value.acq { color: #16A34A; }
+  .board-card-price-value.acq-suggested { color: #16A34A; opacity: 0.85; }
+
+  .board-card-footer { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .board-card-date { font-size: 11px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .board-card-onbehalf { font-size: 10px; font-weight: 700; padding: 2px 8px; background: var(--oh-orange-light); color: var(--oh-orange); border-radius: 4px; letter-spacing: 0.2px; white-space: nowrap; }
+
+  .board-card-skel { height: 120px; background: #fff; border: 1px solid #E8E6E0; border-radius: 12px; margin-bottom: 10px; position: relative; overflow: hidden; }
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
   /* ===== Admin: table view ===== */

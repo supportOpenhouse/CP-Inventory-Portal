@@ -119,6 +119,35 @@ export default function BoardView({
                   onSelect(s.id);
                 }
               };
+              const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
+              // Pull the value out of the helper's display string and pick a
+              // label. The helper returns "Acq ₹X" for an exact-sqft match
+              // and "Acq ~₹X (Y sqft)" for a suggested price (sqft differs).
+              // We render the label separately, so strip the "Acq " prefix
+              // and the "(Y sqft)" suffix off the value and surface them in
+              // the label instead.
+              let acqLabel = null;
+              let acqValue = null;
+              let acqIsSuggested = false;
+              if (acq) {
+                acqIsSuggested = acq.display.includes('~');
+                let v = acq.display.replace(/^Acq\s+/, '');
+                const sqftMatch = v.match(/^(.*?)\s*\((\d+)\s*sqft\)\s*$/);
+                if (sqftMatch) {
+                  v = sqftMatch[1];
+                  acqLabel = `Suggested · ${sqftMatch[2]} sqft`;
+                } else {
+                  acqLabel = acqIsSuggested ? 'Suggested' : 'Openhouse acq';
+                }
+                acqValue = v;
+              }
+
+              const towerUnit = s.tower && s.unit_no
+                ? `${s.tower}-${s.unit_no}`
+                : (s.tower || s.unit_no || null);
+              const metaParts = [towerUnit, s.floor && `F${s.floor}`].filter(Boolean);
+              const showFlag = missingCore && !isWeakMatch;
+
               return (
                 <div
                   key={s.id}
@@ -136,109 +165,107 @@ export default function BoardView({
                       onClick={(e) => e.stopPropagation()}
                     />
                   )}
-                  {missingCore && !isWeakMatch && !bulkMode && (
-                    <span className="board-card-flag" title="Missing asking price or seller info" />
-                  )}
-                  {isWeakMatch && !bulkMode && (
-                    <span className="board-card-weak-badge" title="Weak society match — verify">⚠</span>
-                  )}
-                  <div className="board-card-society">{s.society_name}</div>
-                  <div className="board-card-corner">
-                    {s.city && <div className="board-card-city-text">{s.city}</div>}
-                    {s.public_id && <div className="board-card-pubid-text">{s.public_id}</div>}
+
+                  {/* Header — society (left) + city/public_id (right). The
+                      bulk checkbox is absolutely positioned at top-right, so
+                      pad the corner away from it when bulkMode is on. */}
+                  <div
+                    className="board-card-head"
+                    style={bulkMode ? { paddingRight: 22 } : undefined}
+                  >
+                    <div className="board-card-society">{s.society_name}</div>
+                    <div className="board-card-corner">
+                      {s.city && (
+                        <div className="board-card-city-text">
+                          {s.city}
+                          {showFlag && (
+                            <span
+                              className="board-card-flag"
+                              title="Missing asking price or seller info"
+                            />
+                          )}
+                        </div>
+                      )}
+                      {s.public_id && <div className="board-card-pubid-text">{s.public_id}</div>}
+                    </div>
                   </div>
-                  <div className="board-card-meta">
-                    {[s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no), s.floor && `F${s.floor}`]
-                      .filter(Boolean).join(' · ')}
-                  </div>
+
+                  {metaParts.length > 0 && (
+                    <div className="board-card-meta">{metaParts.join(' · ')}</div>
+                  )}
+
                   <div className="board-card-chips">
                     {s.bhk && (
-                      <span className="board-chip" style={{ background: stage.bg, color: stage.color }}>{s.bhk}</span>
-                    )}
-                    {s.sqft ? <span className="board-chip board-chip-plain">{s.sqft} sqft</span> : null}
-                    {isCollatedPartial && (
                       <span
                         className="board-chip"
+                        style={{ background: stage.bg, color: stage.color }}
+                      >
+                        {s.bhk}
+                      </span>
+                    )}
+                    {s.sqft ? <span className="board-chip board-chip-sqft">{s.sqft} sqft</span> : null}
+                    {isCollatedPartial && (
+                      <span
+                        className="board-chip board-chip-collated"
                         title="Partial match from collated_data — society + BHK + floor matched an external-scraper listing; tower/unit couldn't be verified"
-                        style={{
-                          background: '#FEF3C7',
-                          color: '#92400E',
-                          border: '1px solid #FCD34D',
-                        }}
                       >
                         Collated match
                       </span>
                     )}
                     {isSubmissionsPartial && (
                       <span
-                        className="board-chip"
+                        className="board-chip board-chip-submissions"
                         title="Partial match from submissions table — society + BHK + floor matched another CP's submission; tower/unit couldn't be verified"
-                        style={{
-                          background: '#EDE9FE',
-                          color: '#5B21B6',
-                          border: '1px solid #C4B5FD',
-                        }}
                       >
                         Submissions match
                       </span>
                     )}
+                    {isWeakMatch && (
+                      <span
+                        className="board-chip board-chip-weak"
+                        title="Weak society match — verify"
+                      >
+                        ⚠ weak match
+                      </span>
+                    )}
                   </div>
+
                   {s.scheduled_date && (
-                    <div style={{
-                      marginTop: 6,
-                      padding: '3px 8px',
-                      background: '#ECFDF5',
-                      border: '1px solid #6EE7B7',
-                      borderRadius: 6,
-                      fontSize: 10,
-                      fontWeight: 600,
-                      color: '#047857',
-                      display: 'inline-block',
-                    }}>
+                    <div className="board-card-schedule">
                       📅 {formatDateOnly(s.scheduled_date)}
                       {s.scheduled_time ? ` · ${formatTime12(s.scheduled_time)}` : ''}
                       {s.field_exec_name ? ` · ${s.field_exec_name}` : ''}
                     </div>
                   )}
-                  <div className="board-card-bottom">
-                    <span className="board-card-price">{formatPrice(s.asking_price)}</span>
-                    {(() => {
-                      const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
-                      if (!acq) return null;
-                      return (
-                        <span
-                          className="board-card-acq-price"
-                          title={acq.tooltip}
-                          style={{ color: '#16a34a', fontWeight: 600, marginLeft: 6 }}
-                        >
-                          {acq.display}
-                        </span>
-                      );
-                    })()}
+
+                  <div className="board-card-divider" />
+
+                  <div className={`board-card-prices${acq ? '' : ' solo'}`}>
+                    <div>
+                      <div className="board-card-price-label">Asking</div>
+                      <div className="board-card-price-value asking">{formatPrice(s.asking_price)}</div>
+                    </div>
+                    {acq && (
+                      <div title={acq.tooltip}>
+                        <div className="board-card-price-label">{acqLabel}</div>
+                        <div className={`board-card-price-value ${acqIsSuggested ? 'acq-suggested' : 'acq'}`}>
+                          {acqValue}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="board-card-footer">
                     <span className="board-card-date">
                       {timeAgo(s.submitted_at)} · {s.cp_name}
                     </span>
                     {s.submitted_by_name && (
-                      <div
+                      <span
+                        className="board-card-onbehalf"
                         title={`Submitted by ${s.submitted_by_name} on behalf of ${s.cp_name}`}
-                        style={{
-                          marginTop: 4,
-                          maxWidth: '100%',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          display: 'inline-block',
-                          padding: '1px 6px',
-                          background: '#FFF3ED',
-                          color: '#FF6B2B',
-                          borderRadius: 3,
-                          fontSize: 10,
-                          fontWeight: 600,
-                          letterSpacing: 0.2,
-                        }}
                       >
                         ✏ via {s.submitted_by_name.split(' ')[0]}
-                      </div>
+                      </span>
                     )}
                   </div>
                 </div>
