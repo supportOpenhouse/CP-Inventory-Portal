@@ -3,12 +3,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, stageMeta, timeAgo } from '../../format';
 
 /**
- * Bottom-of-table infinite-scroll sentinel. Only meaningful when the user
- * has filtered to a single status — without that filter the table mixes
- * stages and "load more" is ambiguous (which stage's next page?). For the
- * unfiltered view the initial 100-per-stage page already provides enough
- * for sorting/scanning; users who want to drill down click a stat card to
- * filter and then get infinite scroll on that single stage.
+ * Bottom-of-table infinite-scroll sentinel. Two modes:
+ *
+ *   - Filtered (statusFilter set): paginates that single stage. `hasMore`
+ *     and `loading` come straight from `hasMoreByStage[statusFilter]` /
+ *     `loadingByStage[statusFilter]`; `onVisible` fires
+ *     `onLoadMore(statusFilter)`.
+ *
+ *   - Unfiltered: the table mixes every stage. The backend paginates per
+ *     stage, so when the sentinel fires we fan out and call
+ *     `onLoadMore(stage)` for every stage that still has more rows. The
+ *     parent's `loadMoreStage` is per-stage idempotent (gated on
+ *     `loadingByStage[stage]`), so re-firing while a load is in flight
+ *     is safe. `hasMore` is "any stage has more"; `loading` is "any
+ *     stage is currently loading".
  */
 function TableLoadMoreSentinel({ hasMore, loading, onVisible }) {
   const ref = useRef(null);
@@ -357,15 +365,26 @@ export default function TableView({
         </tbody>
       </table>
 
-      {/* Infinite scroll only when one stage is selected — see the sentinel
-          component's docstring for why we skip this in unfiltered "All". */}
-      {statusFilter && (
+      {/* Infinite scroll. Filtered → paginate the one selected stage.
+          Unfiltered → fan out across every stage that still has rows.
+          See the sentinel component's docstring for the rationale. */}
+      {statusFilter ? (
         <TableLoadMoreSentinel
           hasMore={!!hasMoreByStage[statusFilter]}
           loading={!!loadingByStage[statusFilter]}
           onVisible={() => onLoadMore?.(statusFilter)}
         />
-      )}
+      ) : (() => {
+        const stagesWithMore = Object.keys(hasMoreByStage).filter((k) => hasMoreByStage[k]);
+        const anyLoading = stagesWithMore.some((k) => loadingByStage[k]);
+        return (
+          <TableLoadMoreSentinel
+            hasMore={stagesWithMore.length > 0}
+            loading={anyLoading}
+            onVisible={() => stagesWithMore.forEach((stage) => onLoadMore?.(stage))}
+          />
+        );
+      })()}
     </div>
   );
 }
