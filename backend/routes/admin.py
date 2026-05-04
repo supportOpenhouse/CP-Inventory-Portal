@@ -668,13 +668,15 @@ def list_submissions():
     # properties is the authoritative source after a visit. Always overwrites.
     _sync_unit_details_from_properties()
 
-    # Pagination: default 100 per stage, capped at 500 for safety. Frontend
+    # Pagination: default 15 per stage, capped at 500 for safety. Frontend
     # passes `offset` only when paginating a single stage (status filter is
-    # set in the query string).
+    # set in the query string). Keeping the default small avoids fanning out
+    # 7 large per-stage queries on the initial board load — that was the
+    # source of intermittent gateway timeouts on popular cities.
     try:
-        limit = int(request.args.get("limit", 100))
+        limit = int(request.args.get("limit", 15))
     except (TypeError, ValueError):
-        limit = 100
+        limit = 15
     limit = max(1, min(limit, 500))
     try:
         offset = int(request.args.get("offset", 0))

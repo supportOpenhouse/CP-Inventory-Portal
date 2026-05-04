@@ -48,7 +48,12 @@ export default function Admin() {
   // `loadingByStage` is the per-stage spinner gate (also dedupes rapid
   // sentinel triggers). `reloadGen` is bumped on every fresh reload so any
   // in-flight load-more from a stale filter set discards its result.
-  const PAGE_SIZE = 100;
+  // PAGE_SIZE is intentionally small: the initial board load fans out to
+  // 7 stage queries (Unapproved/Submitted/Visit Scheduled/…/Duplicate
+  // Rejected) so the on-the-wire payload and DB cost scale as
+  // 7 × PAGE_SIZE. Keeping this at 15 keeps first paint snappy and avoids
+  // gateway timeouts when a popular stage has thousands of rows.
+  const PAGE_SIZE = 15;
   const [loadedByStage, setLoadedByStage] = useState({});
   const [loadingByStage, setLoadingByStage] = useState({});
   const reloadGen = useRef(0);
