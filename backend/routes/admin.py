@@ -74,6 +74,21 @@ def require_admin_or_manager(f):
 
 # ---- helpers ----
 
+# SQL fragment producing the set of rms.id values "in my team" — me plus every
+# RM transitively beneath me via rms.manager_id. Walks the full subtree so a
+# manager-of-managers sees their indirect reports' data, not just their direct
+# reports'. UNION (not UNION ALL) defends against accidental cycles in the
+# manager_id graph. One %s placeholder for the root rm_id; wrap the call site
+# in `... IN { _TEAM_RM_IDS_SQL }`.
+_TEAM_RM_IDS_SQL = (
+    "(WITH RECURSIVE my_team(id) AS ("
+    " SELECT id FROM rms WHERE id = %s"
+    " UNION"
+    " SELECT r.id FROM rms r JOIN my_team t ON r.manager_id = t.id"
+    ") SELECT id FROM my_team)"
+)
+
+
 def _scoped_city_filter(cur):
     """
     Scope filter applied to submissions list/count/detail queries.
@@ -86,8 +101,10 @@ def _scoped_city_filter(cur):
 
     RM from rms table (rm_id in JWT):
       - Non-manager : s.cp_id IN (CPs where cp.rm_id = me)
-      - Manager     : s.cp_id IN (CPs where cp.rm_id = me
-                                  OR cp.rm_id IN my team)
+      - Manager     : s.cp_id IN (CPs where cp.rm_id IN my team subtree),
+                      where "my team subtree" = me + every RM transitively
+                      under me via rms.manager_id. So a manager whose direct
+                      reports are themselves managers also sees their reports.
       Unapproved is hidden either way.
 
     RM from channel_partners (legacy, cp_id in JWT with role='rm'):
@@ -112,23 +129,22 @@ def _scoped_city_filter(cur):
         # (the listing stays visible only to the CP's permanent RM).
         if is_manager:
             # "Me + my team" applies to BOTH the override match and the
-            # permanent-RM fallback. Team = rms.id where manager_id = me.
+            # permanent-RM fallback. Team = the full subtree below me in the
+            # rms.manager_id hierarchy (recursive — a manager-of-managers
+            # sees indirect reports too).
             clause = (
                 "("
-                "  s.listing_rm_id IN ("
-                "    SELECT id FROM rms WHERE id = %s OR manager_id = %s"
-                "  )"
+                f"  s.listing_rm_id IN {_TEAM_RM_IDS_SQL}"
                 "  OR ("
                 "    s.listing_rm_id IS NULL"
                 "    AND s.cp_id IN ("
                 "      SELECT id FROM channel_partners"
-                "      WHERE rm_id = %s"
-                "         OR rm_id IN (SELECT id FROM rms WHERE manager_id = %s)"
+                f"     WHERE rm_id IN {_TEAM_RM_IDS_SQL}"
                 "    )"
                 "  )"
                 ")"
             )
-            params = [rm_id, rm_id, rm_id, rm_id]
+            params = [rm_id, rm_id]
         else:
             clause = (
                 "("
@@ -2438,8 +2454,10 @@ def _scoped_cp_filter():
     submissions). Returns (sql_fragment, params).
 
     Mirrors _scoped_city_filter but operates on the cp alias directly.
-      - admin: no restriction.
-      - manager: cp.rm_id = me OR cp.rm_id IN my team.
+      - admin:   no restriction.
+      - manager: cp.rm_id IN my team subtree (me + every RM transitively
+                 under me via rms.manager_id, so a manager-of-managers
+                 sees indirect reports' CPs too).
       - rm:      cp.rm_id = me.
       - else:    deny by default.
     """
@@ -2452,10 +2470,7 @@ def _scoped_cp_filter():
 
     if rm_id:
         if is_manager:
-            return (
-                "AND (cp.rm_id = %s "
-                "OR cp.rm_id IN (SELECT id FROM rms WHERE manager_id = %s))"
-            ), [rm_id, rm_id]
+            return f"AND cp.rm_id IN {_TEAM_RM_IDS_SQL}", [rm_id]
         return "AND cp.rm_id = %s", [rm_id]
 
     return "AND FALSE", []
