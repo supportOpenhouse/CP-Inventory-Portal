@@ -4,7 +4,10 @@ A new submission's owning RM is resolved from the *submission's society*, not
 the CP's permanent rm_id. Resolution order at insert time:
 
   1. society_rm_mappings.rm_id for this submission's society_id
-  2. First active RM in the society's city (rms.city_id = societies.city_id)
+  2. The city's designated RM (cities.rm_phone for the society's city,
+     matched to rms by last-10-digits of phone). This is how the per-city
+     "default RM" is configured — admins set rm_name/rm_phone on the
+     `cities` row.
   3. NULL — admin assigns manually
 
 The resolver intentionally honors an explicit mapping even if the mapped RM
@@ -34,12 +37,19 @@ def resolve_listing_rm(cur, society_id: int) -> Optional[int]:
     if row and row.get("rm_id"):
         return row["rm_id"]
 
+    # City default: cities.rm_phone names the per-city "default RM" by phone.
+    # Match it to the rms row by last-10-digit normalization (cities phones
+    # are stored with a '+91 ' prefix; rms phones are inconsistently formatted).
     cur.execute(
         """
         SELECT r.id
         FROM societies s
-        JOIN rms r ON r.city_id = s.city_id
-        WHERE s.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
+        JOIN cities c       ON c.id = s.city_id
+        JOIN rms r          ON RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10)
+                             = RIGHT(REGEXP_REPLACE(c.rm_phone, '\\D', '', 'g'), 10)
+        WHERE s.id = %s
+          AND c.rm_phone IS NOT NULL
+          AND COALESCE(r.is_active, TRUE) = TRUE
         ORDER BY r.id ASC
         LIMIT 1
         """,

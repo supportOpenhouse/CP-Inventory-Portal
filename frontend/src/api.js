@@ -190,10 +190,17 @@ export const api = {
       method: 'POST', body: payload,
     }),
   // Single-listing RM override.
-  // Body: { target_rm_id: int|null }
-  adminSetListingRm: (submissionId, targetRmId) =>
+  // Body: { target_rm_id: int|null, update_society_mapping?: bool }
+  // When updateSocietyMapping is true (and target_rm_id is not null), the
+  // backend also writes society_rm_mappings so future submissions of this
+  // listing's society route to the same RM.
+  adminSetListingRm: (submissionId, targetRmId, { updateSocietyMapping = false } = {}) =>
     request(`/admin/submissions/${submissionId}/listing-rm`, {
-      method: 'PATCH', body: { target_rm_id: targetRmId },
+      method: 'PATCH',
+      body: {
+        target_rm_id: targetRmId,
+        update_society_mapping: !!updateSocietyMapping,
+      },
     }),
 
   // External inventory: merged collated_data ("D Data") + properties ("F Data")

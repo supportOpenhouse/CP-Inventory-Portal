@@ -36,9 +36,10 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   const [counterOfferLakhs, setCounterOfferLakhs] = useState('');
   const [sendingCounter, setSendingCounter] = useState(false);
   const [lightboxId, setLightboxId] = useState(null);
-  // RM-assignment mode: 'listing' = override this listing's RM only (default,
-  // per user request 2026-04-30); 'cp' = change the CP's permanent RM across
-  // all their listings.
+  // RM-assignment scope: 'listing' = this listing only (default);
+  // 'society' = this listing + future submissions of this society
+  // (writes society_rm_mappings so the resolver picks up the mapping at
+  // insert time for new submissions of the same society).
   const [rmAssignMode, setRmAssignMode] = useState('listing');
   const fileInputRef = useRef(null);
   const eventsEndRef = useRef(null);
@@ -177,35 +178,18 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
     }
   };
 
-  // Reassign the CP's permanent RM (channel_partners.rm_id) — admin only.
-  // Affects ALL of this CP's submissions, not just this one.
-  const assignToRm = async (rmIdRaw) => {
-    if (busy) return;
-    const rmId = rmIdRaw ? parseInt(rmIdRaw, 10) : null;
-    const cpId = data?.submission?.cp_id;
-    if (!cpId) return;
-    setBusy(true);
-    try {
-      await api.adminSetCpRm(cpId, rmId);
-      await load();
-      onChanged?.();
-    } catch (err) {
-      alert(err.message || 'Failed to reassign RM');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   // Per-listing RM override (submissions.listing_rm_id). Doesn't touch the
-  // CP's permanent RM. The default mode in the assignment UI.
-  const assignListingRm = async (rmIdRaw) => {
+  // CP's permanent RM. When updateSocietyMapping=true, also upserts
+  // society_rm_mappings so future submissions of this society route to
+  // the same RM.
+  const assignListingRm = async (rmIdRaw, { updateSocietyMapping = false } = {}) => {
     if (busy) return;
     const rmId = rmIdRaw ? parseInt(rmIdRaw, 10) : null;
     const sid = data?.submission?.id;
     if (!sid) return;
     setBusy(true);
     try {
-      await api.adminSetListingRm(sid, rmId);
+      await api.adminSetListingRm(sid, rmId, { updateSocietyMapping });
       await load();
       onChanged?.();
     } catch (err) {
@@ -643,34 +627,28 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                         <input
                           type="radio"
                           name={`rm-mode-${s.id}`}
-                          checked={rmAssignMode === 'cp'}
-                          onChange={() => setRmAssignMode('cp')}
+                          checked={rmAssignMode === 'society'}
+                          onChange={() => setRmAssignMode('society')}
                           disabled={busy}
                         />
                         <span style={{ fontSize: 13 }}>
-                          <strong>CP's permanent RM</strong>{' '}
-                          <span style={{ color: '#888' }}>(affects all of this CP's listings)</span>
+                          <strong>This listing + future submissions of {s.society_name || 'this society'}</strong>{' '}
+                          <span style={{ color: '#888' }}>(writes society→RM mapping)</span>
                         </span>
                       </label>
                     </div>
 
                     <select
                       className="status-select"
-                      value={
-                        rmAssignMode === 'listing'
-                          ? (s.listing_rm_id || '')
-                          : (s.cp_rm_id || '')
-                      }
+                      value={s.listing_rm_id || ''}
                       onChange={(e) =>
-                        rmAssignMode === 'listing'
-                          ? assignListingRm(e.target.value)
-                          : assignToRm(e.target.value)
+                        assignListingRm(e.target.value, {
+                          updateSocietyMapping: rmAssignMode === 'society',
+                        })
                       }
                       disabled={busy}
                     >
-                      <option value="">
-                        {rmAssignMode === 'listing' ? '— No override (use CP\'s RM) —' : '— Unassigned —'}
-                      </option>
+                      <option value="">— No override (use city fallback) —</option>
                       {rms.map((rm) => (
                         <option key={rm.id} value={rm.id}>
                           {rm.name}{rm.city ? ` · ${rm.city}` : ''}{rm.is_manager ? ' · Manager' : ''}
@@ -679,8 +657,8 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     </select>
                     <div style={{ fontSize: 12, color: '#666', marginTop: 6 }}>
                       {rmAssignMode === 'listing'
-                        ? `Override for THIS listing only. The CP's permanent RM (${s.cp_rm_name || 'unassigned'}) is unchanged.`
-                        : `Changes this CP's permanent RM. Affects ALL of their submissions — past and future, not just this one.`}
+                        ? `Reassigns THIS listing only. Other submissions for ${s.society_name || 'this society'} are not touched.`
+                        : `Reassigns THIS listing AND points future submissions of ${s.society_name || 'this society'} at the chosen RM (existing other submissions of this society are unchanged).`}
                     </div>
                   </>
                 ) : (

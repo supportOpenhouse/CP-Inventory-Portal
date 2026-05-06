@@ -5,12 +5,11 @@ import { ApiError, api } from '../../api';
 /**
  * Bulk RM reassignment with two modes:
  *   - 'listings' (DEFAULT): sets submissions.listing_rm_id for the selected
- *     rows ONLY. Doesn't touch the CP's permanent assignment.
- *   - 'cps':       changes channel_partners.rm_id for the CPs of selected
- *     listings. Affects ALL of each CP's listings, past and future.
- *
- * The user explicitly asked (2026-04-30) to ALWAYS surface this choice with
- * the listing-only mode as default.
+ *     rows ONLY. Other submissions of the same societies/CPs are not touched.
+ *   - 'societies': same listing_rm_id update, AND upserts society_rm_mappings
+ *     for every distinct society in the selection so future submissions of
+ *     those societies route to the new RM. Existing other submissions of
+ *     those societies are still left alone.
  *
  * Props:
  *   selectedSubmissions: array of submission rows currently ticked
@@ -18,7 +17,7 @@ import { ApiError, api } from '../../api';
  *   onSuccess: () => void   // parent should clear selection + reload
  */
 export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSuccess }) {
-  const [mode, setMode] = useState('listings');  // 'listings' (default) | 'cps'
+  const [mode, setMode] = useState('listings');  // 'listings' (default) | 'societies'
   const [rms, setRms] = useState([]);
   const [loadingRms, setLoadingRms] = useState(true);
   const [targetRmId, setTargetRmId] = useState('');
@@ -42,32 +41,33 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
     return () => { alive = false; };
   }, []);
 
-  // Group selected submissions by CP so we can show the per-CP impact
-  const cpSummary = useMemo(() => {
-    const map = new Map(); // cp_id -> { cp_id, cp_name, cp_code, current_rm_name, count }
+  // Group selected submissions by society so we can show the per-society impact
+  // (count of selected listings per society, plus the city for context).
+  const societySummary = useMemo(() => {
+    const map = new Map(); // society_id -> { society_id, society_name, city, count }
     for (const s of selectedSubmissions) {
-      if (!s.cp_id) continue;
-      const ex = map.get(s.cp_id);
+      if (!s.society_id) continue;
+      const ex = map.get(s.society_id);
       if (ex) {
         ex.count += 1;
       } else {
-        map.set(s.cp_id, {
-          cp_id: s.cp_id,
-          cp_name: s.cp_name || `CP #${s.cp_id}`,
-          cp_code: s.cp_code || '',
-          current_rm_name: s.assigned_rm_name || '—',
+        map.set(s.society_id, {
+          society_id: s.society_id,
+          society_name: s.society_name || `Society #${s.society_id}`,
+          city: s.city || '',
           count: 1,
         });
       }
     }
-    return Array.from(map.values()).sort((a, b) => (a.cp_name || '').localeCompare(b.cp_name || ''));
+    return Array.from(map.values()).sort(
+      (a, b) => (a.society_name || '').localeCompare(b.society_name || '')
+    );
   }, [selectedSubmissions]);
 
   const targetRm = rms.find((r) => String(r.id) === String(targetRmId));
   const canSubmit = (
     targetRmId &&
     selectedSubmissions.length > 0 &&
-    (mode === 'listings' || cpSummary.length > 0) &&
     !submitting && !loadingRms
   );
 
@@ -77,19 +77,11 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
     setResultSummary(null);
     setSubmitting(true);
     try {
-      let data;
-      if (mode === 'listings') {
-        data = await api.adminBulkReassignListingRm({
-          submission_ids: selectedSubmissions.map((s) => s.id),
-          target_rm_id: Number(targetRmId),
-        });
-      } else {
-        data = await api.adminBulkReassignRm({
-          cp_ids: cpSummary.map((c) => c.cp_id),
-          target_rm_id: Number(targetRmId),
-        });
-      }
-      // Stash mode in result so the success screen can render the right summary
+      const data = await api.adminBulkReassignListingRm({
+        submission_ids: selectedSubmissions.map((s) => s.id),
+        target_rm_id: Number(targetRmId),
+        update_society_mapping: mode === 'societies',
+      });
       setResultSummary({ ...data, _mode: mode });
     } catch (e) {
       setError(e?.message || 'Reassign failed');
@@ -140,10 +132,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
           <div style={{ fontSize: 18, fontWeight: 600 }}>
             {submitted
               ? 'Reassignment complete'
-              : (mode === 'listings'
-                ? `Reassign ${selectedSubmissions.length} listing${selectedSubmissions.length === 1 ? '' : 's'} to a new RM`
-                : `Reassign ${cpSummary.length} CP${cpSummary.length === 1 ? '' : 's'} to a new RM`
-              )}
+              : `Reassign ${selectedSubmissions.length} listing${selectedSubmissions.length === 1 ? '' : 's'} to a new RM`}
           </div>
           <button
             onClick={() => (submitting ? null : (submitted ? handleClose() : onClose()))}
@@ -162,9 +151,9 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
 
           {!submitted ? (
             <>
-              {/* Mode picker — admins and managers both see both options.
-                  Listing-only is the default; CP-permanent RM is destructive
-                  (touches all of a CP's listings) so we keep the warning. */}
+              {/* Mode picker. Listing-only is the default; the second mode
+                  also writes society→RM mappings so future submissions for
+                  the same societies route to the new RM. */}
               <div style={{ marginBottom: 16, padding: 12, border: '1px solid #e5e5e5', borderRadius: 6 }}>
                 <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>
                   What do you want to reassign?
@@ -183,7 +172,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
                     <strong>These listings only</strong>
                     {' '}<span style={{ color: '#888', fontSize: 13 }}>(default)</span>
                     <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                      Reassigns the selected {selectedSubmissions.length} listing{selectedSubmissions.length === 1 ? '' : 's'} to the chosen RM. Each CP's permanent RM assignment is unchanged — their other listings stay put.
+                      Reassigns the selected {selectedSubmissions.length} listing{selectedSubmissions.length === 1 ? '' : 's'} to the chosen RM. Other submissions of the same societies are not touched.
                     </div>
                   </span>
                 </label>
@@ -191,26 +180,20 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
                   <input
                     type="radio"
                     name="reassign-mode"
-                    value="cps"
-                    checked={mode === 'cps'}
-                    onChange={() => setMode('cps')}
+                    value="societies"
+                    checked={mode === 'societies'}
+                    onChange={() => setMode('societies')}
                     disabled={submitting}
                     style={{ marginTop: 3 }}
                   />
                   <span>
-                    <strong>Each CP's permanent RM</strong>
+                    <strong>These listings + future submissions of their societies</strong>
                     <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                      Changes the CP's permanent RM. <em>All</em> of each CP's listings — past and future, not just the {selectedSubmissions.length} you selected — will appear under the new RM going forward.
+                      Reassigns the selected listings AND points future submissions of the {societySummary.length} societ{societySummary.length === 1 ? 'y' : 'ies'} below at the chosen RM. Existing other submissions of those societies are unchanged.
                     </div>
                   </span>
                 </label>
               </div>
-
-              {mode === 'cps' && (
-                <div style={{ background: '#FFF8E1', color: '#7C4A03', padding: 12, borderRadius: 4, fontSize: 13, marginBottom: 16 }}>
-                  ⚠ Permanent CP-RM change. Affects <em>all</em> of each CP's listings. Confirm carefully.
-                </div>
-              )}
 
               <div>
                 <label style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4, display: 'block' }}>
@@ -254,7 +237,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
                           {s.cp_code && <div style={{ fontSize: 11, color: '#999' }}>{s.cp_code}</div>}
                         </td>
                         <td style={{ ...td, color: '#666' }}>
-                          {s.listing_rm_name || <span style={{ fontStyle: 'italic', color: '#999' }}>(none — uses CP's RM)</span>}
+                          {s.listing_rm_name || <span style={{ fontStyle: 'italic', color: '#999' }}>(none — city fallback)</span>}
                         </td>
                       </tr>
                     ))}
@@ -264,21 +247,20 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
                 <table style={tableStyle}>
                   <thead>
                     <tr>
-                      <th style={th}>CP</th>
-                      <th style={th}>Current RM</th>
+                      <th style={th}>Society</th>
+                      <th style={th}>City</th>
                       <th style={th}>Selected listings</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {cpSummary.map((c) => (
-                      <tr key={c.cp_id}>
+                    {societySummary.map((soc) => (
+                      <tr key={soc.society_id}>
                         <td style={td}>
-                          <div style={{ fontWeight: 600 }}>{c.cp_name}</div>
-                          {c.cp_code && <div style={{ fontSize: 11, color: '#999' }}>{c.cp_code}</div>}
+                          <div style={{ fontWeight: 600 }}>{soc.society_name}</div>
                         </td>
-                        <td style={{ ...td, color: '#666' }}>{c.current_rm_name}</td>
+                        <td style={{ ...td, color: '#666' }}>{soc.city || '—'}</td>
                         <td style={td}>
-                          <span style={{ fontWeight: 600 }}>{c.count}</span>
+                          <span style={{ fontWeight: 600 }}>{soc.count}</span>
                           <span style={{ color: '#888' }}> in your selection</span>
                         </td>
                       </tr>
@@ -289,52 +271,20 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
             </>
           ) : (
             <div>
-              {/* Success summary — different shape per mode */}
-              {resultSummary._mode === 'listings' ? (
-                <div style={{ background: '#F0FDF4', color: '#166534', padding: 12, borderRadius: 4, fontSize: 14, marginBottom: 12 }}>
-                  ✓ Reassigned <strong>{resultSummary.updated_count}</strong> listing{resultSummary.updated_count === 1 ? '' : 's'} to{' '}
-                  <strong>{resultSummary.target_rm_name}</strong> (override on listing only — CP-permanent RM unchanged).
-                  {resultSummary.skipped_already_on_rm > 0 && (
-                    <> {resultSummary.skipped_already_on_rm} were already on this RM.</>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <div style={{ background: '#F0FDF4', color: '#166534', padding: 12, borderRadius: 4, fontSize: 14, marginBottom: 12 }}>
-                    ✓ Reassigned {resultSummary.reassigned_count} CP{resultSummary.reassigned_count === 1 ? '' : 's'} to{' '}
-                    <strong>{resultSummary.target_rm_name}</strong>.
-                    {resultSummary.skipped_already_on_rm > 0 && (
-                      <> {resultSummary.skipped_already_on_rm} were already on this RM (no change).</>
-                    )}
-                    {resultSummary.not_found > 0 && (
-                      <> {resultSummary.not_found} CPs were not found.</>
-                    )}
-                  </div>
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={th}>CP</th>
-                        <th style={th}>Result</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(resultSummary.results || []).map((r) => (
-                        <tr key={r.cp_id} style={{ background: r.ok ? (r.skipped ? '#FFF8E1' : '#F0FDF4') : '#fef2f2' }}>
-                          <td style={td}>
-                            <div style={{ fontWeight: 600 }}>{r.name || `CP #${r.cp_id}`}</div>
-                            {r.cp_code && <div style={{ fontSize: 11, color: '#999' }}>{r.cp_code}</div>}
-                          </td>
-                          <td style={td}>
-                            {r.ok && r.skipped && <span style={{ color: '#7C4A03' }}>↺ {r.note}</span>}
-                            {r.ok && !r.skipped && <span style={{ color: '#166534' }}>✓ Reassigned</span>}
-                            {!r.ok && <span style={{ color: '#991b1b' }}>✗ {r.error}</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
+              <div style={{ background: '#F0FDF4', color: '#166534', padding: 12, borderRadius: 4, fontSize: 14, marginBottom: 12 }}>
+                ✓ Reassigned <strong>{resultSummary.updated_count}</strong> listing{resultSummary.updated_count === 1 ? '' : 's'} to{' '}
+                <strong>{resultSummary.target_rm_name}</strong>.
+                {resultSummary.skipped_already_on_rm > 0 && (
+                  <> {resultSummary.skipped_already_on_rm} were already on this RM.</>
+                )}
+                {resultSummary._mode === 'societies' && resultSummary.society_mappings_updated > 0 && (
+                  <>{' '}Future submissions of{' '}
+                    <strong>{resultSummary.society_mappings_updated}</strong>{' '}
+                    societ{resultSummary.society_mappings_updated === 1 ? 'y' : 'ies'}{' '}
+                    will also route to {resultSummary.target_rm_name}.
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -361,10 +311,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
               >
                 {submitting
                   ? `Reassigning…`
-                  : (mode === 'listings'
-                    ? `Reassign ${selectedSubmissions.length} listing${selectedSubmissions.length === 1 ? '' : 's'}${targetRm ? ` to ${targetRm.name}` : ''}`
-                    : `Reassign ${cpSummary.length} CP${cpSummary.length === 1 ? '' : 's'}${targetRm ? ` to ${targetRm.name}` : ''}`
-                  )}
+                  : `Reassign ${selectedSubmissions.length} listing${selectedSubmissions.length === 1 ? '' : 's'}${targetRm ? ` to ${targetRm.name}` : ''}${mode === 'societies' && societySummary.length ? ` + map ${societySummary.length} societ${societySummary.length === 1 ? 'y' : 'ies'}` : ''}`}
               </button>
             </>
           ) : (

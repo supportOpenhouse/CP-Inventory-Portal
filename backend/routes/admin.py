@@ -510,7 +510,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
     """
     if slim:
         select_clause = """
-                    s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
+                    s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
                     s.sqft, s.bhk,
                     s.asking_price, s.seller_name,
                     s.status, s.submitted_at,
@@ -527,7 +527,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
         """
     else:
         select_clause = """
-                    s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
+                    s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
                     s.sqft, s.bhk, s.occupancy_status,
                     s.asking_price,
                     s.seller_name, s.seller_phone,
