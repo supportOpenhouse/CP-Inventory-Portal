@@ -2328,26 +2328,26 @@ def bulk_status():
     }), 200
 
 
-@bp.get("/cp/<int:cp_id>/notes")
-@require_staff
-def list_cp_notes(cp_id: int):
-    """List notes for a CP. RM can read notes but only admin creates them."""
-    conn = get_app_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT n.id, n.text, n.created_at,
-                       cp.name AS actor_name, cp.role AS actor_role
-                FROM cp_notes n
-                JOIN channel_partners cp ON n.actor_cp_id = cp.id
-                WHERE n.cp_id = %s
-                ORDER BY n.created_at DESC
-                LIMIT 200
-            """, (cp_id,))
-            notes = cur.fetchall()
-    finally:
-        put_app_conn(conn)
-    return jsonify({"notes": notes}), 200
+# @bp.get("/cp/<int:cp_id>/notes")
+# @require_staff
+# def list_cp_notes(cp_id: int):
+#     """List notes for a CP. RM can read notes but only admin creates them."""
+#     conn = get_app_conn()
+#     try:
+#         with conn.cursor() as cur:
+#             cur.execute("""
+#                 SELECT n.id, n.text, n.created_at,
+#                        cp.name AS actor_name, cp.role AS actor_role
+#                 FROM cp_notes n
+#                 JOIN channel_partners cp ON n.actor_cp_id = cp.id
+#                 WHERE n.cp_id = %s
+#                 ORDER BY n.created_at DESC
+#                 LIMIT 200
+#             """, (cp_id,))
+#             notes = cur.fetchall()
+#     finally:
+#         put_app_conn(conn)
+#     return jsonify({"notes": notes}), 200
 
 
 @bp.post("/cp/<int:cp_id>/notes")
