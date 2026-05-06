@@ -205,10 +205,10 @@ def send_otp_route():
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            # Try channel_partners first, then rms table
-            cp = _fetch_active_cp(cur, phone)
-            rm = None if cp else _fetch_active_rm(cur, phone)
-            if not cp and not rm:
+            # Try rms table first, then fall back to channel_partners
+            rm = _fetch_active_rm(cur, phone)
+            cp = None if rm else _fetch_active_cp(cur, phone)
+            if not rm and not cp:
                 return jsonify(_not_registered_response(cur)), 200
     finally:
         put_app_conn(conn)
@@ -249,21 +249,7 @@ def verify_otp_route():
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            cp = _fetch_active_cp(cur, phone)
-            if cp:
-                cur.execute(
-                    "UPDATE channel_partners SET last_login = NOW() WHERE id = %s",
-                    (cp["id"],),
-                )
-                conn.commit()
-                token = generate_token(cp)
-                return jsonify({
-                    "success": True,
-                    "token": token,
-                    "user": _user_response(cp),
-                }), 200
-
-            # No CP match — try RMs table
+            # Try rms table first; fall back to channel_partners
             rm = _fetch_active_rm(cur, phone)
             if rm:
                 try:
@@ -279,6 +265,20 @@ def verify_otp_route():
                     "success": True,
                     "token": token,
                     "user": _rm_user_response(rm),
+                }), 200
+
+            cp = _fetch_active_cp(cur, phone)
+            if cp:
+                cur.execute(
+                    "UPDATE channel_partners SET last_login = NOW() WHERE id = %s",
+                    (cp["id"],),
+                )
+                conn.commit()
+                token = generate_token(cp)
+                return jsonify({
+                    "success": True,
+                    "token": token,
+                    "user": _user_response(cp),
                 }), 200
 
             return jsonify(_not_registered_response(cur)), 200
