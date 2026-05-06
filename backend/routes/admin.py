@@ -29,6 +29,7 @@ from activity_log import log_activity
 from auth import require_staff
 from config import Config
 from db import get_app_conn, put_app_conn, get_props_conn, put_props_conn, properties_configured
+from listing_rm import resolve_listing_rm, upsert_society_mapping
 from utils import to_int, to_str
 
 log = logging.getLogger(__name__)
@@ -2698,6 +2699,10 @@ def create_submission_on_behalf():
         with conn.cursor() as cur:
             public_id = generate_public_id(cur, city_name)
 
+            # Routing: society mapping → city RM → NULL. Same path as the
+            # CP-side insert so on-behalf rows route identically.
+            listing_rm_id = resolve_listing_rm(cur, society_id)
+
             cur.execute("""
                 INSERT INTO submissions (
                     cp_id, society_id, society_name, city_id, public_id,
@@ -2706,7 +2711,8 @@ def create_submission_on_behalf():
                     asking_price, seller_name, seller_phone, photos,
                     status, collated_match, submissions_match,
                     unit_less, perfect_match_at_submit,
-                    submitted_by_name
+                    submitted_by_name,
+                    listing_rm_id
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
@@ -2714,6 +2720,7 @@ def create_submission_on_behalf():
                     %s, %s, %s, %s::jsonb,
                     %s, %s, %s,
                     %s, %s,
+                    %s,
                     %s
                 )
                 RETURNING id
@@ -2739,6 +2746,7 @@ def create_submission_on_behalf():
                 is_unit_less,
                 is_perfect_match,
                 staff_name,
+                listing_rm_id,
             ))
             new_id = cur.fetchone()["id"]
 
@@ -3008,12 +3016,17 @@ def set_listing_rm(sid: int):
     """Set or clear the per-listing RM override for a single submission.
 
     Body:
-      { "target_rm_id": int | null }   # null clears the override
+      {
+        "target_rm_id":            int | null,   # null clears the override
+        "update_society_mapping":  bool          # optional, default false
+      }
 
     Effect:
       submissions.listing_rm_id := target_rm_id (NULL clears).
-      The CP's permanent rm_id on channel_partners is NOT touched.
-      Effective RM falls back to channel_partners.rm_id when listing_rm_id is NULL.
+      When `update_society_mapping` is true AND target_rm_id is not null,
+      society_rm_mappings is upserted so future submissions for this
+      society also route to target_rm_id. Existing other submissions of
+      that society are not touched.
 
     Manager constraint (admin is unrestricted):
       - the submission must be within the manager's scope (same rule as
@@ -3027,8 +3040,10 @@ def set_listing_rm(sid: int):
     target_rm_id = None if raw is None else to_int(raw)
     if raw is not None and not target_rm_id:
         return jsonify({"error": "target_rm_id must be an integer or null"}), 400
+    update_society_mapping = bool(data.get("update_society_mapping"))
 
     conn = get_app_conn()
+    society_mapping_updated = False
     try:
         with conn.cursor() as cur:
             rm_name, err = _validate_target_rm(cur, target_rm_id)
@@ -3038,17 +3053,42 @@ def set_listing_rm(sid: int):
 
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(
-                f"SELECT s.id, s.public_id, s.listing_rm_id FROM submissions s "
+                f"SELECT s.id, s.public_id, s.listing_rm_id, s.society_id, s.society_name "
+                f"FROM submissions s "
                 f"WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}",
                 [sid, *scope_params],
             )
             sub = cur.fetchone()
             if not sub:
                 return jsonify({"error": "Submission not found or out of scope"}), 404
+
+            # Society mapping is independent of the listing-RM diff — even if
+            # listing_rm_id is already on target, we still honor a request to
+            # write the society mapping (admins may be retroactively setting it).
+            if update_society_mapping and target_rm_id and sub.get("society_id"):
+                upsert_society_mapping(cur, sub["society_id"], target_rm_id)
+                society_mapping_updated = True
+                log_activity(
+                    cur,
+                    action="society_rm_mapping_set",
+                    category="society",
+                    entity_uid=str(sub["society_id"]),
+                    entity_type="society",
+                    entity_id=sub["society_id"],
+                    details={
+                        "society_name": sub.get("society_name"),
+                        "rm_id": target_rm_id,
+                        "rm_name": rm_name,
+                        "via_submission_id": sid,
+                    },
+                )
+
             if sub["listing_rm_id"] == target_rm_id:
+                conn.commit()
                 return jsonify({
                     "ok": True, "unchanged": True,
                     "listing_rm_id": target_rm_id, "listing_rm_name": rm_name,
+                    "society_mapping_updated": society_mapping_updated,
                 }), 200
 
             cur.execute(
@@ -3060,12 +3100,18 @@ def set_listing_rm(sid: int):
                 if target_rm_id is not None
                 else "Listing RM override cleared (CP's permanent RM applies)"
             )
+            if society_mapping_updated:
+                event_text += f"; future {sub.get('society_name') or 'society'} submissions also route to {rm_name}"
             log_activity(
                 cur,
                 action=("listing_rm_set" if target_rm_id is not None else "listing_rm_cleared"),
                 category="submission",
                 entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
-                details={"target_rm_id": target_rm_id, "target_rm_name": rm_name},
+                details={
+                    "target_rm_id": target_rm_id,
+                    "target_rm_name": rm_name,
+                    "society_mapping_updated": society_mapping_updated,
+                },
             )
             cur.execute("""
                 INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
@@ -3080,6 +3126,7 @@ def set_listing_rm(sid: int):
         "submission_id": sid,
         "listing_rm_id": target_rm_id,
         "listing_rm_name": rm_name,
+        "society_mapping_updated": society_mapping_updated,
     }), 200
 
 
@@ -3091,14 +3138,21 @@ def bulk_reassign_listing_rm():
 
     Body:
       {
-        "submission_ids": [int],   # required, non-empty, max 100
-        "target_rm_id":   int | null  # null clears
+        "submission_ids":          [int],         # required, non-empty, max 100
+        "target_rm_id":            int | null,    # null clears
+        "update_society_mapping":  bool           # optional, default false
       }
 
     Manager constraint (admin is unrestricted):
       - submissions outside the manager's scope are silently skipped
         (counted as not_found in the response). Target RM may be anyone —
         managers have the same target freedom as admins.
+
+    When `update_society_mapping` is true AND target_rm_id is not null,
+    every distinct society among the in-scope submissions is upserted into
+    society_rm_mappings so future submissions for those societies route to
+    target_rm_id. Existing OTHER submissions of those societies are left
+    alone; only the ids in the request are reassigned.
 
     Idempotent on already-target rows; returns updated count.
     """
@@ -3110,6 +3164,7 @@ def bulk_reassign_listing_rm():
     target_rm_id = None if raw is None else to_int(raw)
     if raw is not None and not target_rm_id:
         return jsonify({"error": "target_rm_id must be int or null"}), 400
+    update_society_mapping = bool(data.get("update_society_mapping"))
 
     if not isinstance(submission_ids_raw, list) or not submission_ids_raw:
         return jsonify({"error": "submission_ids must be a non-empty array"}), 400
@@ -3127,6 +3182,7 @@ def bulk_reassign_listing_rm():
         return jsonify({"error": "submission_ids contains no valid integers"}), 400
 
     conn = get_app_conn()
+    society_ids_mapped: list[int] = []
     try:
         with conn.cursor() as cur:
             target_rm_name, err = _validate_target_rm(cur, target_rm_id)
@@ -3138,6 +3194,36 @@ def bulk_reassign_listing_rm():
             # WHERE chunk that restricts to their team's listings. The clause
             # uses the `s` alias so we have to alias the UPDATE target.
             scope_sql, scope_params = _scoped_city_filter(cur)
+
+            # If we're going to write society mappings, we need the distinct
+            # in-scope societies BEFORE the UPDATE narrows to changed-only
+            # rows — the mapping should cover every selected (in-scope) row
+            # regardless of whether its listing_rm_id was already on target.
+            if update_society_mapping and target_rm_id:
+                cur.execute(
+                    f"SELECT DISTINCT s.society_id FROM submissions s "
+                    f"WHERE s.id = ANY(%s) AND s.deleted_at IS NULL "
+                    f"  AND s.society_id IS NOT NULL "
+                    f"  {scope_sql}",
+                    [submission_ids, *scope_params],
+                )
+                society_ids_mapped = [r["society_id"] for r in cur.fetchall()]
+                for soc_id in society_ids_mapped:
+                    upsert_society_mapping(cur, soc_id, target_rm_id)
+                if society_ids_mapped:
+                    log_activity(
+                        cur,
+                        action="society_rm_mapping_set_bulk",
+                        category="society",
+                        entity_type="society_bulk",
+                        details={
+                            "rm_id": target_rm_id,
+                            "rm_name": target_rm_name,
+                            "society_ids": society_ids_mapped[:50],
+                            "society_count": len(society_ids_mapped),
+                        },
+                    )
+
             cur.execute(f"""
                 UPDATE submissions AS s
                 SET listing_rm_id = %s
@@ -3154,6 +3240,8 @@ def bulk_reassign_listing_rm():
                 if target_rm_id is not None
                 else "Listing RM override cleared (bulk)"
             )
+            if society_ids_mapped:
+                event_text += f"; future submissions for {len(society_ids_mapped)} societ{'y' if len(society_ids_mapped) == 1 else 'ies'} also route to {target_rm_name}"
             for sid in updated_ids:
                 cur.execute("""
                     INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
@@ -3170,6 +3258,7 @@ def bulk_reassign_listing_rm():
                     "updated_count": len(updated_ids),
                     "requested": len(submission_ids),
                     "ids": updated_ids[:50],
+                    "society_mappings_updated": len(society_ids_mapped),
                 },
             )
             conn.commit()
@@ -3177,8 +3266,8 @@ def bulk_reassign_listing_rm():
         put_app_conn(conn)
 
     log.info(
-        "[bulk_reassign_listing_rm] target_rm=%s n_updated=%d (of %d requested)",
-        target_rm_id, len(updated_ids), len(submission_ids),
+        "[bulk_reassign_listing_rm] target_rm=%s n_updated=%d (of %d requested) society_mappings=%d",
+        target_rm_id, len(updated_ids), len(submission_ids), len(society_ids_mapped),
     )
 
     return jsonify({
@@ -3188,6 +3277,7 @@ def bulk_reassign_listing_rm():
         "updated_count": len(updated_ids),
         "skipped_already_on_rm": len(submission_ids) - len(updated_ids),
         "submission_ids": updated_ids,
+        "society_mappings_updated": len(society_ids_mapped),
     }), 200
 
 

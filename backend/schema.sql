@@ -104,14 +104,32 @@ BEFORE UPDATE ON submissions
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 
+-- ========== 5. society_rm_mappings ==========
+-- Per-society RM routing override. When a new submission is created, the
+-- resolver consults this table first; if no row exists, it falls back to
+-- the first active RM in the society's city. Admins write rows here from
+-- the listing-RM UI when they pick "apply to future submissions of this
+-- society". Assumes the `rms` table is already present (added via a prior
+-- migration — this initial schema file pre-dates it).
+CREATE TABLE IF NOT EXISTS society_rm_mappings (
+    society_id  INTEGER PRIMARY KEY REFERENCES societies(id) ON DELETE CASCADE,
+    rm_id       INTEGER NOT NULL REFERENCES rms(id),
+    set_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_society_rm_rm ON society_rm_mappings(rm_id);
+
+
 -- ========== Final verification ==========
 -- This block should print row counts. Expected after first run:
---   cities: 3 | channel_partners: 1 | societies: 0 | submissions: 0
-SELECT 'cities'           AS tbl, COUNT(*) AS rows FROM cities
+--   cities: 3 | channel_partners: 1 | societies: 0 | submissions: 0 | society_rm_mappings: 0
+SELECT 'cities'              AS tbl, COUNT(*) AS rows FROM cities
 UNION ALL
-SELECT 'channel_partners',         COUNT(*)        FROM channel_partners
+SELECT 'channel_partners',           COUNT(*)        FROM channel_partners
 UNION ALL
-SELECT 'societies',                COUNT(*)        FROM societies
+SELECT 'societies',                  COUNT(*)        FROM societies
 UNION ALL
-SELECT 'submissions',              COUNT(*)        FROM submissions
+SELECT 'submissions',                COUNT(*)        FROM submissions
+UNION ALL
+SELECT 'society_rm_mappings',        COUNT(*)        FROM society_rm_mappings
 ORDER BY tbl;

@@ -8,6 +8,7 @@ from activity_log import log_activity
 from auth import require_auth
 from db import get_app_conn, put_app_conn
 from duplicate_check import check_duplicate
+from listing_rm import resolve_listing_rm
 from public_id import generate_public_id, city_to_prefix
 from services_email import send_new_submission_alert_async
 from utils import to_int, to_str
@@ -169,6 +170,11 @@ def create_submission():
             # FOR UPDATE inside generate_public_id serializes concurrent inserts.
             public_id = generate_public_id(cur, city_name)
 
+            # Routing: pick the listing's RM from the society mapping (or
+            # fall back to a city RM). Stamped at insert so subsequent scope
+            # queries don't need to re-resolve.
+            listing_rm_id = resolve_listing_rm(cur, society_id)
+
             cur.execute("""
                 INSERT INTO submissions (
                     cp_id, society_id, society_name, city_id, public_id,
@@ -176,14 +182,16 @@ def create_submission():
                     occupancy_status,
                     asking_price, seller_name, seller_phone, photos,
                     status, collated_match, submissions_match,
-                    unit_less, perfect_match_at_submit
+                    unit_less, perfect_match_at_submit,
+                    listing_rm_id
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s,
                     %s, %s, %s, %s::jsonb,
                     %s, %s, %s,
-                    %s, %s
+                    %s, %s,
+                    %s
                 )
                 RETURNING id
             """, (
@@ -207,6 +215,7 @@ def create_submission():
                 submissions_match,
                 is_unit_less,
                 is_perfect_match,
+                listing_rm_id,
             ))
             new_id = cur.fetchone()["id"]
 
