@@ -87,7 +87,6 @@ export const api = {
   getRmContacts: () => request('/rm-contacts', { auth: false }),
   // Auth'd: returns the CP's own assigned RM (via channel_partners.rm -> rms)
   getMyRm: () => request('/my-rm'),
-  getFaqs: () => request('/faqs', { auth: false }),
 
   // Societies
   searchSocieties: (search = '', limit = 20, city = '') => {

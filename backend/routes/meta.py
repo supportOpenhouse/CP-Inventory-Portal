@@ -1,4 +1,4 @@
-"""Public lookup endpoints: RM contacts, FAQs."""
+"""Public lookup endpoints: RM contacts."""
 
 from flask import Blueprint, g, jsonify
 
@@ -98,23 +98,5 @@ def rm_contacts():
                 for r in rows
             }
         }), 200
-    finally:
-        put_app_conn(conn)
-
-
-@bp.get("/faqs")
-def faqs():
-    """Returns active FAQs ordered for display."""
-    conn = get_app_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, category, question, answer, display_order
-                FROM faqs
-                WHERE is_active = TRUE
-                ORDER BY display_order, id
-            """)
-            rows = cur.fetchall()
-        return jsonify({"faqs": rows}), 200
     finally:
         put_app_conn(conn)

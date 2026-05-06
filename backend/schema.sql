@@ -104,72 +104,9 @@ BEFORE UPDATE ON submissions
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 
--- ========== 5. faqs ==========
-CREATE TABLE IF NOT EXISTS faqs (
-    id             SERIAL PRIMARY KEY,
-    category       VARCHAR(50),
-    question       VARCHAR(500) NOT NULL UNIQUE,
-    answer         TEXT NOT NULL,
-    display_order  INTEGER DEFAULT 0,
-    is_active      BOOLEAN DEFAULT TRUE,
-    created_at     TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_faq_active ON faqs(is_active, display_order);
-
--- Seed 15 starter FAQs — edit directly in Neon SQL Editor later
-INSERT INTO faqs (category, question, answer, display_order) VALUES
-('About',      'What is Openhouse?',
-               'Openhouse is India''s residential resale platform. We buy out and then resell pre-owned homes in NCR, giving sellers a fast, certain closure and channel partners a reliable commission.',
-               1),
-('Process',    'What happens after I submit a unit?',
-               'Our evaluation team reviews the unit within 48 hours. If it''s a fit, we share an offer. If you accept on the seller''s behalf, we schedule a site visit and close the deal.',
-               2),
-('Process',    'How long does it take to get an offer?',
-               'We aim to share an offer within 48 hours of submission. Complex units may take up to 5 working days.',
-               3),
-('Form',       'What info do I need to submit a unit?',
-               'Society is mandatory. Tower, unit number, floor, sqft, BHK, occupancy status, and asking price are helpful but optional.',
-               4),
-('Commission', 'What commission does Openhouse pay CPs?',
-               'Commission is paid on successful closure. The exact percentage is shared by your RM based on the deal structure.',
-               5),
-('Commission', 'When is commission paid?',
-               'Within 7 working days of the buyer''s token payment being received.',
-               6),
-('Coverage',   'Which cities does Openhouse operate in?',
-               'Currently Noida (including Greater Noida), Gurugram, and Ghaziabad.',
-               7),
-('Duplicate',  'What if my unit is already in Openhouse''s database?',
-               'If the society + tower + unit is already with us, the portal will flag it. For partial matches (society or tower only), please contact your Openhouse representative before proceeding.',
-               8),
-('Edit',       'How do I update a submitted unit?',
-               'You can''t edit directly from the portal yet. Message your RM with the submission ID and the change needed.',
-               9),
-('Seller',     'Can my seller contact Openhouse directly?',
-               'Yes — but please loop in your RM first so the lead is correctly attributed to you for commission.',
-               10),
-('Seller',     'What documents does the seller need?',
-               'Allotment letter or registry, chain of documents, latest maintenance bill, and a photo ID. Your RM will share the full list.',
-               11),
-('Legal',      'Does Openhouse handle registration and legal work?',
-               'Yes — our in-house legal team handles due diligence, registry, and handover paperwork end-to-end.',
-               12),
-('Pricing',    'What is the difference between asking price and closing price?',
-               'Asking price is what the seller advertises. Closing price is what they will actually accept. Giving both helps us shortlist faster.',
-               13),
-('Support',    'Who do I contact for issues?',
-               'Your RM is the first point of contact (numbers shown on the login page). For portal bugs, WhatsApp +91 95556 66059.',
-               14),
-('Team',       'Can I add a teammate as another CP?',
-               'Yes — your RM can onboard additional CPs from your company. Send their name, phone, and email to your RM.',
-               15)
-ON CONFLICT (question) DO NOTHING;
-
-
 -- ========== Final verification ==========
 -- This block should print row counts. Expected after first run:
---   cities: 3 | channel_partners: 1 | societies: 0 | submissions: 0 | faqs: 15
+--   cities: 3 | channel_partners: 1 | societies: 0 | submissions: 0
 SELECT 'cities'           AS tbl, COUNT(*) AS rows FROM cities
 UNION ALL
 SELECT 'channel_partners',         COUNT(*)        FROM channel_partners
@@ -177,6 +114,4 @@ UNION ALL
 SELECT 'societies',                COUNT(*)        FROM societies
 UNION ALL
 SELECT 'submissions',              COUNT(*)        FROM submissions
-UNION ALL
-SELECT 'faqs',                     COUNT(*)        FROM faqs
 ORDER BY tbl;
