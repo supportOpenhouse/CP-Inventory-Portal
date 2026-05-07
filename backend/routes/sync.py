@@ -568,3 +568,179 @@ def sync_acquisition_prices():
         "truncated": True,
         "invalid": acq_sync_invalid_rows,
     })
+
+
+# ============================================================
+# Submissions export (one-way pull, used by the Sheets sync)
+# ============================================================
+#
+# Pulls rows out of `submissions` for an external consumer (currently a
+# Google Apps Script that mirrors the data into a Sheet, refreshed every
+# 15 minutes).
+#
+# Auth: same X-Sync-Token header used by the rest of this blueprint, so
+# whoever has the token gets full read access to submissions. Treat it
+# the same way you'd treat the prod DB read URL.
+#
+# Pagination model:
+#   ?since_id=N      → return rows where id > N
+#   ?before_id=M     → return rows where id < M
+#   ?limit=K         → cap rows per page (default 500, max 1000)
+#
+# All rows come back DESC by id, so:
+#   - Full sync: page DESC, anchoring `before_id` at the smallest id of
+#     each batch. Keeps newest-first ordering across pages.
+#   - Incremental sync: pass since_id = highest id you've already seen.
+#     Server returns DESC, capped at `limit`. If `has_more` is true,
+#     page DOWN with before_id = smallest id of the last batch
+#     (still keeping since_id pinned to the same N).
+#
+# Date / time columns are returned as ISO strings (or empty strings)
+# so Apps Script can paste them into cells without re-formatting.
+# ============================================================
+
+_SUBMISSIONS_SYNC_DEFAULT_LIMIT = 500
+_SUBMISSIONS_SYNC_MAX_LIMIT = 1000
+
+
+def _iso(v):
+    if v is None:
+        return ""
+    if hasattr(v, "isoformat"):
+        return v.isoformat()
+    return str(v)
+
+
+@bp.get("/submissions")
+def sync_submissions():
+    """One-way submissions export, paginated.
+
+    Query params:
+      since_id (int, default 0): rows with id > since_id
+      before_id (int, optional): rows with id < before_id
+      limit (int, default 500, max 1000)
+
+    Response:
+      {
+        "rows":     [ {row}, ... ]   ordered DESC by id,
+        "count":    int,
+        "max_id":   highest id in this batch (or since_id if empty),
+        "min_id":   lowest id in this batch (or null if empty),
+        "has_more": true if count == limit (caller should keep paging)
+      }
+    """
+    auth_err = _require_sync_auth()
+    if auth_err is not None:
+        return auth_err
+
+    try:
+        since_id = int(request.args.get("since_id", 0) or 0)
+    except ValueError:
+        return jsonify({"error": "since_id must be an integer"}), 400
+    before_id_raw = request.args.get("before_id")
+    before_id = None
+    if before_id_raw not in (None, ""):
+        try:
+            before_id = int(before_id_raw)
+        except ValueError:
+            return jsonify({"error": "before_id must be an integer"}), 400
+    try:
+        limit = int(request.args.get("limit", _SUBMISSIONS_SYNC_DEFAULT_LIMIT))
+    except ValueError:
+        limit = _SUBMISSIONS_SYNC_DEFAULT_LIMIT
+    limit = max(1, min(limit, _SUBMISSIONS_SYNC_MAX_LIMIT))
+
+    where = ["s.id > %s"]
+    params = [since_id]
+    if before_id is not None:
+        where.append("s.id < %s")
+        params.append(before_id)
+    where_sql = " AND ".join(where)
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT
+                    s.id,
+                    s.public_id,
+                    s.submitted_at,
+                    s.status,
+                    c.name                          AS city,
+                    s.society_name,
+                    s.tower,
+                    s.unit_no,
+                    s.floor,
+                    s.bhk,
+                    s.sqft,
+                    s.occupancy_status,
+                    s.asking_price,
+                    s.seller_name,
+                    s.seller_phone,
+                    cp.cp_code,
+                    cp.name                         AS cp_name,
+                    cp.phone                        AS cp_phone,
+                    COALESCE(listing_rm.name, cp_rm.name) AS effective_rm_name,
+                    listing_rm.name                 AS listing_rm_name,
+                    cp_rm.name                      AS cp_rm_name,
+                    s.counter_offer_price,
+                    s.counter_offer_status,
+                    s.counter_offer_at,
+                    s.scheduled_date,
+                    s.scheduled_time,
+                    s.field_exec_name,
+                    s.forms_uid,
+                    s.deleted_at,
+                    s.withdraw_reason,
+                    s.submitted_by_name,
+                    s.collated_match,
+                    s.submissions_match,
+                    s.unit_less,
+                    s.perfect_match_at_submit
+                FROM submissions s
+                LEFT JOIN cities c           ON s.city_id = c.id
+                JOIN channel_partners cp     ON s.cp_id = cp.id
+                LEFT JOIN rms cp_rm          ON cp.rm_id = cp_rm.id
+                LEFT JOIN rms listing_rm     ON s.listing_rm_id = listing_rm.id
+                WHERE {where_sql}
+                ORDER BY s.id DESC
+                LIMIT %s
+            """, params + [limit])
+            rows = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    # Format datetimes / dates / times as ISO strings; bools as ints (0/1)
+    # so the sheet paste keeps the values atomic.
+    iso_fields = (
+        "submitted_at", "counter_offer_at",
+        "scheduled_date", "scheduled_time", "deleted_at",
+    )
+    bool_fields = (
+        "collated_match", "submissions_match", "unit_less", "perfect_match_at_submit",
+    )
+    cleaned = []
+    for r in rows:
+        d = dict(r)
+        for k in iso_fields:
+            d[k] = _iso(d.get(k))
+        for k in bool_fields:
+            v = d.get(k)
+            d[k] = "" if v is None else (1 if bool(v) else 0)
+        cleaned.append(d)
+
+    if cleaned:
+        ids = [r["id"] for r in cleaned]
+        max_id = max(ids)
+        min_id = min(ids)
+    else:
+        max_id = since_id
+        min_id = None
+
+    return jsonify({
+        "rows": cleaned,
+        "count": len(cleaned),
+        "max_id": max_id,
+        "min_id": min_id,
+        "has_more": len(cleaned) == limit,
+    }), 200
