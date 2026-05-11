@@ -7,6 +7,39 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-09] — Add Inventory on Behalf: pick city first, see every CP in it
+
+### Changed
+- **The on-behalf flow now starts with a city picker.** Staff
+  (RM / Manager / Admin) selects Noida / Gurgaon / Ghaziabad, then
+  the CP search runs **inside that city**, ignoring the caller's
+  personal CP scope. Any active CP of the chosen city is selectable.
+  Previously, the search was limited to CPs already assigned to the
+  caller — which was wrong for the use case (RMs frequently get
+  inventory from CPs that aren't on their book).
+
+  Switching the city resets the CP picker (forces a re-pick so we
+  don't end up pointed at a now-mismatched CP).
+
+### Endpoints
+- **`GET /api/admin/cps`** now accepts a `city` query param. When
+  given, restricts results to that city AND bypasses
+  `_scoped_cp_filter`. Without `city`, falls back to the old
+  scope-filtered behavior (legacy callers, if any, are unaffected).
+- **`POST /api/admin/submissions/on-behalf`** no longer enforces
+  `_scoped_cp_filter` on `target_cp_id`. Active + non-admin CP is
+  enough. 404 instead of 403 when the CP doesn't exist.
+
+### Why this is safe
+The relaxation only affects the on-behalf path:
+1. Reading CPs of a city requires staff role + the explicit `city`
+   filter (the `@require_staff` decorator gates everything).
+2. Submitting on a CP's behalf already records the staff member as
+   `submitted_by_name`, and writes a `submission_event` annotating
+   *"submitted by [staff] on behalf of [CP]"*, so the audit trail
+   captures cross-scope submissions clearly.
+3. `is_active` + `is_admin=FALSE` are still enforced.
+
 ## [2026-05-03] — Activity Logs: dashboard-wide mutation feed (admin)
 
 ### Added

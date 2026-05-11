@@ -9,15 +9,18 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
  * Props:
  *   value: { id, name, phone, cp_code, company, city } | null  — the picked CP, or null
  *   onChange: (cp | null) => void
+ *   city:  '' | 'Noida' | 'Gurgaon' | 'Ghaziabad'  — when set, results are
+ *         restricted to that city AND the caller's personal scope is
+ *         IGNORED (any active CP in the city is selectable). When empty,
+ *         falls back to the caller's personal scope (legacy behavior).
  *
  * Behavior:
  *   - Type in the search box: live-search after 250ms debounce, min 2 chars.
  *   - Match is on phone digits (any substring) OR name (case-insensitive).
  *   - Results list appears below the input. Arrow keys + Enter to navigate; click to pick.
  *   - Once a CP is picked, shows a locked card with "Change CP" button.
- *   - Scope-filtered server-side (RM sees own CPs, manager sees team's, admin sees all).
  */
-export default function CpSelector({ value, onChange }) {
+export default function CpSelector({ value, onChange, city = '' }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -40,7 +43,7 @@ export default function CpSelector({ value, onChange }) {
     setError('');
     (async () => {
       try {
-        const data = await api.adminCpSearch(trimmed, 20);
+        const data = await api.adminCpSearch(trimmed, 20, city);
         if (alive) {
           setResults(data?.results || []);
           setActiveIdx(0);
@@ -55,7 +58,7 @@ export default function CpSelector({ value, onChange }) {
       }
     })();
     return () => { alive = false; };
-  }, [debouncedQ, value]);
+  }, [debouncedQ, value, city]);
 
   const pick = (cp) => {
     onChange(cp);
@@ -150,7 +153,7 @@ export default function CpSelector({ value, onChange }) {
       )}
       {!loading && (debouncedQ || '').trim().length >= 2 && results.length === 0 && !error && (
         <div style={{ marginTop: 8, padding: 12, color: '#888', fontSize: 13, textAlign: 'center' }}>
-          No CPs match “{debouncedQ}” in your scope.
+          No CPs match “{debouncedQ}”{city ? ` in ${city}` : ' in your scope'}.
         </div>
       )}
     </div>

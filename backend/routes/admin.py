@@ -2512,10 +2512,15 @@ def _resolve_staff_display_name() -> str:
 @bp.get("/cps")
 @require_staff
 def search_cps():
-    """Scope-filtered CP search for the on-behalf flow.
+    """CP search for the on-behalf flow.
 
     Query string:
       q     — substring of name OR phone (digits-only). REQUIRED, min 2 chars.
+      city  — optional city name (e.g. 'Noida'). When given, results are
+              restricted to that city AND the caller's personal scope is
+              IGNORED (any active non-admin CP in the city is fair game).
+              This is the path the new on-behalf flow uses: staff picks a
+              city upfront, then sees every CP in it.
       limit — max results (default 20, capped at 50).
 
     Returns: { results: [{id, cp_code, name, phone, company, city}, ...] }
@@ -2523,14 +2528,13 @@ def search_cps():
     Name matching is case-insensitive substring.
     """
     q = to_str(request.args.get("q") or "").strip()
+    city = to_str(request.args.get("city") or "").strip()
     limit = max(1, min(50, request.args.get("limit", default=20, type=int) or 20))
 
     if len(q) < 2:
         return jsonify({"results": []}), 200
 
     q_digits = re.sub(r"\D", "", q)
-
-    scope_sql, scope_params = _scoped_cp_filter()
 
     conn = get_app_conn()
     try:
@@ -2554,9 +2558,19 @@ def search_cps():
             params.append(f"%{q}%")
             sql_parts.append(f"AND ({' OR '.join(or_clauses)})")
 
-            if scope_sql:
-                sql_parts.append(scope_sql)
-                params.extend(scope_params)
+            if city:
+                # Explicit city filter: restrict to CPs in that city AND skip
+                # the personal scope filter. The "on behalf" use case requires
+                # an RM to be able to act on any CP of the chosen city.
+                sql_parts.append("AND LOWER(c.name) = LOWER(%s)")
+                params.append(city)
+            else:
+                # No city given — fall back to the caller's personal scope
+                # (admins see all; RMs / managers see own / team).
+                scope_sql, scope_params = _scoped_cp_filter()
+                if scope_sql:
+                    sql_parts.append(scope_sql)
+                    params.extend(scope_params)
 
             sql_parts.append("ORDER BY cp.name ASC NULLS LAST, cp.id ASC")
             sql_parts.append("LIMIT %s")
@@ -2602,22 +2616,23 @@ def create_submission_on_behalf():
     if not society_id or not society_name:
         return jsonify({"error": "society_id and society_name are required"}), 400
 
-    # 1. Load + scope-check the target CP
-    scope_sql, scope_params = _scoped_cp_filter()
+    # 1. Load the target CP. We don't apply the personal scope filter here:
+    # the new on-behalf flow lets staff pick any CP of a chosen city, not
+    # just CPs already assigned to them. Active + non-admin is enough.
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute(f"""
+            cur.execute("""
                 SELECT cp.id, cp.name, cp.phone, cp.cp_code,
                        cp.is_active, COALESCE(cp.is_admin, FALSE) AS is_admin
                 FROM channel_partners cp
-                WHERE cp.id = %s {scope_sql}
-            """, [target_cp_id, *scope_params])
+                WHERE cp.id = %s
+            """, (target_cp_id,))
             cp_row = cur.fetchone()
             if not cp_row:
                 return jsonify({
-                    "error": "Target CP not found or not in your scope.",
-                }), 403
+                    "error": "Target CP not found.",
+                }), 404
             if not cp_row.get("is_active"):
                 return jsonify({
                     "error": "Target CP is inactive. Cannot submit on their behalf.",

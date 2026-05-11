@@ -161,9 +161,14 @@ export const api = {
     }),
 
   // Add Inventory on Behalf of CP — RM/Manager/Admin only.
-  // Search returns up to 20 CPs scoped to the caller; q matches name or phone.
-  adminCpSearch: (q, limit = 20) => {
-    const qs = new URLSearchParams({ q, limit }).toString();
+  // Search returns up to 20 CPs. If `city` is given, results are restricted
+  // to that city AND the caller's personal CP scope is IGNORED — staff can
+  // pick any active CP of the chosen city. Without `city`, falls back to
+  // the caller's personal scope.
+  adminCpSearch: (q, limit = 20, city = '') => {
+    const params = { q, limit };
+    if (city) params.city = city;
+    const qs = new URLSearchParams(params).toString();
     return request(`/admin/cps?${qs}`);
   },
   // payload mirrors createSubmission body, plus required `target_cp_id`.

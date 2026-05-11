@@ -4,19 +4,23 @@ import Step1 from '../AddUnit/Step1';
 import SuccessScreen from '../AddUnit/SuccessScreen';
 import CpSelector from './CpSelector';
 
+const CITIES = ['Noida', 'Gurgaon', 'Ghaziabad'];
+
 /**
  * Full-screen flow for RM/Manager/Admin to submit a listing on behalf of a CP.
  *
- * Single-step: reuses AddUnit/Step1 with mode="staff", which collects
- * identification + occupancy + asking price and posts
- * adminCreateSubmissionOnBehalf in one shot. Only renders once a target
- * CP has been picked via CpSelector.
+ * Three steps:
+ *   1. Pick a city  (Noida / Gurgaon / Ghaziabad).
+ *   2. Pick a CP    (searches all active CPs in that city, regardless of
+ *                    the staff member's personal CP scope).
+ *   3. Fill the form (reuses AddUnit/Step1 with mode="staff").
  *
  * Props:
  *   onClose: () => void  // back to admin board (called from header back-btn,
  *                        // and after SuccessScreen onDone)
  */
 export default function AddInventoryOnBehalf({ onClose }) {
+  const [city, setCity] = useState('');
   const [targetCp, setTargetCp] = useState(null);
   const [submittedResult, setSubmittedResult] = useState(null);
   const [form, setForm] = useState({
@@ -49,15 +53,21 @@ export default function AddInventoryOnBehalf({ onClose }) {
     );
   }
 
-  // When the user changes the CP, preserve EVERYTHING in the form. Reasoning:
-  // resetting society would force a re-pick on the new CP, which triggers
-  // selectSociety -> resetDeps() in Step1 and wipes BHK/floor/etc. The user's
-  // common case is "I picked the wrong CP, want to switch but keep what I
-  // typed." If the new CP is in a different city than the currently-selected
-  // society, the staff member can change the city tab in Step1 manually.
+  // Switching city resets the picked CP — they could be from a different
+  // city, and we'd rather force a re-pick than leave the form pointed at
+  // a now-mismatched CP.
+  const handleChangeCity = (next) => {
+    if (next === city) return;
+    setCity(next);
+    setTargetCp(null);
+  };
+
+  // When the user changes the CP, preserve EVERYTHING else in the form.
+  // Resetting society would force a re-pick on the new CP, which triggers
+  // selectSociety -> resetDeps() in Step1 and wipes BHK/floor/etc. The
+  // common case is "I picked the wrong CP" — keep what they typed.
   const handleChangeCp = (cp) => {
     setTargetCp(cp);
-    // Intentionally no setForm here.
   };
 
   return (
@@ -90,11 +100,55 @@ export default function AddInventoryOnBehalf({ onClose }) {
         </span>
       </div>
 
+      {/* Step 1: city. Sticky card at the top so it's always visible while
+          the user is choosing a CP. */}
       <div style={{ padding: 16, maxWidth: 720, margin: '0 auto' }}>
-        <CpSelector value={targetCp} onChange={handleChangeCp} />
+        <div style={{
+          padding: '12px 16px', background: '#fff',
+          border: '1px solid #e5e5e5', borderRadius: 8,
+          marginBottom: 12,
+        }}>
+          <div style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>
+            City
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {CITIES.map((c) => {
+              const active = city === c;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => handleChangeCity(c)}
+                  style={{
+                    padding: '8px 16px',
+                    border: `1px solid ${active ? '#FF6B2B' : '#ccc'}`,
+                    background: active ? '#FF6B2B' : '#fff',
+                    color: active ? '#fff' : '#222',
+                    borderRadius: 6,
+                    fontSize: 14, fontWeight: active ? 600 : 500,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+          {!city && (
+            <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
+              Pick the city first — the CP search will only show CPs from that city.
+            </div>
+          )}
+        </div>
+
+        {/* Step 2: CP. Only shown once a city is picked. */}
+        {city && (
+          <CpSelector value={targetCp} onChange={handleChangeCp} city={city} />
+        )}
       </div>
 
-      {targetCp ? (
+      {/* Step 3: the listing form. Only shown once a CP is picked. */}
+      {city && targetCp ? (
         <Step1
           form={form}
           setForm={setForm}
@@ -105,7 +159,9 @@ export default function AddInventoryOnBehalf({ onClose }) {
         />
       ) : (
         <div style={{ padding: 16, maxWidth: 720, margin: '0 auto', color: '#888', fontSize: 13, textAlign: 'center' }}>
-          Pick a CP above to start entering inventory details.
+          {!city
+            ? 'Pick a city above to start.'
+            : 'Pick a CP above to start entering inventory details.'}
         </div>
       )}
     </div>
