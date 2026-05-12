@@ -48,14 +48,5 @@ frontend/CardPreview.html
 
 .claude/
 
-# Obsidian vault — keep shared config, ignore per-user state
-notes/.obsidian/workspace.json
-notes/.obsidian/workspace-mobile.json
-notes/.obsidian/cache
-notes/.obsidian/plugins/*/data.json
-
-# Private notes (gitkeep preserves folder structure)
-notes/daily/*
-!notes/daily/.gitkeep
-notes/personal/*
-!notes/personal/.gitkeep
+# Obsidian vault — fully local, never pushed
+notes/
