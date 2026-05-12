@@ -37,6 +37,7 @@ def list_my_submissions():
                        status, photos, submitted_at,
                        counter_offer_price, counter_offer_status, counter_offer_at,
                        counter_offer_response_text,
+                       broker_counter_price, broker_counter_at, broker_counter_comment,
                        unit_less, perfect_match_at_submit,
                        deleted_at, withdraw_reason
                 FROM submissions
@@ -395,36 +396,39 @@ def withdraw_submission(sid):
 @bp.post("/submissions/<int:sid>/counter-offer-response")
 @require_auth
 def counter_offer_response(sid):
-    """CP accepts or rejects a pending counter offer from the admin.
+    """CP accepts, rejects, or counters back a pending admin counter offer.
 
-    On accept: status -> 'Offer Given', counter_offer_status -> 'accepted'
-    On reject: status -> 'Price Rejected',  counter_offer_status -> 'rejected'
+    action='accept'  -> status='Offer Given',     counter_offer_status='accepted'
+    action='reject'  -> status='Price Rejected',  counter_offer_status='rejected'
+    action='counter' -> status unchanged,         counter_offer_status='broker_countered'
+                        + stores broker_counter_price / broker_counter_at / broker_counter_comment
+                        (admin can then send a new counter, looping back to 'pending')
     """
     data = request.get_json(silent=True) or {}
     action = (data.get("action") or "").strip().lower()
-    if action not in ("accept", "reject"):
-        return jsonify({"error": "action must be 'accept' or 'reject'"}), 400
+    if action not in ("accept", "reject", "counter"):
+        return jsonify({"error": "action must be 'accept', 'reject', or 'counter'"}), 400
 
-    # Optional comment from CP (e.g. "counter too low", "price is fine")
     comment = (data.get("comment") or "").strip()
     if len(comment) > 2000:
         comment = comment[:2000]
     comment_or_none = comment or None
 
-    new_status = "Offer Given" if action == "accept" else "Price Rejected"
-    new_co_status = "accepted" if action == "accept" else "rejected"
-    event_text = (
-        "CP accepted counter offer"
-        if action == "accept"
-        else "CP rejected counter offer"
-    )
-    if comment:
-        event_text = f'{event_text} — "{comment}"'
+    broker_price = None
+    if action == "counter":
+        raw_price = data.get("counter_price")
+        if raw_price is None:
+            raw_price = data.get("price_rupees")
+        try:
+            broker_price = int(raw_price)
+        except (TypeError, ValueError):
+            return jsonify({"error": "counter_price (integer rupees) is required for action='counter'"}), 400
+        if broker_price <= 0:
+            return jsonify({"error": "counter_price must be > 0"}), 400
 
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            # Lock the row + verify it belongs to this CP and has a pending offer
             cur.execute(
                 """
                 SELECT id, public_id, cp_id, counter_offer_status, status
@@ -441,6 +445,51 @@ def counter_offer_response(sid):
                 return jsonify({"error": "Not your submission"}), 403
             if row["counter_offer_status"] != "pending":
                 return jsonify({"error": "No pending counter offer"}), 409
+
+            if action == "counter":
+                cur.execute(
+                    """
+                    UPDATE submissions
+                    SET counter_offer_status   = 'broker_countered',
+                        broker_counter_price   = %s,
+                        broker_counter_at      = NOW(),
+                        broker_counter_comment = %s
+                    WHERE id = %s
+                    """,
+                    (broker_price, comment_or_none, sid),
+                )
+                event_text = f"CP countered with ₹{broker_price:,}"
+                if comment:
+                    event_text = f'{event_text} — "{comment}"'
+                cur.execute(
+                    """
+                    INSERT INTO submission_events
+                        (submission_id, actor_cp_id, kind, text)
+                    VALUES (%s, %s, 'counter_offer', %s)
+                    """,
+                    (sid, g.user["cp_id"], event_text),
+                )
+                log_activity(
+                    cur, action="counter_offer_broker_countered", category="submission",
+                    entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+                    details={"counter_price": broker_price, "comment": comment or None},
+                )
+                conn.commit()
+                return jsonify({
+                    "ok": True,
+                    "counter_offer_status": "broker_countered",
+                    "broker_counter_price": broker_price,
+                }), 200
+
+            new_status = "Offer Given" if action == "accept" else "Price Rejected"
+            new_co_status = "accepted" if action == "accept" else "rejected"
+            event_text = (
+                "CP accepted counter offer"
+                if action == "accept"
+                else "CP rejected counter offer"
+            )
+            if comment:
+                event_text = f'{event_text} — "{comment}"'
 
             cur.execute(
                 """
@@ -472,6 +521,72 @@ def counter_offer_response(sid):
         put_app_conn(conn)
 
     return jsonify({"ok": True, "new_status": new_status}), 200
+
+
+@bp.patch("/submissions/<int:sid>/asking-price")
+@require_auth
+def update_asking_price(sid: int):
+    """CP updates the asking price on their own submission.
+
+    Allowed in any status except withdrawn (deleted_at IS NOT NULL).
+    Body: { "asking_price": 31000000 }  (integer rupees)
+    """
+    data = request.get_json(silent=True) or {}
+    raw_price = data.get("asking_price")
+    try:
+        new_price = int(raw_price)
+    except (TypeError, ValueError):
+        return jsonify({"error": "asking_price (integer rupees) is required"}), 400
+    if new_price <= 0:
+        return jsonify({"error": "asking_price must be > 0"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, public_id, cp_id, asking_price, status, deleted_at
+                FROM submissions
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (sid,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Submission not found"}), 404
+            if row["cp_id"] != g.user["cp_id"]:
+                return jsonify({"error": "Not your submission"}), 403
+            if row.get("deleted_at"):
+                return jsonify({"error": "Cannot edit a withdrawn submission"}), 409
+
+            old_price = row.get("asking_price")
+            if old_price == new_price:
+                return jsonify({"ok": True, "asking_price": new_price, "unchanged": True}), 200
+
+            cur.execute(
+                "UPDATE submissions SET asking_price = %s WHERE id = %s",
+                (new_price, sid),
+            )
+            cur.execute(
+                """
+                INSERT INTO submission_events
+                    (submission_id, actor_cp_id, kind, text)
+                VALUES (%s, %s, 'system', %s)
+                """,
+                (sid, g.user["cp_id"],
+                 f"CP updated asking price: ₹{(old_price or 0):,} → ₹{new_price:,}"),
+            )
+            log_activity(
+                cur, action="asking_price_updated", category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"old": old_price, "new": new_price},
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"ok": True, "asking_price": new_price}), 200
 
 @bp.get("/submissions/<int:sid>/events")
 @require_auth

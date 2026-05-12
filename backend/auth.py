@@ -104,10 +104,74 @@ def _decode_or_reject(token: str):
     return payload, None
 
 
+def _relay_user_or_none():
+    """Check for partner relay auth (API key + X-Broker-Id phone).
+
+    Returns (user_dict, None) on success, (None, error_tuple) if the relay key
+    is present but invalid/broker not found, or (None, None) if relay auth
+    doesn't apply (key not configured or header absent — fall through to JWT).
+    """
+    relay_key = (Config.RELAY_API_KEY or "").strip()
+    if not relay_key:
+        return None, None  # relay not configured
+
+    header_name = Config.RELAY_API_KEY_HEADER
+    incoming_key = request.headers.get(header_name, "").strip()
+    if not incoming_key:
+        return None, None  # no relay key in this request
+
+    if incoming_key != relay_key:
+        log.warning("[relay] invalid API key from %s", request.remote_addr)
+        return None, ({"error": "Invalid relay API key"}, 401)
+
+    # Valid key — resolve broker from X-Broker-Id (raw 10-digit phone).
+    raw_phone = request.headers.get("X-Broker-Id", "").strip()
+    digits = "".join(c for c in raw_phone if c.isdigit())
+    phone = digits[-10:] if len(digits) >= 10 else digits
+    if not phone:
+        return None, ({"error": "X-Broker-Id header with a valid phone is required for relay requests"}, 400)
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, cp_code, name, phone, role, is_admin, city_id "
+                "FROM channel_partners WHERE phone = %s AND is_active = TRUE",
+                (phone,),
+            )
+            cp = cur.fetchone()
+    finally:
+        put_app_conn(conn)
+
+    if not cp:
+        log.warning("[relay] broker not found for phone=%s", phone)
+        return None, ({"error": "Broker not found or inactive"}, 404)
+
+    user = {
+        "cp_id": cp["id"],
+        "cp_code": cp["cp_code"],
+        "phone": cp["phone"],
+        "is_admin": bool(cp.get("is_admin", False)),
+        "role": cp.get("role") or "cp",
+        "city_id": cp.get("city_id"),
+        "_relay": True,
+    }
+    log.info("[relay] authenticated broker cp_id=%s cp_code=%s", user["cp_id"], user["cp_code"])
+    return user, None
+
+
 def require_auth(f):
-    """Any authenticated user (CP, RM, or admin)."""
+    """Any authenticated user (CP, RM, or admin). Accepts JWT or relay API key."""
     @wraps(f)
     def wrapper(*args, **kwargs):
+        relay_user, relay_err = _relay_user_or_none()
+        if relay_err:
+            body, status = relay_err
+            return jsonify(body), status
+        if relay_user is not None:
+            g.user = relay_user
+            return f(*args, **kwargs)
+
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return jsonify({"error": "Missing or invalid Authorization header"}), 401

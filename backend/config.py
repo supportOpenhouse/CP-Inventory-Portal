@@ -44,6 +44,13 @@ class Config:
     # Generate a long random string (>= 48 chars). If unset, sync endpoints 503.
     SYNC_SECRET_TOKEN = os.getenv("SYNC_SECRET_TOKEN") or None
 
+    # -------- Partner relay (server-to-server, API key based) --------
+    # Shared secret key sent by the partner relay as X-API-Key (configurable).
+    # If unset, relay auth is disabled and all callers must use JWT.
+    # Generate a long random string (>= 48 chars) for production.
+    RELAY_API_KEY = os.getenv("RELAY_API_KEY") or None
+    RELAY_API_KEY_HEADER = (os.getenv("RELAY_API_KEY_HEADER") or "X-API-Key").strip() or "X-API-Key"
+
     # -------- Forms App integration (Schedule Visit) --------
     # External Forms app handles visit scheduling end-to-end. Admin clicks
     # 'Schedule Visit' on a listing → CP backend POSTs to FORMS_APP_URL +
