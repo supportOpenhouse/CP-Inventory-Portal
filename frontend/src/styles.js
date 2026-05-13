@@ -348,9 +348,8 @@ export const css = `
     0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.10), 0 0 0 0 rgba(239, 68, 68, 0.18); }
     50%      { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18), 0 0 0 6px rgba(239, 68, 68, 0.00); }
   }
-  /* Overdue (>7 days): dashed red border + red gradient strip at the top edge. */
+  /* Overdue (>7 days): dashed red border around the whole card. */
   .board-card.is-aging-overdue { background: #FFF5F5; border: 2.5px dashed #B91C1C; box-shadow: 0 0 0 1px #FCA5A5, 0 2px 6px rgba(185, 28, 28, 0.12); }
-  .board-card.is-aging-overdue::before { content: ""; position: absolute; top: -1px; left: -1px; right: -1px; height: 4px; background: linear-gradient(90deg, #DC2626, #B91C1C, #DC2626); border-top-left-radius: 10px; border-top-right-radius: 10px; }
 
   /* ----- Ageing / reminder timer strip (under-7-days countdown) -----
      Pinned to the bottom of the board card via negative margins that pull
