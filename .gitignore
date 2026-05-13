@@ -44,6 +44,9 @@ backend/scripts/
 
 # Local UI design previews (open in browser, never deployed)
 frontend/CardPreview.html
+frontend/CpCardPreview.html
+frontend/src/CardPreview.jsx
+frontend/src/CpCardPreview.jsx
 
 
 .claude/
