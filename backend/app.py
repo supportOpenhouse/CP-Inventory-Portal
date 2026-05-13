@@ -16,6 +16,7 @@ from config import Config
 from db import init_pools
 from routes.admin import bp as admin_bp
 from routes.auth_routes import bp as auth_bp
+from routes.cron import bp as cron_bp
 from routes.health import bp as health_bp
 from routes.meta import bp as meta_bp
 from routes.societies import bp as societies_bp
@@ -45,6 +46,7 @@ def create_app() -> Flask:
     app.register_blueprint(submissions_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(sync_bp)
+    app.register_blueprint(cron_bp)
 
     @app.errorhandler(400)
     def bad_request(e):

@@ -532,7 +532,8 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     cp.cp_code, cp.name AS cp_name,
                     rm.name AS assigned_rm_name,
                     listing_rm.name AS listing_rm_name,
-                    acq.acq_price_lakhs, acq.acq_sqft
+                    acq.acq_price_lakhs, acq.acq_sqft,
+                    tmr.submitted_stage_at, tmr.visit_completed_stage_at
         """
     else:
         select_clause = """
@@ -551,7 +552,8 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     cp.company AS cp_company,
                     rm.name AS assigned_rm_name,
                     listing_rm.name AS listing_rm_name,
-                    acq.acq_price_lakhs, acq.acq_sqft
+                    acq.acq_price_lakhs, acq.acq_sqft,
+                    tmr.submitted_stage_at, tmr.visit_completed_stage_at
         """
     conn = get_app_conn()
     try:
@@ -579,6 +581,25 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
                     LIMIT 1
                 ) acq ON TRUE
+                LEFT JOIN LATERAL (
+                    -- Reminder-timer start timestamps, derived from submission_events.
+                    -- - submitted_stage_at: last time status entered 'Submitted'
+                    --   (drives the cp_visit_reminder timer while status='Submitted').
+                    -- - visit_completed_stage_at: last time status entered 'Visit Completed'
+                    --   (drives the cp_sellermeeting_reminder timer while status='Visit Completed').
+                    -- MAX over to_status keeps the latest transition if a card bounces
+                    -- back into the same stage. Legacy rows that pre-date the event log
+                    -- get the column as NULL and the frontend falls back to submitted_at.
+                    SELECT
+                        (SELECT MAX(e.created_at)
+                         FROM submission_events e
+                         WHERE e.submission_id = s.id
+                           AND e.to_status = 'Submitted') AS submitted_stage_at,
+                        (SELECT MAX(e.created_at)
+                         FROM submission_events e
+                         WHERE e.submission_id = s.id
+                           AND e.to_status = 'Visit Completed') AS visit_completed_stage_at
+                ) tmr ON TRUE
                 WHERE TRUE {scope_sql}
             """
             params = list(scope_params)
@@ -754,7 +775,8 @@ def get_submission(sid: int):
                        cp_rm.name AS cp_rm_name,
                        rm.name AS assigned_rm_name,
                        listing_rm.name AS listing_rm_name,
-                       acq.acq_price_lakhs, acq.acq_sqft
+                       acq.acq_price_lakhs, acq.acq_sqft,
+                       tmr.submitted_stage_at, tmr.visit_completed_stage_at
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
@@ -773,6 +795,13 @@ def get_submission(sid: int):
                     ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
                     LIMIT 1
                 ) acq ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT
+                        (SELECT MAX(e.created_at) FROM submission_events e
+                         WHERE e.submission_id = s.id AND e.to_status = 'Submitted') AS submitted_stage_at,
+                        (SELECT MAX(e.created_at) FROM submission_events e
+                         WHERE e.submission_id = s.id AND e.to_status = 'Visit Completed') AS visit_completed_stage_at
+                ) tmr ON TRUE
                 WHERE s.id = %s {scope_sql}
             """, [sid, *scope_params])
             submission = cur.fetchone()

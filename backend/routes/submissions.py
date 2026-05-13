@@ -65,18 +65,24 @@ def list_my_submissions():
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, public_id, society_id, society_name, tower, unit_no, floor,
-                       sqft, bhk, occupancy_status,
-                       asking_price,
-                       status, photos, submitted_at,
-                       counter_offer_price, counter_offer_status, counter_offer_at,
-                       counter_offer_response_text,
-                       broker_counter_price, broker_counter_at, broker_counter_comment,
-                       unit_less, perfect_match_at_submit,
-                       deleted_at, withdraw_reason
-                FROM submissions
-                WHERE cp_id = %s
-                ORDER BY submitted_at DESC
+                SELECT s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
+                       s.sqft, s.bhk, s.occupancy_status,
+                       s.asking_price,
+                       s.status, s.photos, s.submitted_at,
+                       s.counter_offer_price, s.counter_offer_status, s.counter_offer_at,
+                       s.counter_offer_response_text,
+                       s.broker_counter_price, s.broker_counter_at, s.broker_counter_comment,
+                       s.unit_less, s.perfect_match_at_submit,
+                       s.deleted_at, s.withdraw_reason,
+                       (SELECT MAX(e.created_at) FROM submission_events e
+                        WHERE e.submission_id = s.id AND e.to_status = 'Submitted')
+                           AS submitted_stage_at,
+                       (SELECT MAX(e.created_at) FROM submission_events e
+                        WHERE e.submission_id = s.id AND e.to_status = 'Visit Completed')
+                           AS visit_completed_stage_at
+                FROM submissions s
+                WHERE s.cp_id = %s
+                ORDER BY s.submitted_at DESC
                 LIMIT 100
             """, (g.user["cp_id"],))
             subs = cur.fetchall()
