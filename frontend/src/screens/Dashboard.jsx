@@ -7,6 +7,7 @@ import { formatPrice } from '../format';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import SubmissionDetailModal from './SubmissionDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import AgingStrip from '../components/AgingStrip';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
 // Note: 'Price Rejected' / 'Duplicate Rejected' are intentionally NOT in the filter row
@@ -335,6 +336,7 @@ export default function Dashboard({ onAdd }) {
                       <span>₹{Math.round(s.asking_price / s.sqft).toLocaleString('en-IN')}/sqft</span>
                     ) : null}
                   </div>
+                  <AgingStrip submission={s} placement="inline" />
                 </div>
               </div>
 

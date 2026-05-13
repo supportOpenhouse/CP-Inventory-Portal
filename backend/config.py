@@ -51,6 +51,27 @@ class Config:
     RELAY_API_KEY = os.getenv("RELAY_API_KEY") or None
     RELAY_API_KEY_HEADER = (os.getenv("RELAY_API_KEY_HEADER") or "X-API-Key").strip() or "X-API-Key"
 
+    # -------- WhatsApp (Interakt) — CP reminder templates --------
+    # Interakt API key (basic-auth token; see https://www.interakt.shop/api-docs).
+    # Templates expected on the Interakt side:
+    #   - cp_visit_reminder        (params: cp_name, tower-unit-society, days_left)
+    #   - cp_sellermeeting_reminder(params: cp_name, tower-unit-society, days_left)
+    INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY") or None
+    INTERAKT_API_URL = os.getenv(
+        "INTERAKT_API_URL", "https://api.interakt.ai/v1/public/message/"
+    )
+    # Kill-switch: set to "false" to disable outbound WhatsApp without removing creds.
+    WA_ENABLED = os.getenv("WA_ENABLED", "true").lower() == "true"
+    # Country code prefixed to CP phones before sending. CP rows store
+    # 10-digit national numbers; Interakt needs an explicit country code.
+    WA_DEFAULT_COUNTRY_CODE = os.getenv("WA_DEFAULT_COUNTRY_CODE", "91")
+
+    # -------- CP reminder cron (X-Sync-Token header) --------
+    # Daily job runs in an external scheduler (GitHub Actions / Render cron /
+    # cron-job.org) that POSTs to /api/cron/send-cp-reminders. Token shared
+    # via this env var. If unset, the cron endpoint returns 503.
+    CP_REMINDER_CRON_TOKEN = os.getenv("CP_REMINDER_CRON_TOKEN") or None
+
     # -------- Forms App integration (Schedule Visit) --------
     # External Forms app handles visit scheduling end-to-end. Admin clicks
     # 'Schedule Visit' on a listing → CP backend POSTs to FORMS_APP_URL +

@@ -338,6 +338,27 @@ export const css = `
   .board-card-skel { height: 120px; background: #fff; border: 1px solid #E8E6E0; border-radius: 12px; margin-bottom: 10px; position: relative; overflow: hidden; }
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
+  /* ----- Ageing / reminder timer strip (under-7-days countdown) -----
+     Pinned to the bottom of the board card via negative margins that pull
+     past the 14px / 16px card padding. .aging-strip-inline overrides
+     those negatives for cards that can't tolerate them (mobile CP view). */
+  .aging-strip { margin: 10px -16px -14px; padding: 8px 14px 10px; background: linear-gradient(180deg, #FFF5F5 0%, #FFECEC 100%); border-top: 1px dashed #FCA5A5; border-bottom-left-radius: 11px; border-bottom-right-radius: 11px; }
+  .aging-strip.aging-strip-inline { margin: 10px 0 0; border-radius: 10px; border-top: none; border: 1px dashed #FCA5A5; }
+  .aging-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .aging-label { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; color: #B91C1C; letter-spacing: 0.3px; text-transform: uppercase; }
+  .aging-label .clock-icon { color: #DC2626; animation: clock-tick 1s steps(60, end) infinite; transform-origin: 50% 50%; }
+  @keyframes clock-tick { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .aging-days { font-size: 11px; font-weight: 700; color: #DC2626; font-variant-numeric: tabular-nums; }
+  .aging-days .num { font-size: 13px; }
+  .aging-bar-track { position: relative; height: 6px; background: #FCE7E7; border-radius: 999px; overflow: hidden; }
+  .aging-bar-fill { position: absolute; top: 0; left: 0; bottom: 0; border-radius: 999px; background: linear-gradient(90deg, #FCA5A5 0%, #EF4444 60%, #B91C1C 100%); background-size: 200% 100%; animation: aging-shimmer 1.8s linear infinite; }
+  @keyframes aging-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+
+  /* ----- Ageing — overdue (>7 days). Renders as a pill, not a strip. ----- */
+  .aging-overdue-pill { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 4px 10px; background: #B91C1C; color: #fff; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; box-shadow: 0 1px 2px rgba(185, 28, 28, 0.3); }
+  .aging-overdue-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #fff; animation: overdue-blink 1.2s ease-in-out infinite; }
+  @keyframes overdue-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
   /* ===== Admin: table view ===== */
   .admin-table-wrap { padding: 20px 28px 40px; }
   .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border-radius: 10px; border: 1px solid #E8E6E0; }

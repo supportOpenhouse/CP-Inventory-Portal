@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
+import AgingStrip from '../../components/AgingStrip';
 
 /**
  * Infinite-scroll sentinel rendered at the bottom of each kanban column.
@@ -268,6 +269,8 @@ export default function BoardView({
                       </span>
                     )}
                   </div>
+
+                  <AgingStrip submission={s} placement="card-bottom" />
                 </div>
               );
             })}

@@ -18,6 +18,40 @@ bp = Blueprint("submissions", __name__, url_prefix="/api")
 VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Duplicate Rejected"]
 
 
+@bp.get("/submissions/stats")
+@require_auth
+def my_submissions_stats():
+    """Lightweight stats-only endpoint for the partner home page.
+
+    Returns the same `stats` shape as `GET /api/submissions` but without
+    fetching the submission rows themselves. Counts ALL non-withdrawn
+    submissions for this broker (the list endpoint caps at 100 most recent).
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT status, COUNT(*) AS n
+                FROM submissions
+                WHERE cp_id = %s AND deleted_at IS NULL
+                GROUP BY status
+                """,
+                (g.user["cp_id"],),
+            )
+            rows = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    stats = {stage: 0 for stage in VALID_STAGES}
+    for r in rows:
+        if r["status"] in stats:
+            stats[r["status"]] = r["n"]
+    stats["submitted"] = stats["Submitted"]
+    stats["offers"] = stats["Offer Given"]
+    return jsonify({"stats": stats}), 200
+
+
 @bp.get("/submissions")
 @require_auth
 def list_my_submissions():
@@ -31,18 +65,24 @@ def list_my_submissions():
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, public_id, society_id, society_name, tower, unit_no, floor,
-                       sqft, bhk, occupancy_status,
-                       asking_price,
-                       status, photos, submitted_at,
-                       counter_offer_price, counter_offer_status, counter_offer_at,
-                       counter_offer_response_text,
-                       broker_counter_price, broker_counter_at, broker_counter_comment,
-                       unit_less, perfect_match_at_submit,
-                       deleted_at, withdraw_reason
-                FROM submissions
-                WHERE cp_id = %s
-                ORDER BY submitted_at DESC
+                SELECT s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
+                       s.sqft, s.bhk, s.occupancy_status,
+                       s.asking_price,
+                       s.status, s.photos, s.submitted_at,
+                       s.counter_offer_price, s.counter_offer_status, s.counter_offer_at,
+                       s.counter_offer_response_text,
+                       s.broker_counter_price, s.broker_counter_at, s.broker_counter_comment,
+                       s.unit_less, s.perfect_match_at_submit,
+                       s.deleted_at, s.withdraw_reason,
+                       (SELECT MAX(e.created_at) FROM submission_events e
+                        WHERE e.submission_id = s.id AND e.to_status = 'Submitted')
+                           AS submitted_stage_at,
+                       (SELECT MAX(e.created_at) FROM submission_events e
+                        WHERE e.submission_id = s.id AND e.to_status = 'Visit Completed')
+                           AS visit_completed_stage_at
+                FROM submissions s
+                WHERE s.cp_id = %s
+                ORDER BY s.submitted_at DESC
                 LIMIT 100
             """, (g.user["cp_id"],))
             subs = cur.fetchall()
