@@ -60,7 +60,7 @@ export default function AgingStrip({ submission, placement = 'card-bottom' }) {
       <div className="aging-bar-track">
         <div
           className="aging-bar-fill"
-          style={{ width: `${timer.pctConsumed}%` }}
+          style={{ width: `${timer.pctRemaining}%` }}
         />
       </div>
     </div>

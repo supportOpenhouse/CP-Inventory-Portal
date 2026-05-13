@@ -338,6 +338,19 @@ export const css = `
   .board-card-skel { height: 120px; background: #fff; border: 1px solid #E8E6E0; border-radius: 12px; margin-bottom: 10px; position: relative; overflow: hidden; }
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
+  /* ----- Ageing — card-level borders ----- */
+  /* Under-7-day countdown: dashed red border with a soft pulsing halo.
+     Skipped when an inline style overlay (perfect-match red / withdrawn
+     yellow / partial-match purple) is already painting the card. */
+  .board-card.is-aging-soon { background: #FFFBFB; border: 1.5px dashed #EF4444; box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.08); animation: aging-soon-pulse 2.4s ease-in-out infinite; }
+  @keyframes aging-soon-pulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.10), 0 0 0 0 rgba(239, 68, 68, 0.18); }
+    50%      { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18), 0 0 0 6px rgba(239, 68, 68, 0.00); }
+  }
+  /* Overdue (>7 days): solid bold red border + red gradient strip at the top edge. */
+  .board-card.is-aging-overdue { background: #FFF5F5; border: 2.5px solid #B91C1C; box-shadow: 0 0 0 1px #FCA5A5, 0 2px 6px rgba(185, 28, 28, 0.12); }
+  .board-card.is-aging-overdue::before { content: ""; position: absolute; top: -1px; left: -1px; right: -1px; height: 4px; background: linear-gradient(90deg, #DC2626, #B91C1C, #DC2626); border-top-left-radius: 10px; border-top-right-radius: 10px; }
+
   /* ----- Ageing / reminder timer strip (under-7-days countdown) -----
      Pinned to the bottom of the board card via negative margins that pull
      past the 14px / 16px card padding. .aging-strip-inline overrides
