@@ -118,6 +118,16 @@ def send_cp_reminders():
                 """
             )
             rows = cur.fetchall()
+
+            # Pull every (submission, kind, day) that's already been recorded
+            # as sent (or backfill-seeded). Dry-run uses this to predict the
+            # real run's output; the live path still uses INSERT ... ON
+            # CONFLICT as the source of truth for dedup.
+            cur.execute("SELECT submission_id, kind, day_number FROM cp_reminders_sent")
+            already_sent = {
+                (r["submission_id"], r["kind"], r["day_number"])
+                for r in cur.fetchall()
+            }
     finally:
         put_app_conn(conn)
 
@@ -146,6 +156,14 @@ def send_cp_reminders():
         cp_first_name = (row.get("cp_name") or "there").split()[0] if row.get("cp_name") else "there"
 
         for day in due_days:
+            # Honour cp_reminders_sent in BOTH dry-run and live paths so the
+            # dry-run accurately previews what the real run would do
+            # (especially after a pre-rollout backfill seed). Live path's
+            # source of truth is still the INSERT ... ON CONFLICT below.
+            if (row["submission_id"], kind, day) in already_sent:
+                skipped_already_sent += 1
+                continue
+
             days_left = max(0, 7 - days)
 
             if dry_run:
