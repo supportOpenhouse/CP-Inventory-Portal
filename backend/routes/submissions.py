@@ -18,6 +18,40 @@ bp = Blueprint("submissions", __name__, url_prefix="/api")
 VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Duplicate Rejected"]
 
 
+@bp.get("/submissions/stats")
+@require_auth
+def my_submissions_stats():
+    """Lightweight stats-only endpoint for the partner home page.
+
+    Returns the same `stats` shape as `GET /api/submissions` but without
+    fetching the submission rows themselves. Counts ALL non-withdrawn
+    submissions for this broker (the list endpoint caps at 100 most recent).
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT status, COUNT(*) AS n
+                FROM submissions
+                WHERE cp_id = %s AND deleted_at IS NULL
+                GROUP BY status
+                """,
+                (g.user["cp_id"],),
+            )
+            rows = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    stats = {stage: 0 for stage in VALID_STAGES}
+    for r in rows:
+        if r["status"] in stats:
+            stats[r["status"]] = r["n"]
+    stats["submitted"] = stats["Submitted"]
+    stats["offers"] = stats["Offer Given"]
+    return jsonify({"stats": stats}), 200
+
+
 @bp.get("/submissions")
 @require_auth
 def list_my_submissions():
