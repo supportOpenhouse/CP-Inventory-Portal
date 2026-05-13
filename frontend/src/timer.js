@@ -32,7 +32,7 @@ function istDay(dt) {
  *     daysLeft: int,                  // capped at 0 once overdue
  *     overdue: bool,                  // daysSinceStart > 7
  *     overdueBy: int,                 // 0 unless overdue
- *     pctConsumed: int,               // 0..100 — fill width for the bar
+ *     pctRemaining: int,              // 0..100 — bar fills toward 0 as time runs out
  *   }
  *
  * Returns null when:
@@ -62,10 +62,9 @@ export function timerFor(submission) {
   const overdue = daysSinceStart > DEADLINE_DAYS;
   const daysLeft = Math.max(0, DEADLINE_DAYS - daysSinceStart);
   const overdueBy = overdue ? (daysSinceStart - DEADLINE_DAYS) : 0;
-  const pctConsumed = Math.min(
-    100,
-    Math.round((daysSinceStart / DEADLINE_DAYS) * 100),
-  );
+  // Bar fills toward 0 as time runs out: full at start (7 days left),
+  // empty at the deadline. Inverse of "consumed".
+  const pctRemaining = Math.round((daysLeft / DEADLINE_DAYS) * 100);
 
-  return { kind, daysSinceStart, daysLeft, overdue, overdueBy, pctConsumed };
+  return { kind, daysSinceStart, daysLeft, overdue, overdueBy, pctRemaining };
 }

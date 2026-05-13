@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
 import AgingStrip from '../../components/AgingStrip';
+import { timerFor } from '../../timer';
 
 /**
  * Infinite-scroll sentinel rendered at the bottom of each kanban column.
@@ -149,10 +150,19 @@ export default function BoardView({
               const metaParts = [towerUnit, s.floor && `F${s.floor}`].filter(Boolean);
               const showFlag = missingCore && !isWeakMatch;
 
+              // Ageing border (dashed red ≤7d, solid red >7d). Skipped when
+              // another overlay (perfect-match red / partial purple/yellow /
+              // withdrawn) is already painting the card — otherwise the
+              // borders fight and the result looks like a bug.
+              const timer = !cardOverlayStyle ? timerFor(s) : null;
+              const agingCardClass = !timer
+                ? ''
+                : (timer.overdue ? 'is-aging-overdue' : 'is-aging-soon');
+
               return (
                 <div
                   key={s.id}
-                  className={`board-card ${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''} ${isChecked ? 'bulk-selected' : ''}`}
+                  className={`board-card ${selectedId === s.id ? 'active' : ''} ${isWeakMatch ? 'weak-match' : ''} ${isChecked ? 'bulk-selected' : ''} ${agingCardClass}`}
                   style={cardOverlayStyle}
                   onClick={handleClick}
                   title={isWeakMatch ? 'Society name was a weak match during import — verify' : undefined}
