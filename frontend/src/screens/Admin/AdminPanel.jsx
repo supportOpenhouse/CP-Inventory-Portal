@@ -98,18 +98,34 @@ export default function AdminPanel({ onClose }) {
   const handleRoleChange = async (u, nextRole) => {
     if (u.role === nextRole) return;
     // Prevent moves that cross the rms <-> channel_partners boundary; backend
-    // rejects them but warn here for clarity.
+    // rejects them but warn here for clarity. Viewer is in rms, so flipping
+    // an existing rm/manager/viewer between those three roles is fine.
     const isAdmin = nextRole === 'admin';
     const isAdminCurrent = u.role === 'admin';
     if (isAdmin !== isAdminCurrent) {
       alert(
-        "To move someone between Admin and RM/Manager, remove them first " +
-        "and re-add. (Admins live in channel_partners; RMs/managers live in rms.)"
+        "To move someone between Admin and RM/Manager/Viewer, deactivate them " +
+        "first and re-add. (Admins live in channel_partners; RMs/managers/viewers " +
+        "live in rms.)"
       );
       return;
     }
+    // Flipping to viewer needs a city. If the row doesn't already have one,
+    // prompt the admin to pick one. The backend re-validates this — the prompt
+    // is just a friendlier path than letting the PATCH 400.
+    const payload = { role: nextRole };
+    if (nextRole === 'viewer' && !u.city_id) {
+      const cityLabels = CITY_OPTIONS.map((c, i) => `${i + 1}=${c.label}`).join(', ');
+      const pick = prompt(
+        `Viewers are bounded to one city. Pick a city for ${u.name || u.phone}:\n${cityLabels}\n\n` +
+        `Enter the number (1, 2, or 3):`
+      );
+      const idx = parseInt(pick, 10);
+      if (!idx || idx < 1 || idx > CITY_OPTIONS.length) return;
+      payload.city_id = CITY_OPTIONS[idx - 1].value;
+    }
     try {
-      await api.adminPatchStaffUser(u.source, u.id, { role: nextRole });
+      await api.adminPatchStaffUser(u.source, u.id, payload);
       await reload();
     } catch (e) {
       alert(e instanceof ApiError ? e.message : 'Update failed');

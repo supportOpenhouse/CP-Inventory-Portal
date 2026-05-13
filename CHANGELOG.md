@@ -7,6 +7,29 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-13] — Fix: role flips to/from viewer were rejected
+
+### Fixed
+- **`PATCH /api/admin/staff-users/rm/<id>` rejected any role change
+  to or from `viewer`** with the cross-table error
+  *"Role moves between the channel_partners (admin) and rms
+  (rm/manager) tables aren't supported."* — even though viewer
+  lives in `rms` alongside rm/manager. Reported by an admin trying
+  to demote an RM to viewer.
+
+  The backend now accepts all three rms-table roles (rm / manager /
+  viewer) for `source='rm'` PATCH requests. The endpoint sets
+  `is_manager` and `is_viewer` together so the table's CHECK
+  constraint (`NOT (is_viewer AND is_manager)`) is always satisfied.
+
+  Flipping a user TO viewer additionally requires a `city_id`
+  (viewers are city-bounded). If the row already has one, that's
+  used; otherwise the PATCH body must include `city_id` and the
+  Admin Panel prompts for it inline.
+
+  Cross-table admin ↔ rms moves still aren't supported — the error
+  message now mentions viewer and uses "Deactivate + re-add".
+
 ## [2026-05-13] — Viewer role + stage-count filter fix
 
 ### Added

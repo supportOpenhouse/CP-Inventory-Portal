@@ -4008,8 +4008,15 @@ def patch_staff_user(source, user_id):
     """Update a single staff user's permissions / role / activeness.
 
     Body (all fields optional):
-      role                   -> 'admin'|'rm'|'manager'  (only same-table moves
-                                allowed: rm <-> manager. admin moves rejected.)
+      role                   -> 'admin' | 'rm' | 'manager' | 'viewer'
+                                Same-table moves only: within rms you can
+                                flip freely between rm / manager / viewer.
+                                Admin (channel_partners) ↔ rms moves are
+                                rejected — admins can't be demoted in place,
+                                they have to be deactivated + re-added.
+      city_id                -> int | null. Required when flipping to viewer
+                                if the row doesn't already have one. Ignored
+                                for source='cp'.
       can_see_oh_properties  -> bool
       is_active              -> bool
     """
@@ -4029,16 +4036,49 @@ def patch_staff_user(source, user_id):
         params.append(bool(data["is_active"]))
     if "role" in data:
         new_role = (data["role"] or "").strip().lower()
-        if source == "rm" and new_role in ("rm", "manager"):
+        if source == "rm" and new_role in ("rm", "manager", "viewer"):
+            # All three rms-table roles flip via the is_manager / is_viewer
+            # flags. CHECK constraint on the table forbids both being true
+            # at once, which we honor by setting them as mutually-exclusive
+            # booleans here.
             sets.append("is_manager = %s")
             params.append(new_role == "manager")
+            sets.append("is_viewer = %s")
+            params.append(new_role == "viewer")
+            # Flipping to viewer requires a city_id. If the row doesn't
+            # already have one, require it in the request.
+            if new_role == "viewer":
+                requested_city = data.get("city_id")
+                try:
+                    requested_city = int(requested_city) if requested_city not in (None, "") else None
+                except (TypeError, ValueError):
+                    requested_city = None
+                if requested_city:
+                    sets.append("city_id = %s")
+                    params.append(requested_city)
+                else:
+                    conn_chk = get_app_conn()
+                    try:
+                        with conn_chk.cursor() as cur_chk:
+                            cur_chk.execute(
+                                "SELECT city_id FROM rms WHERE id = %s",
+                                (user_id,),
+                            )
+                            row_chk = cur_chk.fetchone()
+                    finally:
+                        put_app_conn(conn_chk)
+                    if not row_chk or not row_chk.get("city_id"):
+                        return jsonify({
+                            "error": "city_id is required when flipping a user to viewer.",
+                        }), 400
         elif source == "cp" and new_role == "admin":
             pass  # already admin in channel_partners; nothing to do
         else:
             return jsonify({
                 "error": (
                     "Role moves between the channel_partners (admin) and rms "
-                    "(rm/manager) tables aren't supported. Remove + re-add."
+                    "(rm / manager / viewer) tables aren't supported. "
+                    "Deactivate + re-add."
                 ),
             }), 400
 
