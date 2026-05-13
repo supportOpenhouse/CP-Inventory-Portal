@@ -20,9 +20,11 @@ const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
 export default function Admin() {
   const { user, logout } = useAuth();
   const isAdmin = user.role === 'admin';
-  // Managers and RMs get the same UI powers as admin — only the scope differs
-  // (backend already enforces "CPs under you only"). `isAdmin` remains for the
-  // display label, `isStaff` is for feature-visibility gates.
+  const isViewer = user.role === 'viewer';
+  // `isStaff` = "has acting permissions" — gates action buttons (status
+  // change, comment, bulk, reassign, on-behalf submit, schedule visit).
+  // Viewers are deliberately excluded: they see the board + filters + the
+  // read-only Detail Panel, but no action UI.
   const isStaff = isAdmin || user.role === 'manager' || user.role === 'rm';
 
   const defaultCity = isAdmin ? 'All' : user.city || 'All';
@@ -88,16 +90,18 @@ export default function Admin() {
   const [rmFilter, setRmFilter] = useState('');  // '' = All RMs
   const [statusFilter, setStatusFilter] = useState('');  // '' = All
 
-  // RM list for the filter dropdown + reassign modal. Loaded once for staff users.
+  // RM list for the filter dropdown + reassign modal. Loaded for any user
+  // with admin-board access (staff OR viewer) — the dropdown is a read
+  // operation, so viewers get to filter by RM too.
   const [rms, setRms] = useState([]);
   useEffect(() => {
-    if (!isStaff) return;
+    if (!isStaff && !isViewer) return;
     let alive = true;
     api.adminListRms()
       .then((data) => { if (alive) setRms(data?.rms || []); })
       .catch(() => { if (alive) setRms([]); });
     return () => { alive = false; };
-  }, [isStaff]);
+  }, [isStaff, isViewer]);
 
   const activeFilterCount = [bhk, dateFrom, dateTo, rmFilter].filter(Boolean).length;
 
@@ -299,7 +303,11 @@ export default function Admin() {
         </div>
         <div className="admin-topbar-right">
           <span className="admin-topbar-env">
-            {isAdmin ? 'Admin' : (user.isManager ? 'Manager' : 'RM')}
+            {isAdmin
+              ? 'Admin'
+              : isViewer
+                ? 'Viewer'
+                : (user.isManager ? 'Manager' : 'RM')}
             {user.city ? ` · ${user.city}` : (isAdmin ? ' · All cities' : '')}
           </span>
           <div className="admin-topbar-user">
@@ -344,6 +352,7 @@ export default function Admin() {
               ))}
             </div>
           ) : (
+            // Viewer (or legacy RM-on-channel_partners) — locked to one city.
             <div className="admin-scope-pill">Showing {user.city} only</div>
           )}
           {/* Submitting the form is the single trigger for "search now":
@@ -403,7 +412,7 @@ export default function Admin() {
               + Add Inventory
             </button>
           )}
-          {isStaff && (
+          {(isStaff || isViewer) && (
             <button
               className="filter-toggle"
               style={{ borderColor: '#6366F1', color: '#6366F1' }}
@@ -448,7 +457,7 @@ export default function Admin() {
               ))}
             </select>
           </div>
-          {isStaff && (
+          {(isStaff || isViewer) && (
             <div className="filter-field">
               <label>RM</label>
               <select value={rmFilter} onChange={(e) => setRmFilter(e.target.value)}>
@@ -501,7 +510,7 @@ export default function Admin() {
           <div className="stat-num" style={{ color: '#222' }}>{counts.Total ?? 0}</div>
           <div className="stat-label">All</div>
         </button>
-        {STAGES.filter((s) => isStaff || !s.adminOnly).map((s) => {
+        {STAGES.filter((s) => isStaff || isViewer || !s.adminOnly).map((s) => {
           const active = statusFilter === s.key;
           return (
             <button

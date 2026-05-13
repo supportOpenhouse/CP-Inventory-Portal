@@ -26,7 +26,7 @@ import requests
 from flask import Blueprint, Response, g, jsonify, request
 
 from activity_log import log_activity
-from auth import require_staff
+from auth import require_staff, require_acting_staff
 from config import Config
 from db import get_app_conn, put_app_conn, get_props_conn, put_props_conn, properties_configured
 from listing_rm import resolve_listing_rm, upsert_society_mapping
@@ -114,6 +114,15 @@ def _scoped_city_filter(cur):
     role = g.user.get("role", "cp")
     if role == "admin":
         return "", []
+
+    # Viewer: read-only, city-wide. Sees every active listing in their city
+    # regardless of which RM owns it. Falls back to "deny all" if the row
+    # has no city_id (which would be a misconfigured viewer account).
+    if role == "viewer":
+        city_id = g.user.get("city_id")
+        if not city_id:
+            return "AND FALSE", []
+        return "AND s.city_id = %s", [city_id]
 
     rm_id = g.user.get("rm_id")              # new: RM from rms table
     is_manager = bool(g.user.get("is_manager"))
@@ -626,6 +635,7 @@ def _stage_counts():
             search = to_str(request.args.get("search"))
             since_days = request.args.get("since_days", type=int)
             cp_id = request.args.get("cp_id", type=int)
+            rm_id = request.args.get("rm_id", type=int)
             bhk = to_str(request.args.get("bhk"))
             date_from = to_str(request.args.get("date_from"))
             date_to = to_str(request.args.get("date_to"))
@@ -647,6 +657,19 @@ def _stage_counts():
             if cp_id:
                 base_sql += " AND s.cp_id = %s"
                 params.append(cp_id)
+            if rm_id:
+                # Same EFFECTIVE-RM rule _apply_filters uses for the list query
+                # — match per-listing override first, fall back to the CP's
+                # permanent rm. Without this, stage counters keep showing
+                # city-wide totals when the RM filter is on, which is the
+                # bug a user reported.
+                base_sql += (
+                    " AND ("
+                    "  s.listing_rm_id = %s"
+                    "  OR (s.listing_rm_id IS NULL AND cp.rm_id = %s)"
+                    ")"
+                )
+                params.extend([rm_id, rm_id])
             if bhk:
                 base_sql += " AND s.bhk = %s"
                 params.append(bhk)
@@ -773,6 +796,7 @@ def get_submission(sid: int):
 
 @bp.post("/submissions/<int:sid>/status")
 @require_staff
+@require_acting_staff
 def change_status(sid: int):
     data = request.get_json(silent=True) or {}
     new_status = to_str(data.get("status"))
@@ -816,6 +840,7 @@ def change_status(sid: int):
 
 @bp.post("/submissions/<int:sid>/counter-offer")
 @require_staff
+@require_acting_staff
 def send_counter_offer(sid: int):
     """Admin sends a counter offer. Submission stays in 'Submitted'.
 
@@ -903,6 +928,7 @@ def send_counter_offer(sid: int):
 
 @bp.post("/submissions/<int:sid>/comment")
 @require_staff
+@require_acting_staff
 def add_comment(sid: int):
     data = request.get_json(silent=True) or {}
     text = to_str(data.get("text"))
@@ -1202,6 +1228,7 @@ def _resolve_admin_name_for_forms(admin_phone: str) -> str | None:
 
 @bp.post("/submissions/<int:sid>/schedule-visit")
 @require_staff
+@require_acting_staff
 def schedule_visit(sid: int):
     """Push a listing to the external Forms app to create a visit schedule.
 
@@ -1547,6 +1574,7 @@ BULK_SCHEDULE_VISIT_MAX_ITEMS = 20
 
 @bp.post("/submissions/bulk-schedule-visit")
 @require_staff
+@require_acting_staff
 def bulk_schedule_visit():
     """Schedule visits for multiple submissions in one request.
 
@@ -2265,6 +2293,7 @@ def set_cp_rm(cp_id: int):
 
 @bp.post("/submissions/bulk-status")
 @require_staff
+@require_acting_staff
 def bulk_status():
     """
     Bulk status change.
@@ -2456,15 +2485,20 @@ def _scoped_cp_filter():
 
     Mirrors _scoped_city_filter but operates on the cp alias directly.
       - admin:   no restriction.
-      - manager: cp.rm_id IN my team subtree (me + every RM transitively
-                 under me via rms.manager_id, so a manager-of-managers
-                 sees indirect reports' CPs too).
+      - viewer:  cp.city_id = my city_id (read-only, city-wide).
+      - manager: cp.rm_id IN my team subtree.
       - rm:      cp.rm_id = me.
       - else:    deny by default.
     """
     role = g.user.get("role", "cp")
     if role == "admin":
         return "", []
+
+    if role == "viewer":
+        city_id = g.user.get("city_id")
+        if not city_id:
+            return "AND FALSE", []
+        return "AND cp.city_id = %s", [city_id]
 
     rm_id = g.user.get("rm_id")
     is_manager = bool(g.user.get("is_manager"))
@@ -2586,6 +2620,7 @@ def search_cps():
 
 @bp.post("/submissions/on-behalf")
 @require_staff
+@require_acting_staff
 def create_submission_on_behalf():
     """Create a submission on behalf of a target CP.
 
@@ -3781,23 +3816,52 @@ def list_staff_users():
                     ),
                     "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
                 })
-            cur.execute("""
-                SELECT id, name, phone, email,
-                       COALESCE(is_active, TRUE) AS is_active,
-                       COALESCE(is_manager, FALSE) AS is_manager,
-                       COALESCE(can_see_oh_properties, TRUE) AS can_see_oh_properties,
-                       force_logout_at, created_at
-                FROM rms
-                ORDER BY id
-            """)
-            for r in cur.fetchall():
+            # Tolerate older schemas where is_viewer column may not exist yet.
+            try:
+                cur.execute("""
+                    SELECT r.id, r.name, r.phone, r.email,
+                           COALESCE(r.is_active, TRUE) AS is_active,
+                           COALESCE(r.is_manager, FALSE) AS is_manager,
+                           COALESCE(r.is_viewer, FALSE)  AS is_viewer,
+                           r.city_id, c.name AS city,
+                           COALESCE(r.can_see_oh_properties, TRUE) AS can_see_oh_properties,
+                           r.force_logout_at, r.created_at
+                    FROM rms r
+                    LEFT JOIN cities c ON r.city_id = c.id
+                    ORDER BY r.id
+                """)
+                rm_rows = cur.fetchall()
+            except Exception:
+                conn.rollback()
+                cur.execute("""
+                    SELECT r.id, r.name, r.phone, r.email,
+                           COALESCE(r.is_active, TRUE) AS is_active,
+                           COALESCE(r.is_manager, FALSE) AS is_manager,
+                           FALSE AS is_viewer,
+                           r.city_id, c.name AS city,
+                           COALESCE(r.can_see_oh_properties, TRUE) AS can_see_oh_properties,
+                           r.force_logout_at, r.created_at
+                    FROM rms r
+                    LEFT JOIN cities c ON r.city_id = c.id
+                    ORDER BY r.id
+                """)
+                rm_rows = cur.fetchall()
+            for r in rm_rows:
+                if r.get("is_viewer"):
+                    role_name = "viewer"
+                elif r.get("is_manager"):
+                    role_name = "manager"
+                else:
+                    role_name = "rm"
                 rows.append({
                     "source":   "rm",
                     "id":       r["id"],
                     "name":     r.get("name") or "",
                     "phone":    r.get("phone") or "",
                     "email":    r.get("email"),
-                    "role":     "manager" if r.get("is_manager") else "rm",
+                    "role":     role_name,
+                    "city":     r.get("city"),
+                    "city_id":  r.get("city_id"),
                     "is_active": bool(r.get("is_active")),
                     "can_see_oh_properties": bool(r.get("can_see_oh_properties")),
                     "force_logout_at": (
@@ -3820,15 +3884,25 @@ def add_staff_user():
     """Add a new staff user.
 
     Body:
-      { "name": str, "phone": str, "role": "admin"|"rm"|"manager", "email"?: str }
+      { "name": str, "phone": str,
+        "role": "admin" | "rm" | "manager" | "viewer",
+        "email"?: str,
+        "city_id"?: int          # REQUIRED for viewers; ignored for admin
+      }
 
     Phone is normalised to 10 digits; uniqueness is enforced per-table.
+    Viewers must have a city_id (their entire scope is city-bounded).
     """
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
     phone_raw = (data.get("phone") or "").strip()
     role = (data.get("role") or "").strip().lower()
     email = (data.get("email") or "").strip() or None
+    city_id = data.get("city_id")
+    try:
+        city_id = int(city_id) if city_id not in (None, "") else None
+    except (TypeError, ValueError):
+        city_id = None
 
     phone = _normalize_phone_to_10_digits(phone_raw)
     errors = []
@@ -3836,8 +3910,10 @@ def add_staff_user():
         errors.append("name is required")
     if not phone or len(phone) != 10 or phone.startswith("0"):
         errors.append("phone must be a valid 10-digit number")
-    if role not in ("admin", "rm", "manager"):
-        errors.append("role must be one of admin / rm / manager")
+    if role not in ("admin", "rm", "manager", "viewer"):
+        errors.append("role must be one of admin / rm / manager / viewer")
+    if role == "viewer" and not city_id:
+        errors.append("city_id is required for viewer accounts")
     if errors:
         return jsonify({"error": "Invalid request", "details": errors}), 400
 
@@ -3866,7 +3942,9 @@ def add_staff_user():
                 new_id = cur.fetchone()["id"]
                 source = "cp"
             else:
-                # RM / Manager — both live in `rms` with is_manager flag.
+                # RM / Manager / Viewer — all live in `rms`, distinguished by
+                # is_manager / is_viewer flags. The CHECK constraint on the
+                # table forbids both flags being true at once.
                 cur.execute("""
                     SELECT id FROM rms
                     WHERE RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 10) = %s
@@ -3878,10 +3956,15 @@ def add_staff_user():
                 # Per repo convention, rms.phone has '+91 ' prefix with space.
                 stored_phone = f"+91 {phone}"
                 cur.execute("""
-                    INSERT INTO rms (name, phone, email, is_manager, is_active)
-                    VALUES (%s, %s, %s, %s, TRUE)
+                    INSERT INTO rms (name, phone, email, is_manager, is_viewer, city_id, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, TRUE)
                     RETURNING id
-                """, (name, stored_phone, email, role == "manager"))
+                """, (
+                    name, stored_phone, email,
+                    role == "manager",
+                    role == "viewer",
+                    city_id if role == "viewer" else None,
+                ))
                 new_id = cur.fetchone()["id"]
                 source = "rm"
             log_activity(

@@ -46,8 +46,11 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
 
   const user = getUser();
   const isAdmin = user?.role === 'admin';
-  const isManager = !isAdmin && (user?.role === 'manager' || user?.isManager);
+  const isViewer = user?.role === 'viewer';
+  const isManager = !isAdmin && !isViewer && (user?.role === 'manager' || user?.isManager);
   const canReassign = isAdmin || isManager;
+  // `isStaff` = can perform actions. Viewer is deliberately excluded —
+  // they get a fully read-only detail panel.
   const isStaff = isAdmin || user?.role === 'manager' || user?.role === 'rm';
 
   const load = useCallback(async () => {
@@ -67,9 +70,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    if (!isStaff || rms.length > 0) return;
+    if ((!isStaff && !isViewer) || rms.length > 0) return;
     api.adminListRms().then((r) => setRms(r.rms || [])).catch(() => {});
-  }, [isStaff, rms.length]);
+  }, [isStaff, isViewer, rms.length]);
 
   useEffect(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -364,25 +367,31 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 );
               })()}
 
-              {/* Status selector */}
+              {/* Status — selectable for staff, read-only label for viewers. */}
               <div className="admin-panel-section">
                 <div className="admin-panel-label">Status</div>
-                <select
-                  className="status-select"
-                  value={s.status}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  disabled={busy}
-                >
-                  {STAGES.map((st) => (
-                    <option key={st.key} value={st.key}>{st.key}</option>
-                  ))}
-                </select>
+                {isStaff ? (
+                  <select
+                    className="status-select"
+                    value={s.status}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    disabled={busy}
+                  >
+                    {STAGES.map((st) => (
+                      <option key={st.key} value={st.key}>{st.key}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="admin-panel-val" style={{ fontWeight: 500 }}>{s.status}</div>
+                )}
               </div>
 
               {/* Schedule Visit — only when status is 'Visit Scheduled'.
                   Shows current schedule info if forms_uid is set, or
-                  the Schedule Visit button if not. */}
-              {s.status === 'Visit Scheduled' && (
+                  the Schedule Visit button if not. Viewers only ever see
+                  the info pill (already-scheduled state); the un-scheduled
+                  branch with the action button is hidden from them. */}
+              {s.status === 'Visit Scheduled' && (s.forms_uid || isStaff) && (
                 <ScheduleVisitSection
                   submission={s}
                   onScheduled={(result) => {
@@ -504,8 +513,10 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     </div>
                   )}
 
-                  {/* Input — only when status is Submitted AND no pending counter already out */}
-                  {s.status === 'Submitted' && s.counter_offer_status !== 'pending' && (
+                  {/* Input — only when status is Submitted AND no pending counter already out.
+                      Gated on isStaff so viewers see the existing-offer card above but
+                      can't send a new one. */}
+                  {isStaff && s.status === 'Submitted' && s.counter_offer_status !== 'pending' && (
                     <>
                       <div className="admin-panel-label">Send counter offer (in lakhs)</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -806,8 +817,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
           )}
         </div>
 
-        {/* Comment input */}
-        {s && !editMode && (
+        {/* Comment input — staff only. Viewers see comments in the timeline
+            but can't add their own. */}
+        {s && !editMode && isStaff && (
           <div className="admin-comment-input">
             <input
               placeholder="Add a comment…"

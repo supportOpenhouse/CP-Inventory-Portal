@@ -60,12 +60,13 @@ def _fetch_active_rm(cur, phone: str):
     """
     import logging
 
-    # Primary: full query with city + manager hierarchy
+    # Primary: full query with city + manager hierarchy + viewer flag
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
                    r.city_id, c.name AS city,
-                   r.is_manager, r.manager_id
+                   r.is_manager, r.manager_id,
+                   COALESCE(r.is_viewer, FALSE) AS is_viewer
             FROM rms r
             LEFT JOIN cities c ON r.city_id = c.id
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
@@ -80,13 +81,36 @@ def _fetch_active_rm(cur, phone: str):
         except Exception:
             pass
 
-    # Fallback 1: has city_id but no manager columns (migration_rms_city_id ran,
-    # migration_manager_role has not)
+    # Fallback 1: has city_id + manager but no viewer column
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
                    r.city_id, c.name AS city,
-                   FALSE AS is_manager, NULL::integer AS manager_id
+                   r.is_manager, r.manager_id,
+                   FALSE AS is_viewer
+            FROM rms r
+            LEFT JOIN cities c ON r.city_id = c.id
+            WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
+              AND COALESCE(r.is_active, TRUE) = TRUE
+            LIMIT 1
+        """, (phone,))
+        row = cur.fetchone()
+        if row is not None:
+            return row
+    except Exception as e:
+        logging.warning("RM lookup (no viewer col) failed. phone=%s err=%s", phone, e)
+        try:
+            cur.connection.rollback()
+        except Exception:
+            pass
+
+    # Fallback 2: has city_id but no manager / viewer columns
+    try:
+        cur.execute("""
+            SELECT r.id, r.name, r.phone, r.email,
+                   r.city_id, c.name AS city,
+                   FALSE AS is_manager, NULL::integer AS manager_id,
+                   FALSE AS is_viewer
             FROM rms r
             LEFT JOIN cities c ON r.city_id = c.id
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
@@ -103,12 +127,13 @@ def _fetch_active_rm(cur, phone: str):
         except Exception:
             pass
 
-    # Fallback 2: neither migration ran (no city_id, no manager cols)
+    # Fallback 3: neither migration ran (no city_id, no manager / viewer cols)
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
                    NULL::integer AS city_id, NULL::varchar AS city,
-                   FALSE AS is_manager, NULL::integer AS manager_id
+                   FALSE AS is_manager, NULL::integer AS manager_id,
+                   FALSE AS is_viewer
             FROM rms r
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
               AND COALESCE(r.is_active, TRUE) = TRUE
@@ -124,9 +149,24 @@ def _fetch_active_rm(cur, phone: str):
         return None
 
 
+def _resolve_role(rm: dict) -> str:
+    """Derive the UI/JWT role from the rms row.
+
+    Precedence: viewer > manager > rm. Viewer wins because the CHECK
+    constraint already forbids is_viewer+is_manager together, but if both
+    were ever true (legacy data) we'd want the more-restrictive role.
+    """
+    if bool(rm.get("is_viewer")):
+        return "viewer"
+    if bool(rm.get("is_manager")):
+        return "manager"
+    return "rm"
+
+
 def _rm_user_response(rm: dict) -> dict:
-    """Shape returned to the frontend for an RM login."""
+    """Shape returned to the frontend for an RM/viewer login."""
     is_mgr = bool(rm.get("is_manager"))
+    is_viewer = bool(rm.get("is_viewer"))
     return {
         "id": f"rm-{rm['id']}",
         "rm_id": rm["id"],   # numeric — used by UI gates that need to identify "me" against the rms table (e.g. "RMs in my team")
@@ -136,37 +176,40 @@ def _rm_user_response(rm: dict) -> dict:
         "company": "Openhouse",
         "city": rm.get("city"),
         "isAdmin": False,
-        # UI role: 'manager' if user is a manager (optionally also an RM with
-        # direct CPs); 'rm' otherwise. Scope enforcement still happens in the
-        # backend based on the raw manager_id / is_manager values in the JWT.
-        "role": "manager" if is_mgr else "rm",
+        # UI role: 'viewer' / 'manager' / 'rm'. Backend trusts is_manager /
+        # is_viewer flags for scope enforcement; the string is informational.
+        "role": _resolve_role(rm),
         "isManager": is_mgr,
+        "isViewer": is_viewer,
         "managerId": rm.get("manager_id"),
         "microMarkets": [],
     }
 
 
 def _generate_rm_token(rm: dict) -> str:
-    """Issue a JWT for an RM/manager logged in via rms table.
+    """Issue a JWT for an RM/manager/viewer logged in via the rms table.
 
     JWT payload carries:
       - rm_id       : this user's rms.id
-      - role        : 'rm' or 'manager' (informational; backend trusts is_manager)
+      - role        : 'rm' | 'manager' | 'viewer' (informational)
       - is_manager  : bool — true if user has direct reports
+      - is_viewer   : bool — true if user is read-only city viewer
       - manager_id  : this user's own manager (NULL if top of chain)
-      - city_id     : for legacy city-scoped queries (may be unused post-migration)
+      - city_id     : the row's city. Used by the viewer scope filter.
     """
     import jwt
     from datetime import datetime, timedelta, timezone
     is_mgr = bool(rm.get("is_manager"))
+    is_viewer = bool(rm.get("is_viewer"))
     now = datetime.now(timezone.utc)
     payload = {
         "rm_id": rm["id"],
         "cp_code": f"RM{rm['id']:04d}",
         "phone": rm["phone"],
         "is_admin": False,
-        "role": "manager" if is_mgr else "rm",
+        "role": _resolve_role(rm),
         "is_manager": is_mgr,
+        "is_viewer": is_viewer,
         "manager_id": rm.get("manager_id"),
         "city_id": rm.get("city_id"),
         "iat": int(now.timestamp()),  # for force-logout check in auth middleware

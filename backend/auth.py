@@ -185,7 +185,11 @@ def require_auth(f):
 
 
 def require_staff(f):
-    """RM or admin only. Used by /api/admin/* endpoints."""
+    """Any staff role — admin, manager, rm, OR viewer.
+
+    Used by /api/admin/* endpoints that READ data. Mutating endpoints
+    should additionally use @require_acting_staff to block viewers.
+    """
     @wraps(f)
     def wrapper(*args, **kwargs):
         auth = request.headers.get("Authorization", "")
@@ -198,7 +202,25 @@ def require_staff(f):
         g.user = payload
 
         role = payload.get("role", "cp")
-        if role not in ("rm", "manager", "admin"):
+        if role not in ("rm", "manager", "admin", "viewer"):
             return jsonify({"error": "Forbidden"}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def require_acting_staff(f):
+    """Use AFTER require_staff. Rejects viewers — for mutation endpoints
+    that should only be reachable by admin / manager / rm.
+
+    Why a separate decorator instead of folding into the require_admin_*
+    decorators: lots of staff-callable mutations (status change, comment,
+    schedule visit, on-behalf submit, bulk status) are NOT admin/manager-only,
+    they're plain @require_staff. Without this gate, viewers would inherit
+    write access via require_staff.
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if (g.user or {}).get("role") == "viewer":
+            return jsonify({"error": "Viewers have read-only access"}), 403
         return f(*args, **kwargs)
     return wrapper

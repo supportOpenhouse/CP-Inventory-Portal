@@ -14,8 +14,10 @@ function Shell() {
 
   if (!user) return <Login />;
 
-  // Staff (RM + manager + admin) all go to admin dashboard
-  if (user.role === 'rm' || user.role === 'manager' || user.role === 'admin') {
+  // Staff (RM / manager / admin / viewer) all go to admin dashboard.
+  // Viewers see the same UI but every action button is hidden — they have
+  // read-only city-wide access.
+  if (['rm', 'manager', 'admin', 'viewer'].includes(user.role)) {
     return <Admin />;
   }
 

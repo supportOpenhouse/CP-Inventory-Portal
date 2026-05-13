@@ -7,6 +7,79 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-13] — Viewer role + stage-count filter fix
+
+### Added
+- **New staff role: `viewer`.** Read-only, city-bounded. A viewer
+  sees every active listing in their assigned city (regardless of
+  which RM / Manager owns it) but cannot perform any mutation —
+  status changes, comments, edits, scheduling, reassignment,
+  on-behalf submissions, photo uploads are all hidden from the UI
+  and rejected by the backend.
+
+  Why: ops needs trusted observers (city leads, auditors, finance)
+  to track pipeline progress without the risk of an accidental
+  status nudge or reassign.
+
+### Schema
+- **Migration** [`backend/migrations/2026-05-13-viewer-role.sql`](backend/migrations/2026-05-13-viewer-role.sql).
+  Adds `rms.is_viewer BOOLEAN NOT NULL DEFAULT FALSE` plus a CHECK
+  constraint forbidding `is_viewer AND is_manager` on the same row.
+  Idempotent. Must run on prod App DB **before** this code ships.
+
+### Backend
+- `auth.require_staff` now accepts `role IN ('admin','manager','rm','viewer')`.
+- **New decorator `auth.require_acting_staff`** rejects viewers with
+  403. Applied to every mutation endpoint that was previously gated
+  only by `@require_staff`:
+  - `change_status`, `send_counter_offer`, `add_comment`,
+    `schedule_visit`, `bulk_schedule_visit`, `bulk_status`,
+    `create_submission_on_behalf`.
+  Endpoints already gated by `@require_admin_role` or
+  `@require_admin_or_manager` are unchanged — those decorators don't
+  match `'viewer'` so viewers were already blocked.
+- **Scope filters extended for viewers:**
+  - `_scoped_city_filter` → `AND s.city_id = <my city>` when role=viewer.
+  - `_scoped_cp_filter`   → `AND cp.city_id = <my city>` when role=viewer.
+  Both deny everything when the viewer has no `city_id` (misconfigured
+  account).
+- **JWT** now carries `is_viewer` alongside `is_manager`. The role
+  string is one of `admin / manager / rm / viewer` (precedence:
+  viewer > manager > rm).
+- **`/admin/staff-users` list** returns `role: 'viewer'` and
+  `city` / `city_id` on the row so the Admin Panel can show where
+  the viewer is assigned. Defensive fallback if `is_viewer` column
+  isn't there yet (partial migration).
+- **`POST /admin/staff-users`** accepts `role='viewer'` + `city_id`
+  in the request body. Validates `city_id` is required when role is
+  viewer (server returns 400 otherwise).
+
+### Frontend
+- **`App.jsx`** routes viewers into the Admin screen (alongside
+  rm / manager / admin).
+- **`Admin/index.jsx`** — viewers see: city scope pill (locked to
+  their city), search, filters (incl. RM dropdown), stage cards,
+  board/table view, Export, OH Properties button. Viewers don't see:
+  city tabs (their city is fixed), Select / Bulk action bar,
+  + Add Inventory, 📜 Activity Logs, ⚙ Admin Panel. Topbar role
+  label reads "Viewer · <city>".
+- **`DetailPanel.jsx`** — for viewers, status is rendered as plain
+  text (not a dropdown), Counter Offer / Comment input / Schedule
+  Visit action / ✏ Edit / Photos upload are all hidden. The
+  Assigned RM section uses the existing read-only branch.
+- **`AdminPanel.jsx`** — Add User form has a new "Viewer (city
+  read-only)" role option. Picking it reveals a city dropdown
+  (required). User-list table shows `📍 <city>` next to viewer rows
+  so it's obvious at a glance.
+
+### Also fixed
+- **Stage-count cards now honor the RM filter.** Picking a different
+  RM in the filter dropdown left the seven stage counters at the
+  top showing city-wide totals — the underlying `_stage_counts`
+  query was missing the `rm_id` clause that `_apply_filters` has on
+  the list query. Both paths now use the same effective-RM logic
+  (per-listing override beats CP's permanent rm).
+
 ## [2026-05-09] — Add Inventory on Behalf: pick city first, see every CP in it
 
 ### Changed

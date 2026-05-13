@@ -22,7 +22,17 @@ import { ApiError, api } from '../../api';
 const ROLE_OPTIONS = [
   { value: 'rm',      label: 'RM' },
   { value: 'manager', label: 'Manager' },
+  { value: 'viewer',  label: 'Viewer (city read-only)' },
   { value: 'admin',   label: 'Admin' },
+];
+
+// Cities a viewer can be assigned to. Kept in sync with CITY_TABS in
+// Admin/index.jsx; ids match cities.id in the prod App DB seed
+// (Noida=1, Gurgaon=2, Ghaziabad=3).
+const CITY_OPTIONS = [
+  { value: 1, label: 'Noida' },
+  { value: 2, label: 'Gurgaon' },
+  { value: 3, label: 'Ghaziabad' },
 ];
 
 export default function AdminPanel({ onClose }) {
@@ -36,6 +46,7 @@ export default function AdminPanel({ onClose }) {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole] = useState('rm');
+  const [newCityId, setNewCityId] = useState('');
 
   // Force logout all confirmation
   const [confirmForceAll, setConfirmForceAll] = useState(false);
@@ -61,6 +72,10 @@ export default function AdminPanel({ onClose }) {
       setError('Name and phone are required');
       return;
     }
+    if (newRole === 'viewer' && !newCityId) {
+      setError('Pick a city for the viewer — their access is bounded to one city.');
+      return;
+    }
     setSaving(true);
     try {
       await api.adminAddStaffUser({
@@ -68,8 +83,10 @@ export default function AdminPanel({ onClose }) {
         phone: newPhone.trim(),
         role: newRole,
         email: newEmail.trim() || undefined,
+        city_id: newRole === 'viewer' ? Number(newCityId) : undefined,
       });
-      setNewName(''); setNewPhone(''); setNewEmail(''); setNewRole('rm');
+      setNewName(''); setNewPhone(''); setNewEmail('');
+      setNewRole('rm'); setNewCityId('');
       await reload();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Failed to add user');
@@ -251,6 +268,31 @@ export default function AdminPanel({ onClose }) {
             >Add User</button>
           </div>
 
+          {/* Viewer-specific: city picker. Only shown when role=viewer because
+              viewers are city-bounded (their entire scope is one city). */}
+          {newRole === 'viewer' && (
+            <div style={{ marginTop: 8, padding: '10px 12px', background: '#F3F0FF', border: '1px solid #DDD6FE', borderRadius: 4 }}>
+              <div style={{ fontSize: 11, color: '#4C1D95', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6, fontWeight: 600 }}>
+                Viewer city
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  value={newCityId}
+                  onChange={(e) => setNewCityId(e.target.value)}
+                  style={{ ...inputBase, maxWidth: 200 }}
+                >
+                  <option value="">— pick a city —</option>
+                  {CITY_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 12, color: '#666' }}>
+                  Viewer will see all listings of this city, read-only.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Users list header + force logout all */}
           <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={sectionTitle}>Current Staff Users ({activeCount} active{users.length > activeCount ? `, ${users.length - activeCount} inactive` : ''})</div>
@@ -281,7 +323,8 @@ export default function AdminPanel({ onClose }) {
           </div>
 
           <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-            Roles: <strong>RM</strong> = relationship manager, scope = own CPs · <strong>Manager</strong> = own + team CPs · <strong>Admin</strong> = full access.
+            Roles: <strong>RM</strong> = own CPs · <strong>Manager</strong> = own + team CPs ·{' '}
+            <strong>Viewer</strong> = read-only, one city · <strong>Admin</strong> = full access.
           </div>
 
           {loading ? (
@@ -313,6 +356,7 @@ export default function AdminPanel({ onClose }) {
                         <div style={{ fontWeight: 600 }}>{u.name || '—'}</div>
                         <div style={{ fontSize: 11, color: '#888' }}>
                           {u.phone || '—'}{u.email ? ` · ${u.email}` : ''}
+                          {u.role === 'viewer' && u.city ? ` · 📍 ${u.city}` : ''}
                         </div>
                       </td>
                       <td style={td}>
