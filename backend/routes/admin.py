@@ -4602,7 +4602,7 @@ def send_whatsapp_message(phone: str):
             log_activity(
                 cur,
                 action="cp_whatsapp_sent",
-                category="cp_reminder",
+                category="cp_whatsapp",
                 entity_uid=None,
                 entity_type="cp",
                 entity_id=cp_id,

@@ -337,7 +337,7 @@ def interakt_webhook():
                 log_activity(
                     cur,
                     action="cp_whatsapp_reply",
-                    category="cp_reminder",
+                    category="cp_whatsapp",
                     entity_uid=public_id,
                     entity_type="submission",
                     entity_id=submission_id,
