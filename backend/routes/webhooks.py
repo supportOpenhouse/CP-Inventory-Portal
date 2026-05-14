@@ -171,15 +171,20 @@ def _extract_inbound(payload):
     )
     if not isinstance(message, dict):
         message = {}
-    # Interakt sometimes wraps the message text in a `message_data` block.
     msg_data = message.get("message_data") if isinstance(message.get("message_data"), dict) else {}
 
-    # Phone — Interakt's customer payload uses `phone_number` inside
-    # `data.customer`; fall back to flatter shapes for safety.
+    # Interakt's documented `message_received` schema:
+    #   data.customer.channel_phone_number (full ISD+national, e.g. 917003705584)
+    #   data.customer.phone_number         (without country code, fallback)
+    #   data.message.message               (the actual text body)
+    #   data.message.id                    (message id, e.g. UUID)
+    #   data.message.message_content_type  ("Text" | "Image" | "Document" | ...)
+    # We still try a handful of fallbacks in case Interakt's older accounts
+    # use different shapes.
     phone = _first(
+        customer.get("channel_phone_number"),
         customer.get("phone_number"),
         customer.get("phoneNumber"),
-        customer.get("channel_phone_number"),
         data.get("phoneNumber"),
         data.get("phone_number"),
         data.get("from"),
@@ -198,13 +203,18 @@ def _extract_inbound(payload):
         payload.get("country_code"),
         "",
     )
-    if cc and phone and not str(phone).startswith(str(cc).lstrip("+")):
-        phone = f"{str(cc).lstrip('+')}{phone}"
+    # channel_phone_number already has the country code baked in. Don't
+    # re-prefix in that case — would double-CC.
+    if cc and phone and not customer.get("channel_phone_number"):
+        if not str(phone).startswith(str(cc).lstrip("+")):
+            phone = f"{str(cc).lstrip('+')}{phone}"
 
     norm_phone = _normalize_phone(phone)
 
-    # Text — try several nested shapes
+    # Text — Interakt's primary path is `data.message.message`. The
+    # rest are defensive fallbacks for media / older payload variants.
     text = _first(
+        message.get("message"),
         msg_data.get("text"),
         msg_data.get("body"),
         message.get("text"),
@@ -215,18 +225,22 @@ def _extract_inbound(payload):
     if isinstance(text, dict):
         text = text.get("body") or text.get("text") or json.dumps(text)
 
-    # Non-text messages (image / doc / audio / location) — store a label
-    # so the thread shows that something arrived; the raw payload keeps
-    # the actual media reference for later.
+    # Non-text messages (image / doc / audio / location) — keep a
+    # readable label so the thread shows that something arrived; full
+    # media reference stays in raw_payload.
     if not text:
-        mtype = _first(msg_data.get("type"), message.get("type"))
+        mtype = _first(
+            message.get("message_content_type"),
+            msg_data.get("type"),
+            message.get("type"),
+        )
         if mtype:
             text = f"[{mtype} attached]"
 
     msg_id = _first(
+        message.get("id"),
         message.get("messageId"),
         message.get("message_id"),
-        message.get("id"),
         msg_data.get("messageId"),
         msg_data.get("message_id"),
         msg_data.get("id"),
@@ -236,6 +250,7 @@ def _extract_inbound(payload):
     )
 
     timestamp = _first(
+        message.get("received_at_utc"),
         message.get("timestamp"),
         msg_data.get("timestamp"),
         data.get("timestamp"),
