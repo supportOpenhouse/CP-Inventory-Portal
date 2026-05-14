@@ -133,11 +133,19 @@ def _check_auth():
     return jsonify({"error": "Unauthorized"}), 401
 
 
+def _first(*candidates):
+    """Return the first truthy candidate, or None."""
+    for c in candidates:
+        if c:
+            return c
+    return None
+
+
 def _extract_inbound(payload):
     """Pull (phone, text, message_id, timestamp_iso, event_type) from a
-    raw Interakt webhook body. Interakt has multiple webhook payload
-    variants depending on the event type and account vintage; we look in
-    several plausible places before giving up.
+    raw Interakt webhook body. Interakt nests fields deeper than the
+    typical webhook (phone is at data.customer.phone_number, text is at
+    data.message.message_data.text), so we walk several plausible paths.
 
     Returns a dict or None (None = not an inbound text we care about).
     """
@@ -153,35 +161,56 @@ def _extract_inbound(payload):
     if event_type and event_type not in _INBOUND_EVENT_TYPES:
         return None
 
-    # Phone — try multiple paths
-    phone = (
-        payload.get("phoneNumber")
-        or payload.get("phone_number")
-        or payload.get("from")
-        or (payload.get("data") or {}).get("phoneNumber")
-        or (payload.get("data") or {}).get("phone_number")
-        or (payload.get("data") or {}).get("from")
-        or (payload.get("contact") or {}).get("phoneNumber")
-        or (payload.get("contact") or {}).get("phone")
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    contact = payload.get("contact") if isinstance(payload.get("contact"), dict) else {}
+    message = (
+        data.get("message")
+        or payload.get("message")
+        or {}
     )
-    cc = (
-        payload.get("countryCode")
-        or payload.get("country_code")
-        or (payload.get("data") or {}).get("countryCode")
-        or ""
+    if not isinstance(message, dict):
+        message = {}
+    # Interakt sometimes wraps the message text in a `message_data` block.
+    msg_data = message.get("message_data") if isinstance(message.get("message_data"), dict) else {}
+
+    # Phone — Interakt's customer payload uses `phone_number` inside
+    # `data.customer`; fall back to flatter shapes for safety.
+    phone = _first(
+        customer.get("phone_number"),
+        customer.get("phoneNumber"),
+        customer.get("channel_phone_number"),
+        data.get("phoneNumber"),
+        data.get("phone_number"),
+        data.get("from"),
+        contact.get("phoneNumber"),
+        contact.get("phone"),
+        payload.get("phoneNumber"),
+        payload.get("phone_number"),
+        payload.get("from"),
+    )
+    cc = _first(
+        customer.get("country_code"),
+        customer.get("countryCode"),
+        data.get("countryCode"),
+        data.get("country_code"),
+        payload.get("countryCode"),
+        payload.get("country_code"),
+        "",
     )
     if cc and phone and not str(phone).startswith(str(cc).lstrip("+")):
         phone = f"{str(cc).lstrip('+')}{phone}"
 
     norm_phone = _normalize_phone(phone)
 
-    # Message text
-    msg = payload.get("message") or (payload.get("data") or {}).get("message") or {}
-    text = (
-        (msg.get("text") if isinstance(msg, dict) else None)
-        or payload.get("text")
-        or (payload.get("data") or {}).get("text")
-        or (msg.get("body") if isinstance(msg, dict) else None)
+    # Text — try several nested shapes
+    text = _first(
+        msg_data.get("text"),
+        msg_data.get("body"),
+        message.get("text"),
+        message.get("body"),
+        data.get("text"),
+        payload.get("text"),
     )
     if isinstance(text, dict):
         text = text.get("body") or text.get("text") or json.dumps(text)
@@ -189,22 +218,44 @@ def _extract_inbound(payload):
     # Non-text messages (image / doc / audio / location) — store a label
     # so the thread shows that something arrived; the raw payload keeps
     # the actual media reference for later.
-    if not text and isinstance(msg, dict):
-        mtype = msg.get("type") or "media"
-        text = f"[{mtype} attached]"
+    if not text:
+        mtype = _first(msg_data.get("type"), message.get("type"))
+        if mtype:
+            text = f"[{mtype} attached]"
 
-    msg_id = (
-        (msg.get("messageId") if isinstance(msg, dict) else None)
-        or (msg.get("id") if isinstance(msg, dict) else None)
-        or payload.get("messageId")
-        or (payload.get("data") or {}).get("messageId")
+    msg_id = _first(
+        message.get("messageId"),
+        message.get("message_id"),
+        message.get("id"),
+        msg_data.get("messageId"),
+        msg_data.get("message_id"),
+        msg_data.get("id"),
+        payload.get("messageId"),
+        data.get("messageId"),
+        data.get("message_id"),
     )
 
-    timestamp = (
-        msg.get("timestamp") if isinstance(msg, dict) else None
-    ) or payload.get("timestamp") or (payload.get("data") or {}).get("timestamp")
+    timestamp = _first(
+        message.get("timestamp"),
+        msg_data.get("timestamp"),
+        data.get("timestamp"),
+        payload.get("timestamp"),
+    )
 
     if not norm_phone or not text:
+        # Recognized event type but we couldn't pull the phone or text —
+        # log the full body so we can fix the extractor without another
+        # round-trip. Truncated to ~1500 chars to keep log volume sane.
+        try:
+            log.warning(
+                "[webhook/interakt] %s but extract failed: phone_found=%s text_found=%s "
+                "body=%s",
+                event_type or "(no type)",
+                bool(norm_phone), bool(text),
+                json.dumps(payload, default=str)[:1500],
+            )
+        except Exception:
+            pass
         return None
     return {
         "phone": norm_phone,
