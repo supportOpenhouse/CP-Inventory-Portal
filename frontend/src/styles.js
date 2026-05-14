@@ -339,12 +339,13 @@ export const css = `
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
   /* ===== WhatsApp UI ===== */
-  /* WhatsApp logo button in the dark topbar — white silhouette so it
-     reads at a glance alongside the other emoji buttons. The Inbox
-     screen header keeps the brand-green version since it sits on a
-     light surface. */
-  .wa-topbar-btn { color: #fff !important; display: inline-flex !important; align-items: center; justify-content: center; padding: 6px 10px !important; }
-  .wa-topbar-btn:hover { color: #25D366 !important; background: rgba(37, 211, 102, 0.15) !important; }
+  /* WhatsApp button in the dark topbar — brand-green pill with a white
+     logo inside. The colored pill carries the brand cue (vs the
+     surrounding monochrome emoji buttons), so the button reads as
+     "WhatsApp" at a glance instead of looking like a generic chat icon. */
+  .wa-topbar-btn { color: #fff !important; background: #25D366 !important; border: none !important; display: inline-flex !important; align-items: center; justify-content: center; padding: 6px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0,0,0,0.2); transition: background 0.15s, transform 0.1s !important; }
+  .wa-topbar-btn:hover { background: #128C7E !important; transform: translateY(-1px); }
+  .wa-topbar-btn:active { transform: translateY(0); }
   .wa-topbar-btn svg { display: block; }
   .wa-topbar-title { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--oh-charcoal); }
   .wa-topbar-icon { display: inline-flex; color: #25D366; }
