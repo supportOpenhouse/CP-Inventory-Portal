@@ -328,7 +328,7 @@ export default function Admin() {
               onClick={() => setWhatsappInboxOpen(true)}
               title="WhatsApp Inbox — CP replies + sent reminders"
             >
-              <WaIcon size={20} />
+              <WaIcon size={30} />
             </button>
           )}
           {isAdmin && (
