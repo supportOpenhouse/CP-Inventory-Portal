@@ -339,9 +339,13 @@ export const css = `
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
   /* ===== WhatsApp UI ===== */
-  /* WhatsApp brand green for the topbar icon and accents. */
-  .wa-topbar-btn { color: #25D366 !important; display: inline-flex !important; align-items: center; justify-content: center; }
-  .wa-topbar-btn:hover { color: #128C7E !important; }
+  /* WhatsApp logo button in the dark topbar — white silhouette so it
+     reads at a glance alongside the other emoji buttons. The Inbox
+     screen header keeps the brand-green version since it sits on a
+     light surface. */
+  .wa-topbar-btn { color: #fff !important; display: inline-flex !important; align-items: center; justify-content: center; padding: 6px 10px !important; }
+  .wa-topbar-btn:hover { color: #25D366 !important; background: rgba(37, 211, 102, 0.15) !important; }
+  .wa-topbar-btn svg { display: block; }
   .wa-topbar-title { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--oh-charcoal); }
   .wa-topbar-icon { display: inline-flex; color: #25D366; }
 
