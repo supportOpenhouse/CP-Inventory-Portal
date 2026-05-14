@@ -11,6 +11,8 @@ in the Interakt dashboard's webhook settings, matched against
 INTERAKT_WEBHOOK_SECRET env var).
 """
 
+import hashlib
+import hmac
 import json
 import logging
 
@@ -44,20 +46,46 @@ def _normalize_phone(raw):
     return digits[-10:] if len(digits) >= 10 else None
 
 
-def _check_auth():
-    """Accept the secret in any of the places Interakt might put it.
+def _verify_hmac_signature(secret: str) -> bool:
+    """Verify Interakt's `Interakt-Signature: sha256=<hex>` header.
 
-    Interakt's webhook UI has a single "Secret key" field but doesn't
-    document precisely how the value reaches us. Empirically it can show
-    up as `Authorization: Bearer <secret>`, an `X-Interakt-Secret` /
-    `X-Webhook-Secret` header, a `?secret=` query param, or a `secret`
-    field in the JSON body. We accept any of them so we don't have to
-    redeploy to chase the format.
+    Interakt computes HMAC-SHA256 of the verbatim request body using the
+    "Secret key" set in their webhook UI. We recompute it server-side and
+    compare in constant time. Body MUST be the raw bytes — re-serializing
+    the parsed JSON changes whitespace/key-order and breaks the hash.
+    """
+    sig_header = request.headers.get("Interakt-Signature", "").strip()
+    if not sig_header.lower().startswith("sha256="):
+        return False
+    expected_hex = sig_header.split("=", 1)[1].strip().lower()
+    raw = request.get_data(cache=True) or b""
+    try:
+        computed = hmac.new(
+            secret.encode("utf-8"), raw, hashlib.sha256,
+        ).hexdigest()
+    except Exception:
+        log.exception("[webhook/interakt] HMAC compute failed")
+        return False
+    return hmac.compare_digest(expected_hex, computed)
+
+
+def _check_auth():
+    """Validate Interakt's webhook auth.
+
+    Primary: `Interakt-Signature: sha256=<hex>` HMAC over the body
+    (Interakt's actual scheme — same pattern as GitHub/Stripe).
+
+    Fallbacks (kept defensively for other potential providers / tests):
+    `Authorization: Bearer <secret>`, custom secret headers, `?secret=`
+    query param, or a `secret` field in the JSON body.
     """
     secret = (Config.INTERAKT_WEBHOOK_SECRET or "").strip()
     if not secret:
         log.error("[webhook/interakt] INTERAKT_WEBHOOK_SECRET not configured")
         return jsonify({"error": "Webhook not configured"}), 503
+
+    if _verify_hmac_signature(secret):
+        return None
 
     candidates = []
     auth = request.headers.get("Authorization", "")
