@@ -18,6 +18,7 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from activity_log import log_activity
 from config import Config
 from db import get_app_conn, put_app_conn
 from services_whatsapp import send_template
@@ -91,8 +92,11 @@ def send_cp_reminders():
             #     submission_events fall through; we backstop with submitted_at
             #     so they still get reminders)
             #   - deleted_at IS NULL
-            # We use FLOOR(EXTRACT(EPOCH)) for an integer day-count to match
-            # what the frontend renders.
+            # We compute hours-since-start (not calendar-days) so a Day-N
+            # reminder fires exactly N*24 hours after stage entry, not at the
+            # next IST midnight. With a 2-hour cron cadence this gives every
+            # CP their reminder within 2h of the actual N-day boundary,
+            # regardless of when in the day they entered the stage.
             cur.execute(
                 """
                 SELECT
@@ -110,7 +114,7 @@ def send_cp_reminders():
                               WHERE e.submission_id = s.id AND e.to_status = s.status),
                             s.submitted_at
                         )
-                    )) / 86400)::int) AS days_since_start
+                    )) / 3600)::int) AS hours_since_start
                 FROM submissions s
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 WHERE s.deleted_at IS NULL
@@ -138,11 +142,14 @@ def send_cp_reminders():
     planned = []  # populated only when dry_run=true
 
     for row in rows:
-        days = int(row["days_since_start"])
+        hours = int(row["hours_since_start"])
+        days = hours // 24  # for the template body's "days_left" param
         # We send EVERY due day that hasn't yet been sent. Catches the case
-        # where the job missed a day (cron downtime) — the next run still
-        # fires the back-dated reminder.
-        due_days = [d for d in _REMINDER_DAYS if days >= d]
+        # where the job missed a slot (cron downtime) — the next run still
+        # fires the back-dated reminder. Eligibility is in HOURS, not
+        # calendar-days, so a card moved into Submitted at 3pm Mon gets
+        # its Day-1 reminder shortly after 3pm Tue, not at midnight Mon→Tue.
+        due_days = [d for d in _REMINDER_DAYS if hours >= d * 24]
         if not due_days:
             continue
 
@@ -173,6 +180,7 @@ def send_cp_reminders():
                     "kind": kind,
                     "day": day,
                     "days_since_start": days,
+                    "hours_since_start": hours,
                     "days_left": days_left,
                     "phone": row.get("cp_phone"),
                     "template": template_name,
@@ -225,6 +233,29 @@ def send_cp_reminders():
                         cur.execute(
                             "UPDATE cp_reminders_sent SET provider_resp = %s WHERE id = %s",
                             (result.get("body") or "", inserted_id),
+                        )
+                        # Drop a row in activity_log so the admin Activity
+                        # Log page shows every WhatsApp that went out, who
+                        # got it, and when. Same transaction as the provider
+                        # response update so a rolled-back commit can't
+                        # leave the audit trail out of sync.
+                        log_activity(
+                            cur,
+                            action="cp_reminder_sent",
+                            category="cp_reminder",
+                            entity_uid=row.get("public_id"),
+                            entity_type="submission",
+                            entity_id=row["submission_id"],
+                            details={
+                                "kind": kind,
+                                "day_number": day,
+                                "days_left": days_left,
+                                "hours_since_start": hours,
+                                "template": template_name,
+                                "cp_name": row.get("cp_name"),
+                                "cp_phone": row.get("cp_phone"),
+                                "unit_label": unit_label,
+                            },
                         )
                         conn.commit()
                 finally:
