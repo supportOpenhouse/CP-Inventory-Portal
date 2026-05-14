@@ -229,10 +229,17 @@ def interakt_webhook():
         return auth_err
 
     payload = request.get_json(silent=True) or {}
+    # Log the event type of every webhook so we can confirm which Interakt
+    # event names carry actual customer replies (vs delivery / read receipts
+    # which we deliberately skip). Remove this once we've got the inbound
+    # path working end-to-end.
+    evt = (payload.get("type") or payload.get("event") or "").strip()
+    log.info("[webhook/interakt] event type=%r body_keys=%s",
+             evt, list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__)
     info = _extract_inbound(payload)
     if not info:
         # Delivery receipt / unknown event — ack and move on.
-        return jsonify({"ok": True, "stored": False, "reason": "not_inbound_text"}), 200
+        return jsonify({"ok": True, "stored": False, "reason": "not_inbound_text", "type": evt}), 200
 
     conn = get_app_conn()
     try:
