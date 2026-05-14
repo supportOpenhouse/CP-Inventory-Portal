@@ -109,27 +109,7 @@ def _check_auth():
 
     if any(c == secret for c in candidates):
         return None
-
-    # Debug-on-failure: dump everything we received so we can find where
-    # Interakt is actually placing the secret. Header NAMES and value
-    # PREFIXES only — we never log the configured server-side secret, and
-    # truncate values so a stray credential isn't dumped in full. Remove
-    # this block once we've matched the format.
-    try:
-        hdr_summary = {
-            k: (v[:8] + "…" if isinstance(v, str) and len(v) > 8 else v)
-            for k, v in request.headers.items()
-        }
-        body_keys = list(body.keys()) if isinstance(body, dict) else type(body).__name__
-        qs_keys = list(request.args.keys())
-        log.warning(
-            "[webhook/interakt] auth failed (0 candidates matched). "
-            "headers=%s qs_keys=%s body_keys=%s body_preview=%s",
-            hdr_summary, qs_keys, body_keys,
-            (str(body)[:300] if body else "<empty>"),
-        )
-    except Exception:
-        log.exception("[webhook/interakt] auth failed AND debug-dump errored")
+    log.warning("[webhook/interakt] auth failed (signature + fallback all rejected)")
     return jsonify({"error": "Unauthorized"}), 401
 
 
@@ -258,19 +238,6 @@ def _extract_inbound(payload):
     )
 
     if not norm_phone or not text:
-        # Recognized event type but we couldn't pull the phone or text —
-        # log the full body so we can fix the extractor without another
-        # round-trip. Truncated to ~1500 chars to keep log volume sane.
-        try:
-            log.warning(
-                "[webhook/interakt] %s but extract failed: phone_found=%s text_found=%s "
-                "body=%s",
-                event_type or "(no type)",
-                bool(norm_phone), bool(text),
-                json.dumps(payload, default=str)[:1500],
-            )
-        except Exception:
-            pass
         return None
     return {
         "phone": norm_phone,
@@ -295,17 +262,10 @@ def interakt_webhook():
         return auth_err
 
     payload = request.get_json(silent=True) or {}
-    # Log the event type of every webhook so we can confirm which Interakt
-    # event names carry actual customer replies (vs delivery / read receipts
-    # which we deliberately skip). Remove this once we've got the inbound
-    # path working end-to-end.
-    evt = (payload.get("type") or payload.get("event") or "").strip()
-    log.info("[webhook/interakt] event type=%r body_keys=%s",
-             evt, list(payload.keys()) if isinstance(payload, dict) else type(payload).__name__)
     info = _extract_inbound(payload)
     if not info:
         # Delivery receipt / unknown event — ack and move on.
-        return jsonify({"ok": True, "stored": False, "reason": "not_inbound_text", "type": evt}), 200
+        return jsonify({"ok": True, "stored": False, "reason": "not_inbound_text"}), 200
 
     conn = get_app_conn()
     try:

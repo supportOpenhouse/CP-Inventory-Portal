@@ -39,6 +39,58 @@ def _normalize_phone(raw: str):
     return cc, national
 
 
+def send_text(phone: str, message: str) -> dict:
+    """Send a free-text WhatsApp session message via Interakt.
+
+    Only valid inside the 24-hour customer-service window — outside that,
+    WhatsApp policy forces template messages and Interakt will return an
+    error. Caller (the admin endpoint) decides whether to expose this UI;
+    we just forward the request and surface the response verbatim.
+
+    Same return shape as send_template().
+    """
+    if not Config.WA_ENABLED:
+        return {"ok": False, "status": 0, "body": "", "skipped": "WA_ENABLED=false"}
+
+    api_key = (Config.INTERAKT_API_KEY or "").strip()
+    if not api_key:
+        logger.warning("[wa] INTERAKT_API_KEY not configured; skipping send.")
+        return {"ok": False, "status": 0, "body": "", "skipped": "no_api_key"}
+
+    cc, national = _normalize_phone(phone)
+    if not national:
+        logger.warning("[wa] invalid phone %r; skipping send.", phone)
+        return {"ok": False, "status": 0, "body": "", "skipped": "invalid_phone"}
+
+    payload = {
+        "countryCode": f"+{cc}",
+        "phoneNumber": national,
+        "type": "Text",
+        "data": {"message": str(message)},
+    }
+    headers = {
+        "Authorization": f"Basic {api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = requests.post(
+            Config.INTERAKT_API_URL, json=payload, headers=headers,
+            timeout=_HTTP_TIMEOUT_S,
+        )
+    except requests.RequestException as e:
+        logger.exception("[wa] transport error sending text to %s: %s", national, e)
+        return {"ok": False, "status": 0, "body": f"transport_error: {e}", "skipped": None}
+
+    body_text = (resp.text or "")[:2000]
+    ok = 200 <= resp.status_code < 300
+    if ok:
+        logger.info("[wa] sent free-text to +%s%s status=%s", cc, national, resp.status_code)
+    else:
+        logger.warning("[wa] free-text send failed to +%s%s status=%s body=%s",
+                       cc, national, resp.status_code, body_text)
+    return {"ok": ok, "status": resp.status_code, "body": body_text, "skipped": None}
+
+
 def send_template(phone: str, template_name: str, params: list) -> dict:
     """Send a WhatsApp template via Interakt.
 

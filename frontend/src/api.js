@@ -235,6 +235,15 @@ export const api = {
     request(`/admin/whatsapp/threads/${encodeURIComponent(phone)}`),
   adminGetSubmissionWhatsApp: (submissionId) =>
     request(`/admin/submissions/${submissionId}/whatsapp`),
+  // Free-text WhatsApp reply (24h customer-service window only — outside
+  // that window WhatsApp policy forces template messages and Interakt
+  // returns an error). The backend persists the outbound row only on a
+  // successful Interakt 2xx.
+  adminSendWhatsAppMessage: (phone, message) =>
+    request(`/admin/whatsapp/threads/${encodeURIComponent(phone)}/send`, {
+      method: 'POST',
+      body: { message },
+    }),
 
   // Activity Log — admin-only feed of all mutations across the dashboard.
   // Filters: { action, category, actor_email, actor_name, search, date_from, date_to, page, page_size }

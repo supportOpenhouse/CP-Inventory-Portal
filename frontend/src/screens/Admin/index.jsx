@@ -13,7 +13,7 @@ import BulkReassignRmModal from './BulkReassignRmModal';
 import ExternalInventory from './ExternalInventory';
 import ActivityLog from './ActivityLog';
 import AdminPanel from './AdminPanel';
-import WhatsAppInbox from './WhatsAppInbox';
+import WhatsAppInbox, { WaIcon } from './WhatsAppInbox';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
@@ -324,11 +324,11 @@ export default function Admin() {
           </div>
           {(isStaff || isViewer) && (
             <button
-              className="logout-btn"
+              className="logout-btn wa-topbar-btn"
               onClick={() => setWhatsappInboxOpen(true)}
               title="WhatsApp Inbox — CP replies + sent reminders"
             >
-              💬
+              <WaIcon size={18} />
             </button>
           )}
           {isAdmin && (

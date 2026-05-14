@@ -4352,11 +4352,43 @@ def list_activity_log_facets():
 # WhatsApp messages (inbound replies + outbound reminders)
 # ==========================================================
 
+def _whatsapp_scope_clause(cur):
+    """Return (sql_clause, params) that limits a WhatsApp query to phones
+    of CPs whose submissions the caller can see.
+
+    Reuses _scoped_city_filter so the visibility model matches the rest
+    of the admin app:
+      - Admin                  -> no restriction
+      - Viewer (city-scoped)   -> CPs of that city's submissions
+      - Manager (team subtree) -> CPs whose listings/permanent-RM is in the team
+      - RM                     -> CPs whose listings or permanent-RM is them
+
+    The clause is `cp.id IN ( SELECT s.cp_id FROM submissions s ... )`
+    where the inner WHERE is the existing _scoped_city_filter. Admin
+    short-circuits to TRUE so the inner SELECT isn't even built.
+    """
+    scope_sql, scope_params = _scoped_city_filter(cur)
+    if not scope_sql.strip():
+        return "TRUE", []
+    return (
+        "cp.id IN ("
+        "  SELECT DISTINCT s.cp_id FROM submissions s"
+        "  LEFT JOIN cities c ON s.city_id = c.id"
+        "  WHERE TRUE " + scope_sql +
+        ")"
+    ), scope_params
+
+
 @bp.get("/whatsapp/threads")
 @require_staff
 def list_whatsapp_threads():
     """One row per phone — most recent message + inbound count.
     Powers the WhatsApp Inbox admin page (list view).
+
+    Visibility matches the rest of the admin app: a thread shows only
+    when the CP that owns the phone has at least one submission in the
+    caller's scope. Admin sees everything; managers/viewers see their
+    city; RMs see their assigned listings + their permanent-RM CPs.
 
     Optional: ?search=<phone-or-name>, ?page=N (page_size=50).
     """
@@ -4369,19 +4401,20 @@ def list_whatsapp_threads():
     offset = (page - 1) * page_size
 
     where_extra = ""
-    params = []
+    extra_params = []
     if search:
         digits = "".join(c for c in search if c.isdigit())
         if digits:
             where_extra = " AND m.phone ILIKE %s"
-            params.append(f"%{digits[-10:]}%")
+            extra_params.append(f"%{digits[-10:]}%")
         else:
             where_extra = " AND cp.name ILIKE %s"
-            params.append(f"%{search}%")
+            extra_params.append(f"%{search}%")
 
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            scope_clause, scope_params = _whatsapp_scope_clause(cur)
             cur.execute(
                 f"""
                 WITH per_phone AS (
@@ -4393,7 +4426,7 @@ def list_whatsapp_threads():
                         COUNT(*) FILTER (WHERE m.direction = 'outbound')            AS outbound_count
                     FROM whatsapp_messages m
                     JOIN channel_partners cp ON cp.phone = m.phone
-                    WHERE TRUE {where_extra}
+                    WHERE {scope_clause} {where_extra}
                     GROUP BY m.phone
                 )
                 SELECT
@@ -4420,13 +4453,30 @@ def list_whatsapp_threads():
                 ORDER BY p.last_msg_at DESC
                 LIMIT %s OFFSET %s
                 """,
-                params + [page_size, offset],
+                scope_params + extra_params + [page_size, offset],
             )
             threads = cur.fetchall()
     finally:
         put_app_conn(conn)
 
     return jsonify({"threads": threads, "page": page, "page_size": page_size}), 200
+
+
+def _check_thread_in_scope(cur, phone: str) -> bool:
+    """True iff the caller is allowed to read/write this phone's thread.
+    Same scope rules as the threads list — the CP must have at least one
+    submission in the caller's scope. Admin always passes.
+    """
+    scope_clause, scope_params = _whatsapp_scope_clause(cur)
+    cur.execute(
+        f"""
+        SELECT 1 FROM channel_partners cp
+        WHERE cp.phone = %s AND {scope_clause}
+        LIMIT 1
+        """,
+        [phone, *scope_params],
+    )
+    return cur.fetchone() is not None
 
 
 @bp.get("/whatsapp/threads/<phone>")
@@ -4443,6 +4493,9 @@ def get_whatsapp_thread(phone: str):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            if not _check_thread_in_scope(cur, norm):
+                return jsonify({"error": "Not found or out of scope"}), 404
+
             cur.execute(
                 """
                 SELECT id, direction, phone, cp_id, submission_id,
@@ -4465,6 +4518,101 @@ def get_whatsapp_thread(phone: str):
         put_app_conn(conn)
 
     return jsonify({"phone": norm, "cp": cp, "messages": messages}), 200
+
+
+@bp.post("/whatsapp/threads/<phone>/send")
+@require_staff
+@require_acting_staff
+def send_whatsapp_message(phone: str):
+    """Send a free-text WhatsApp session message to this phone via
+    Interakt. Only works inside the 24-hour customer-service window
+    (WhatsApp policy: free-form messages require a recent inbound from
+    the customer; outside the window you must use a template).
+
+    Persists the outbound row and writes an activity_log entry, same
+    pattern as the cron's outbound-template path.
+    """
+    from services_whatsapp import send_text  # local import keeps service module out of cold-start path
+    import json as _json
+
+    digits = "".join(c for c in phone if c.isdigit())
+    if len(digits) < 10:
+        return jsonify({"error": "Invalid phone"}), 400
+    norm = digits[-10:]
+
+    body = request.get_json(silent=True) or {}
+    text = (body.get("message") or body.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "message is required"}), 400
+    if len(text) > 4000:
+        return jsonify({"error": "message too long (max 4000 chars)"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            if not _check_thread_in_scope(cur, norm):
+                return jsonify({"error": "Not found or out of scope"}), 404
+
+            cur.execute(
+                "SELECT id, name FROM channel_partners WHERE phone = %s LIMIT 1",
+                (norm,),
+            )
+            cp = cur.fetchone()
+            cp_id = cp["id"] if cp else None
+    finally:
+        put_app_conn(conn)
+
+    # Send first so we don't persist a row for a message Interakt rejected.
+    result = send_text(phone=norm, message=text)
+
+    if not result.get("ok"):
+        return jsonify({
+            "ok": False,
+            "error": "Send failed",
+            "interakt_status": result.get("status"),
+            "interakt_body": result.get("body"),
+            "skipped": result.get("skipped"),
+        }), 502
+
+    # Persist outbound + activity log
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO whatsapp_messages
+                    (direction, phone, cp_id, submission_id,
+                     template_name, body, body_params,
+                     raw_payload, received_at)
+                VALUES ('outbound', %s, %s, NULL,
+                        NULL, %s, NULL,
+                        %s::jsonb, NOW())
+                RETURNING id, received_at
+                """,
+                (
+                    norm, cp_id, text,
+                    _json.dumps({
+                        "interakt_status": result.get("status"),
+                        "interakt_body": result.get("body"),
+                        "actor_role": g.user.get("role"),
+                    }),
+                ),
+            )
+            row = cur.fetchone()
+            log_activity(
+                cur,
+                action="cp_whatsapp_sent",
+                category="cp_reminder",
+                entity_uid=None,
+                entity_type="cp",
+                entity_id=cp_id,
+                details={"phone": norm, "preview": text[:240]},
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"ok": True, "id": row["id"], "received_at": row["received_at"]}), 200
 
 
 @bp.get("/submissions/<int:sid>/whatsapp")

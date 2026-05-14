@@ -338,33 +338,71 @@ export const css = `
   .board-card-skel { height: 120px; background: #fff; border: 1px solid #E8E6E0; border-radius: 12px; margin-bottom: 10px; position: relative; overflow: hidden; }
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
-  /* ----- WhatsApp thread bubbles (admin DetailPanel + Inbox screen) ----- */
-  .wa-thread { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 8px; }
-  .wa-bubble { max-width: 86%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-  .wa-bubble-meta { font-size: 10.5px; font-weight: 700; color: #6B7280; letter-spacing: 0.2px; margin-bottom: 4px; text-transform: uppercase; }
-  .wa-bubble-meta .wa-tpl { color: #9CA3AF; font-weight: 600; margin-left: 4px; text-transform: none; letter-spacing: 0; font-family: ui-monospace, monospace; }
-  .wa-bubble-body { color: #1F2937; }
-  .wa-out { background: #DCFCE7; border: 1px solid #86EFAC; align-self: flex-start; border-bottom-left-radius: 4px; }
-  .wa-in  { background: #F3F4F6; border: 1px solid #E5E7EB; align-self: flex-end;   border-bottom-right-radius: 4px; }
+  /* ===== WhatsApp UI ===== */
+  /* WhatsApp brand green for the topbar icon and accents. */
+  .wa-topbar-btn { color: #25D366 !important; display: inline-flex !important; align-items: center; justify-content: center; }
+  .wa-topbar-btn:hover { color: #128C7E !important; }
+  .wa-topbar-title { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--oh-charcoal); }
+  .wa-topbar-icon { display: inline-flex; color: #25D366; }
 
-  /* ----- WhatsApp Inbox admin screen ----- */
-  .wa-inbox-wrap { padding: 20px 28px 40px; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 360px 1fr; gap: 16px; min-height: calc(100vh - 80px); }
-  .wa-inbox-list { background: #fff; border: 1px solid var(--oh-border); border-radius: 10px; overflow: hidden; height: calc(100vh - 100px); overflow-y: auto; }
-  .wa-inbox-list-empty { padding: 32px 16px; text-align: center; color: #9CA3AF; font-size: 13px; }
-  .wa-inbox-search { padding: 10px 12px; border-bottom: 1px solid var(--oh-border); position: sticky; top: 0; background: #fff; z-index: 1; }
-  .wa-inbox-search input { width: 100%; padding: 8px 10px; border: 1px solid var(--oh-border); border-radius: 6px; font-size: 13px; font-family: inherit; }
-  .wa-inbox-row { padding: 12px 14px; border-bottom: 1px solid #F3F4F6; cursor: pointer; transition: background 0.1s; }
-  .wa-inbox-row:hover { background: #FAFAF8; }
-  .wa-inbox-row.active { background: #FFF3ED; border-left: 3px solid var(--oh-orange); padding-left: 11px; }
-  .wa-inbox-row-name { font-size: 13px; font-weight: 700; color: #1F2937; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .wa-inbox-row-time { font-size: 10.5px; color: #9CA3AF; font-weight: 600; white-space: nowrap; }
-  .wa-inbox-row-preview { font-size: 12px; color: #6B7280; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .wa-inbox-row-meta { font-size: 10.5px; color: #9CA3AF; margin-top: 3px; display: flex; gap: 8px; }
-  .wa-inbox-detail { background: #fff; border: 1px solid var(--oh-border); border-radius: 10px; padding: 16px 20px; height: calc(100vh - 100px); overflow-y: auto; }
-  .wa-inbox-detail-empty { color: #9CA3AF; text-align: center; padding: 40px 20px; font-size: 14px; }
-  .wa-inbox-detail-head { padding-bottom: 12px; border-bottom: 1px solid var(--oh-border); margin-bottom: 12px; }
-  .wa-inbox-detail-name { font-size: 16px; font-weight: 700; color: #1F2937; }
-  .wa-inbox-detail-sub { font-size: 12px; color: #6B7280; margin-top: 4px; }
+  /* Thread shell — used both inside the admin DetailPanel side pane and
+     the full Inbox screen. flex column so the composer pins to the
+     bottom of whatever container we're in. */
+  .wa-thread-wrap { display: flex; flex-direction: column; min-height: 0; gap: 0; }
+  .wa-thread { display: flex; flex-direction: column; gap: 6px; padding: 12px 4px; flex: 1; min-height: 0; overflow-y: auto; background: #ECE5DD; border-radius: 8px; background-image: linear-gradient(#ECE5DD, #ECE5DD); }
+  .wa-thread-empty { padding: 32px 16px; text-align: center; color: #9CA3AF; font-size: 13px; font-style: italic; }
+
+  /* Bubbles — outbound green-right, inbound white-left, à la WhatsApp.
+     Pseudo-element tail gives the speech-bubble look. */
+  .wa-bubble { position: relative; max-width: 78%; padding: 7px 11px 5px; border-radius: 8px; font-size: 13px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; box-shadow: 0 1px 1px rgba(0,0,0,0.08); }
+  .wa-bubble-body { color: #1F2937; }
+  .wa-bubble-time { font-size: 10px; color: #667781; margin-top: 3px; text-align: right; line-height: 1; }
+  .wa-bubble-time .wa-tpl { color: #999; font-family: ui-monospace, monospace; font-size: 9.5px; }
+  .wa-out { background: #D9FDD3; align-self: flex-end; border-top-right-radius: 0; }
+  .wa-in  { background: #FFFFFF; align-self: flex-start; border-top-left-radius: 0; }
+  .wa-out::before { content: ''; position: absolute; top: 0; right: -8px; width: 0; height: 0; border-style: solid; border-width: 0 0 12px 12px; border-color: transparent transparent transparent #D9FDD3; }
+  .wa-in::before  { content: ''; position: absolute; top: 0; left: -8px; width: 0; height: 0; border-style: solid; border-width: 0 12px 12px 0; border-color: transparent #FFFFFF transparent transparent; }
+
+  /* Composer — sticky at the bottom of the thread wrap. */
+  .wa-composer { padding: 10px 4px 4px; border-top: 1px solid var(--oh-border); margin-top: 8px; background: #fff; }
+  .wa-composer-row { display: flex; align-items: flex-end; gap: 8px; }
+  .wa-composer-input { flex: 1; min-height: 38px; max-height: 140px; padding: 9px 12px; border: 1px solid var(--oh-border); border-radius: 20px; font-size: 13px; font-family: inherit; resize: none; outline: none; background: #F9FAFB; transition: border-color 0.15s, background 0.15s; }
+  .wa-composer-input:focus { border-color: #25D366; background: #fff; }
+  .wa-composer-send { padding: 9px 18px; border-radius: 20px; border: none; background: #25D366; color: #fff; font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer; transition: background 0.15s; }
+  .wa-composer-send:hover:not(:disabled) { background: #128C7E; }
+  .wa-composer-send:disabled { opacity: 0.5; cursor: not-allowed; }
+  .wa-composer-error { font-size: 11.5px; color: #B91C1C; background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
+  .wa-composer-hint { font-size: 10.5px; color: #9CA3AF; margin-top: 6px; line-height: 1.4; }
+
+  /* ----- Inbox screen layout ----- */
+  .wa-inbox-wrap { padding: 16px 24px 24px; max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: 360px 1fr; gap: 16px; height: calc(100vh - 80px); }
+  .wa-inbox-list { background: #fff; border: 1px solid var(--oh-border); border-radius: 12px; overflow-y: auto; }
+  .wa-inbox-list-empty { padding: 40px 20px; text-align: center; color: #9CA3AF; font-size: 13px; line-height: 1.6; }
+  .wa-inbox-search { padding: 12px; border-bottom: 1px solid var(--oh-border); position: sticky; top: 0; background: #F0F2F5; z-index: 1; }
+  .wa-inbox-search input { width: 100%; padding: 9px 12px; border: 1px solid var(--oh-border); border-radius: 18px; font-size: 13px; font-family: inherit; background: #fff; outline: none; }
+  .wa-inbox-search input:focus { border-color: #25D366; }
+  .wa-inbox-row { padding: 12px 14px; border-bottom: 1px solid #F3F4F6; cursor: pointer; transition: background 0.1s; display: flex; gap: 12px; align-items: flex-start; }
+  .wa-inbox-row:hover { background: #FAFAFA; }
+  .wa-inbox-row.active { background: #F0FDF4; }
+  .wa-inbox-row-avatar { width: 40px; height: 40px; border-radius: 50%; background: #25D366; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .wa-inbox-row-body { flex: 1; min-width: 0; }
+  .wa-inbox-row-name { font-size: 14px; font-weight: 700; color: #111B21; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .wa-inbox-row-time { font-size: 11px; color: #667781; font-weight: 500; white-space: nowrap; }
+  .wa-inbox-row-preview { font-size: 13px; color: #667781; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+  .wa-inbox-row-meta { font-size: 11px; color: #9CA3AF; margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .wa-inbox-row-replies { color: #25D366; font-weight: 700; }
+  .wa-inbox-list > div:not(.wa-inbox-search):not(.wa-inbox-list-empty) { /* row container — let it scroll */ }
+  .wa-inbox-list { /* allow rows to scroll while search stays put */ }
+  .wa-inbox-list .wa-inbox-row:last-child { border-bottom: none; }
+  .wa-inbox-detail { background: #fff; border: 1px solid var(--oh-border); border-radius: 12px; padding: 0; display: flex; flex-direction: column; min-height: 0; }
+  .wa-inbox-detail-empty { color: #9CA3AF; text-align: center; padding: 60px 20px; font-size: 14px; flex: 1; display: flex; align-items: center; justify-content: center; }
+  .wa-inbox-detail-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--oh-border); background: #F0F2F5; border-top-left-radius: 12px; border-top-right-radius: 12px; }
+  .wa-inbox-detail-avatar { width: 42px; height: 42px; border-radius: 50%; background: #25D366; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+  .wa-inbox-detail-name { font-size: 15px; font-weight: 700; color: #111B21; }
+  .wa-inbox-detail-sub { font-size: 12px; color: #667781; margin-top: 2px; }
+  .wa-inbox-detail .wa-thread-wrap { flex: 1; min-height: 0; padding: 0 18px 14px; }
+  .wa-inbox-detail .wa-thread { background: #ECE5DD; padding: 14px 12px; border-radius: 8px; margin-top: 12px; }
+  .wa-inbox-detail .wa-composer { padding: 12px 0 4px; border-top: 1px solid var(--oh-border); }
 
   /* ----- Ageing — card-level borders ----- */
   /* Under-7-day countdown: soft pulsing halo, no border (kept clean while

@@ -751,13 +751,14 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 )}
               </div>
 
-              {/* WhatsApp thread (read-only) — shows the cron's outbound
-                  reminders + every CP reply we've received from Interakt
-                  for this CP's phone. Hidden when no messages exist so
-                  the panel doesn't grow a placeholder for unrelated units. */}
+              {/* WhatsApp thread — outbound reminders the cron fired +
+                  every CP reply Interakt forwarded for this CP's phone.
+                  Staff (admin/manager/RM) get a composer to reply
+                  free-text inside the 24h customer-service window;
+                  viewers see read-only. */}
               <div className="admin-panel-section">
                 <div className="admin-panel-section-title">WhatsApp</div>
-                <WhatsAppThread submissionId={s.id} hideEmpty={false} />
+                <WhatsAppThread submissionId={s.id} hideEmpty={false} canSend={isStaff} />
               </div>
 
               {/* Events */}
