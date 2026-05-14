@@ -14,6 +14,7 @@ unique constraint on (submission_id, kind, day_number). Re-running the
 cron on the same day is a no-op.
 """
 
+import json
 import logging
 
 from flask import Blueprint, jsonify, request
@@ -22,6 +23,14 @@ from activity_log import log_activity
 from config import Config
 from db import get_app_conn, put_app_conn
 from services_whatsapp import send_template
+
+
+def _normalize_phone(raw):
+    """Strip non-digits, return the last 10 digits or None."""
+    if raw is None:
+        return None
+    digits = "".join(c for c in str(raw) if c.isdigit())
+    return digits[-10:] if len(digits) >= 10 else None
 
 log = logging.getLogger(__name__)
 
@@ -256,6 +265,34 @@ def send_cp_reminders():
                                 "cp_phone": row.get("cp_phone"),
                                 "unit_label": unit_label,
                             },
+                        )
+                        # Persist the outbound message itself so it shows
+                        # up in the WhatsApp inbox + on the submission's
+                        # detail panel. Inbound replies (handled by the
+                        # webhook) attach to the same thread by phone.
+                        cur.execute(
+                            """
+                            INSERT INTO whatsapp_messages
+                                (direction, phone, cp_id, submission_id,
+                                 template_name, body, body_params,
+                                 raw_payload, received_at)
+                            VALUES ('outbound', %s, NULL, %s,
+                                    %s, %s, %s::jsonb,
+                                    %s::jsonb, NOW())
+                            """,
+                            (
+                                _normalize_phone(row.get("cp_phone")),
+                                row["submission_id"],
+                                template_name,
+                                # We don't render the template body server-side;
+                                # store the template name + params instead.
+                                template_name,
+                                json.dumps([cp_first_name, unit_label, str(days_left)]),
+                                json.dumps({
+                                    "interakt_status": result.get("status"),
+                                    "interakt_body": result.get("body"),
+                                }),
+                            ),
                         )
                         conn.commit()
                 finally:

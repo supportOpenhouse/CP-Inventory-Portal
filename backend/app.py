@@ -22,6 +22,7 @@ from routes.meta import bp as meta_bp
 from routes.societies import bp as societies_bp
 from routes.submissions import bp as submissions_bp
 from routes.sync import bp as sync_bp
+from routes.webhooks import bp as webhooks_bp
 
 
 def create_app() -> Flask:
@@ -47,6 +48,7 @@ def create_app() -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(sync_bp)
     app.register_blueprint(cron_bp)
+    app.register_blueprint(webhooks_bp)
 
     @app.errorhandler(400)
     def bad_request(e):

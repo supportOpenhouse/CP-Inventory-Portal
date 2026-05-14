@@ -227,6 +227,15 @@ export const api = {
   adminForceLogoutAll: () =>
     request('/admin/staff-users/force-logout-all', { method: 'POST' }),
 
+  // WhatsApp messages (inbound CP replies + outbound reminders).
+  // Threads list and per-thread / per-submission detail views.
+  adminListWhatsAppThreads: (filters = {}) =>
+    request(`/admin/whatsapp/threads${buildQuery(filters)}`),
+  adminGetWhatsAppThread: (phone) =>
+    request(`/admin/whatsapp/threads/${encodeURIComponent(phone)}`),
+  adminGetSubmissionWhatsApp: (submissionId) =>
+    request(`/admin/submissions/${submissionId}/whatsapp`),
+
   // Activity Log — admin-only feed of all mutations across the dashboard.
   // Filters: { action, category, actor_email, actor_name, search, date_from, date_to, page, page_size }
   adminListActivityLog: (filters = {}) =>

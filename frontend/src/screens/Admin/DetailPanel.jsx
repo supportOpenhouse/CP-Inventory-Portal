@@ -6,6 +6,7 @@ import { getUser } from '../../auth';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
 } from '../../cloudinary';
+import WhatsAppThread from './WhatsAppThread';
 
 // Fields the admin can edit (mirrors EDITABLE_FIELDS in backend/routes/admin.py) go
 const EDITABLE_FIELDS = [
@@ -748,6 +749,15 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* WhatsApp thread (read-only) — shows the cron's outbound
+                  reminders + every CP reply we've received from Interakt
+                  for this CP's phone. Hidden when no messages exist so
+                  the panel doesn't grow a placeholder for unrelated units. */}
+              <div className="admin-panel-section">
+                <div className="admin-panel-section-title">WhatsApp</div>
+                <WhatsAppThread submissionId={s.id} hideEmpty={false} />
               </div>
 
               {/* Events */}

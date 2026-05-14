@@ -66,6 +66,13 @@ class Config:
     # 10-digit national numbers; Interakt needs an explicit country code.
     WA_DEFAULT_COUNTRY_CODE = os.getenv("WA_DEFAULT_COUNTRY_CODE", "91")
 
+    # -------- Interakt inbound webhook --------
+    # Secret expected on the inbound /api/webhooks/interakt endpoint. Set
+    # the SAME value in your Interakt dashboard's webhook settings as a
+    # custom header (Authorization: Bearer <token>) so we can reject
+    # unauthenticated POSTs. Long random string (>= 48 chars).
+    INTERAKT_WEBHOOK_SECRET = os.getenv("INTERAKT_WEBHOOK_SECRET") or None
+
     # -------- CP reminder cron (X-Sync-Token header) --------
     # Daily job runs in an external scheduler (GitHub Actions / Render cron /
     # cron-job.org) that POSTs to /api/cron/send-cp-reminders. Token shared

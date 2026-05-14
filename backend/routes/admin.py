@@ -4346,3 +4346,165 @@ def list_activity_log_facets():
         "dashboards": dashboards,
         "actors": actor_rows,
     }), 200
+
+
+# ==========================================================
+# WhatsApp messages (inbound replies + outbound reminders)
+# ==========================================================
+
+@bp.get("/whatsapp/threads")
+@require_staff
+def list_whatsapp_threads():
+    """One row per phone — most recent message + inbound count.
+    Powers the WhatsApp Inbox admin page (list view).
+
+    Optional: ?search=<phone-or-name>, ?page=N (page_size=50).
+    """
+    search = (request.args.get("search") or "").strip()
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    page_size = 50
+    offset = (page - 1) * page_size
+
+    where_extra = ""
+    params = []
+    if search:
+        digits = "".join(c for c in search if c.isdigit())
+        if digits:
+            where_extra = " AND m.phone ILIKE %s"
+            params.append(f"%{digits[-10:]}%")
+        else:
+            where_extra = " AND cp.name ILIKE %s"
+            params.append(f"%{search}%")
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                WITH per_phone AS (
+                    SELECT
+                        m.phone,
+                        MAX(m.received_at) FILTER (WHERE m.direction = 'inbound')  AS last_inbound_at,
+                        MAX(m.received_at)                                          AS last_msg_at,
+                        COUNT(*) FILTER (WHERE m.direction = 'inbound')             AS inbound_count,
+                        COUNT(*) FILTER (WHERE m.direction = 'outbound')            AS outbound_count
+                    FROM whatsapp_messages m
+                    JOIN channel_partners cp ON cp.phone = m.phone
+                    WHERE TRUE {where_extra}
+                    GROUP BY m.phone
+                )
+                SELECT
+                    p.phone,
+                    p.last_inbound_at,
+                    p.last_msg_at,
+                    p.inbound_count,
+                    p.outbound_count,
+                    cp.id            AS cp_id,
+                    cp.cp_code,
+                    cp.name          AS cp_name,
+                    cp.company       AS cp_company,
+                    last_msg.body    AS last_body,
+                    last_msg.direction AS last_direction
+                FROM per_phone p
+                LEFT JOIN channel_partners cp ON cp.phone = p.phone
+                LEFT JOIN LATERAL (
+                    SELECT body, direction
+                    FROM whatsapp_messages
+                    WHERE phone = p.phone
+                    ORDER BY received_at DESC
+                    LIMIT 1
+                ) last_msg ON TRUE
+                ORDER BY p.last_msg_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                params + [page_size, offset],
+            )
+            threads = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"threads": threads, "page": page, "page_size": page_size}), 200
+
+
+@bp.get("/whatsapp/threads/<phone>")
+@require_staff
+def get_whatsapp_thread(phone: str):
+    """Full message history for one phone, oldest first. Powers the
+    threaded view in the WhatsApp Inbox.
+    """
+    digits = "".join(c for c in phone if c.isdigit())
+    if len(digits) < 10:
+        return jsonify({"error": "Invalid phone"}), 400
+    norm = digits[-10:]
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, direction, phone, cp_id, submission_id,
+                       template_name, body, body_params,
+                       provider_msg_id, received_at
+                FROM whatsapp_messages
+                WHERE phone = %s
+                ORDER BY received_at ASC, id ASC
+                """,
+                (norm,),
+            )
+            messages = cur.fetchall()
+
+            cur.execute(
+                "SELECT id, cp_code, name, company FROM channel_partners WHERE phone = %s LIMIT 1",
+                (norm,),
+            )
+            cp = cur.fetchone()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"phone": norm, "cp": cp, "messages": messages}), 200
+
+
+@bp.get("/submissions/<int:sid>/whatsapp")
+@require_staff
+def get_submission_whatsapp(sid: int):
+    """Messages for the CP that owns this submission. Joins by phone (not
+    just submission_id) so the panel shows the complete conversation,
+    including replies that were attached to a sibling submission.
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            scope_sql, scope_params = _scoped_city_filter(cur)
+            cur.execute(
+                f"""
+                SELECT cp.phone
+                FROM submissions s
+                JOIN channel_partners cp ON s.cp_id = cp.id
+                LEFT JOIN cities c ON s.city_id = c.id
+                WHERE s.id = %s {scope_sql}
+                """,
+                [sid, *scope_params],
+            )
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Not found or out of scope"}), 404
+            phone = row["phone"]
+
+            cur.execute(
+                """
+                SELECT id, direction, phone, submission_id,
+                       template_name, body, body_params, received_at
+                FROM whatsapp_messages
+                WHERE phone = %s
+                ORDER BY received_at ASC, id ASC
+                """,
+                (phone,),
+            )
+            messages = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"phone": phone, "messages": messages}), 200

@@ -13,6 +13,7 @@ import BulkReassignRmModal from './BulkReassignRmModal';
 import ExternalInventory from './ExternalInventory';
 import ActivityLog from './ActivityLog';
 import AdminPanel from './AdminPanel';
+import WhatsAppInbox from './WhatsAppInbox';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
@@ -73,6 +74,7 @@ export default function Admin() {
   const [externalInventoryOpen, setExternalInventoryOpen] = useState(false);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [whatsappInboxOpen, setWhatsappInboxOpen] = useState(false);
 
   // Reset window scroll whenever the user enters or leaves a full-screen
   // subview (Add Inventory on Behalf, OH Properties, Activity Logs).
@@ -80,7 +82,7 @@ export default function Admin() {
   // to the next, so returning to the admin board lands them mid-page.
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [addingInventory, externalInventoryOpen, activityLogOpen]);
+  }, [addingInventory, externalInventoryOpen, activityLogOpen, whatsappInboxOpen]);
 
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
@@ -293,6 +295,12 @@ export default function Admin() {
     return <ActivityLog onClose={() => setActivityLogOpen(false)} />;
   }
 
+  // WhatsApp Inbox — read-only thread view per CP phone. Same scoping
+  // rules as the rest of the admin app (require_staff on the API).
+  if (whatsappInboxOpen) {
+    return <WhatsAppInbox onClose={() => setWhatsappInboxOpen(false)} />;
+  }
+
   return (
     <div className="admin-root">
       {/* Top bar */}
@@ -314,6 +322,15 @@ export default function Admin() {
             <div className="admin-topbar-avatar">{(user.name || '?')[0]}</div>
             <span>{(user.name || '').split(' ')[0]}</span>
           </div>
+          {(isStaff || isViewer) && (
+            <button
+              className="logout-btn"
+              onClick={() => setWhatsappInboxOpen(true)}
+              title="WhatsApp Inbox — CP replies + sent reminders"
+            >
+              💬
+            </button>
+          )}
           {isAdmin && (
             <button
               className="logout-btn"

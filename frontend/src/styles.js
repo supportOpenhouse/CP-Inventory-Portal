@@ -338,6 +338,34 @@ export const css = `
   .board-card-skel { height: 120px; background: #fff; border: 1px solid #E8E6E0; border-radius: 12px; margin-bottom: 10px; position: relative; overflow: hidden; }
   .board-card-skel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(234,232,227,0.6) 50%, transparent 100%); animation: shimmer 1.4s ease-in-out infinite; }
 
+  /* ----- WhatsApp thread bubbles (admin DetailPanel + Inbox screen) ----- */
+  .wa-thread { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 8px; }
+  .wa-bubble { max-width: 86%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .wa-bubble-meta { font-size: 10.5px; font-weight: 700; color: #6B7280; letter-spacing: 0.2px; margin-bottom: 4px; text-transform: uppercase; }
+  .wa-bubble-meta .wa-tpl { color: #9CA3AF; font-weight: 600; margin-left: 4px; text-transform: none; letter-spacing: 0; font-family: ui-monospace, monospace; }
+  .wa-bubble-body { color: #1F2937; }
+  .wa-out { background: #DCFCE7; border: 1px solid #86EFAC; align-self: flex-start; border-bottom-left-radius: 4px; }
+  .wa-in  { background: #F3F4F6; border: 1px solid #E5E7EB; align-self: flex-end;   border-bottom-right-radius: 4px; }
+
+  /* ----- WhatsApp Inbox admin screen ----- */
+  .wa-inbox-wrap { padding: 20px 28px 40px; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 360px 1fr; gap: 16px; min-height: calc(100vh - 80px); }
+  .wa-inbox-list { background: #fff; border: 1px solid var(--oh-border); border-radius: 10px; overflow: hidden; height: calc(100vh - 100px); overflow-y: auto; }
+  .wa-inbox-list-empty { padding: 32px 16px; text-align: center; color: #9CA3AF; font-size: 13px; }
+  .wa-inbox-search { padding: 10px 12px; border-bottom: 1px solid var(--oh-border); position: sticky; top: 0; background: #fff; z-index: 1; }
+  .wa-inbox-search input { width: 100%; padding: 8px 10px; border: 1px solid var(--oh-border); border-radius: 6px; font-size: 13px; font-family: inherit; }
+  .wa-inbox-row { padding: 12px 14px; border-bottom: 1px solid #F3F4F6; cursor: pointer; transition: background 0.1s; }
+  .wa-inbox-row:hover { background: #FAFAF8; }
+  .wa-inbox-row.active { background: #FFF3ED; border-left: 3px solid var(--oh-orange); padding-left: 11px; }
+  .wa-inbox-row-name { font-size: 13px; font-weight: 700; color: #1F2937; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .wa-inbox-row-time { font-size: 10.5px; color: #9CA3AF; font-weight: 600; white-space: nowrap; }
+  .wa-inbox-row-preview { font-size: 12px; color: #6B7280; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .wa-inbox-row-meta { font-size: 10.5px; color: #9CA3AF; margin-top: 3px; display: flex; gap: 8px; }
+  .wa-inbox-detail { background: #fff; border: 1px solid var(--oh-border); border-radius: 10px; padding: 16px 20px; height: calc(100vh - 100px); overflow-y: auto; }
+  .wa-inbox-detail-empty { color: #9CA3AF; text-align: center; padding: 40px 20px; font-size: 14px; }
+  .wa-inbox-detail-head { padding-bottom: 12px; border-bottom: 1px solid var(--oh-border); margin-bottom: 12px; }
+  .wa-inbox-detail-name { font-size: 16px; font-weight: 700; color: #1F2937; }
+  .wa-inbox-detail-sub { font-size: 12px; color: #6B7280; margin-top: 4px; }
+
   /* ----- Ageing — card-level borders ----- */
   /* Under-7-day countdown: soft pulsing halo, no border (kept clean while
      the strip + bar carry the visual weight). Skipped when an inline style
