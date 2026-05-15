@@ -306,7 +306,7 @@ export default function Admin() {
       {/* Top bar */}
       <div className="admin-topbar">
         <div className="admin-topbar-left">
-          <img src="/icon-192.png" alt="Openhouse" className="admin-logo-mark" />
+          <img src="/logo_h.png" alt="Openhouse" className="admin-logo-mark" />
           <span className="admin-topbar-title">CP Inventory (Sourcing)</span>
         </div>
         <div className="admin-topbar-right">
