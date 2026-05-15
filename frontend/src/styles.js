@@ -231,7 +231,7 @@ export const css = `
 
   /* ===== Admin: top bar ===== */
   .admin-root { min-height: 100vh; background: #F8F7F4; font-family: 'DM Sans', sans-serif; color: #222; }
-  .admin-topbar { background: #000; padding: 0 28px; height: 56px; width: 90%; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .admin-topbar { background: #000; padding: 0 28px; height: 53px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
   .admin-topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
   /* Wordmark variant — kept for legacy callers (Login screen). */
   .admin-logo-img { height: 26px; display: block; }
