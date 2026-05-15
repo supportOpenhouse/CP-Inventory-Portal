@@ -232,8 +232,13 @@ export const css = `
   /* ===== Admin: top bar ===== */
   .admin-root { min-height: 100vh; background: #F8F7F4; font-family: 'DM Sans', sans-serif; color: #222; }
   .admin-topbar { background: #222; padding: 0 28px; height: 56px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
-  .admin-topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .admin-topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  /* Wordmark variant — kept for legacy callers (Login screen). */
   .admin-logo-img { height: 26px; display: block; }
+  /* "h" mark + prominent title, matching the Direct Inventory dashboard. */
+  .admin-logo-mark { height: 32px; width: 32px; display: block; border-radius: 6px; object-fit: contain; }
+  .admin-topbar-title { font-family: 'DM Sans', sans-serif; font-size: 18px; font-weight: 700; color: #fff; letter-spacing: -0.2px; white-space: nowrap; }
+  /* Legacy subtitle slot — keep for any caller still using it. */
   .admin-topbar-sub { font-size: 12px; color: rgba(255,255,255,0.5); letter-spacing: 0.3px; }
   .admin-topbar-right { display: flex; align-items: center; gap: 12px; }
   .admin-topbar-env { font-size: 11px; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 4px; font-weight: 500; }
