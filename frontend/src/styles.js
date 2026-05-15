@@ -347,7 +347,7 @@ export const css = `
   .wa-topbar-btn:hover { background: #128C7E !important; transform: translateY(-1px); }
   .wa-topbar-btn:active { transform: translateY(0); }
   .wa-topbar-btn svg { display: block; }
-  .wa-topbar-title { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--oh-charcoal); }
+  .wa-topbar-title { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #fff; }
   .wa-topbar-icon { display: inline-flex; color: #25D366; }
 
   /* Thread shell — used both inside the admin DetailPanel side pane and
