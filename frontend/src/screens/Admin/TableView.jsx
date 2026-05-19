@@ -202,16 +202,16 @@ export default function TableView({
             const isWithdrawn = !!s.deleted_at;
             const isUnitLess = s.unit_less === true;
             // Row tint priority:
-            //   1. Perfect match               → red
-            //   2. Both collated + submissions → split (gradient)
-            //   3. Submissions only            → purple
-            //   4. Collated / withdrawn / unit-less → yellow
+            //   1. Perfect match                    → red
+            //   2. Submissions match (incl. both)   → purple (another CP — stronger signal)
+            //   3. Collated match                   → yellow
+            //   4. Withdrawn / unit-less unapproved → yellow
             const rowStyle = isPerfectMatch
               ? { background: '#fef2f2' }
-              : (isCollatedPartial && isSubmissionsPartial)
-                ? { background: 'linear-gradient(135deg, #fffbeb 0%, #fffbeb 50%, #f5f3ff 50%, #f5f3ff 100%)' }
-                : isSubmissionsPartial
-                  ? { background: '#f5f3ff' }
+              : isSubmissionsPartial
+                ? { background: '#f5f3ff' }
+                : isCollatedPartial
+                  ? { background: '#fffbeb' }
                   : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
                     ? { background: '#fffbeb' }
                     : undefined;

@@ -97,19 +97,16 @@ export default function BoardView({
               const isWithdrawn = !!s.deleted_at;
               const isUnitLess = s.unit_less === true;
               // Style priority:
-              //   1. Perfect match     → red (highest signal)
-              //   2. Both collated AND submissions match → split background (yellow + purple)
-              //   3. Submissions only  → purple
-              //   4. Collated only / withdrawn / unit-less → yellow
+              //   1. Perfect match                       → red (highest signal)
+              //   2. Submissions match (incl. both)      → purple (another CP — stronger signal)
+              //   3. Collated match                      → yellow
+              //   4. Withdrawn / unit-less unapproved    → yellow
               const cardOverlayStyle = isPerfectMatch
                 ? { background: '#fef2f2', border: '1.5px solid #f87171' }
-                : (isCollatedPartial && isSubmissionsPartial)
-                  ? {
-                      background: 'linear-gradient(135deg, #fffbeb 0%, #fffbeb 50%, #f5f3ff 50%, #f5f3ff 100%)',
-                      border: '1.5px solid #c4b5fd',  // purple wins border (stronger signal: another CP)
-                    }
-                  : isSubmissionsPartial
-                    ? { background: '#f5f3ff', border: '1.5px solid #c4b5fd' }
+                : isSubmissionsPartial
+                  ? { background: '#f5f3ff', border: '1.5px solid #c4b5fd' }
+                  : isCollatedPartial
+                    ? { background: '#fffbeb', border: '1.5px solid #fcd34d' }
                     : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
                       ? { background: '#fffbeb', border: '1.5px solid #fcd34d' }
                       : undefined;
