@@ -808,11 +808,26 @@ def get_submission(sid: int):
             if not submission:
                 return jsonify({"error": "Not found or out of scope"}), 404
 
+            # actor_name / actor_role resolve from either source: channel_partners
+            # for CPs and admins (admin role lives in channel_partners with cp_id),
+            # and rms for managers and RMs. Whichever id is set on the event row
+            # populates the name; the other JOIN returns NULL and COALESCE picks
+            # the non-NULL one. Frontend falls back to "System" only when both
+            # are NULL (legacy rows or genuine background-job events).
             cur.execute("""
                 SELECT e.id, e.kind, e.from_status, e.to_status, e.text, e.created_at,
-                       cp.name AS actor_name, cp.cp_code AS actor_cp_code, cp.role AS actor_role
+                       COALESCE(cp.name, r.name) AS actor_name,
+                       cp.cp_code AS actor_cp_code,
+                       COALESCE(
+                           cp.role,
+                           CASE
+                               WHEN r.is_manager THEN 'manager'
+                               WHEN r.id IS NOT NULL THEN 'rm'
+                           END
+                       ) AS actor_role
                 FROM submission_events e
                 LEFT JOIN channel_partners cp ON e.actor_cp_id = cp.id
+                LEFT JOIN rms r ON e.actor_rm_id = r.id
                 WHERE e.submission_id = %s
                 ORDER BY e.created_at ASC, e.id ASC
             """, (sid,))
@@ -853,9 +868,9 @@ def change_status(sid: int):
             cur.execute("UPDATE submissions SET status = %s WHERE id = %s", (new_status, sid))
             cur.execute("""
                 INSERT INTO submission_events
-                    (submission_id, actor_cp_id, kind, from_status, to_status)
-                VALUES (%s, %s, 'status_change', %s, %s)
-            """, (sid, g.user.get("cp_id"), old_status, new_status))
+                    (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status)
+                VALUES (%s, %s, %s, 'status_change', %s, %s)
+            """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), old_status, new_status))
             log_activity(
                 cur, action="status_change", category="submission",
                 entity_uid=existing.get("public_id"), entity_type="submission", entity_id=sid,
@@ -938,10 +953,10 @@ def send_counter_offer(sid: int):
             cur.execute(
                 """
                 INSERT INTO submission_events
-                    (submission_id, actor_cp_id, kind, text)
-                VALUES (%s, %s, 'counter_offer', %s)
+                    (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'counter_offer', %s)
                 """,
-                (sid, g.user.get("cp_id"), f"Counter offer sent: ₹{price_rupees:,}"),
+                (sid, g.user.get("cp_id"), g.user.get("rm_id"), f"Counter offer sent: ₹{price_rupees:,}"),
             )
             log_activity(
                 cur, action="counter_offer_sent", category="submission",
@@ -982,10 +997,10 @@ def add_comment(sid: int):
                 return jsonify({"error": "Not found or out of scope"}), 404
 
             cur.execute("""
-                INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
-                VALUES (%s, %s, 'comment', %s)
+                INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'comment', %s)
                 RETURNING id, created_at
-            """, (sid, g.user.get("cp_id"), text.strip()))
+            """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), text.strip()))
             row = cur.fetchone()
             log_activity(
                 cur, action="comment_added", category="submission",
@@ -1079,9 +1094,9 @@ def edit_submission(sid: int):
             cur.execute(sql, params + [sid])
 
             cur.execute("""
-                INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
-                VALUES (%s, %s, 'comment', %s)
-            """, (sid, g.user.get("cp_id"), "Edited: " + "; ".join(changes)))
+                INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'comment', %s)
+            """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), "Edited: " + "; ".join(changes)))
             log_activity(
                 cur, action="submission_edited", category="submission",
                 entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
@@ -1113,9 +1128,9 @@ def delete_submission(sid: int):
 
             cur.execute("UPDATE submissions SET deleted_at = NOW() WHERE id = %s", (sid,))
             cur.execute("""
-                INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
-                VALUES (%s, %s, 'system', 'Submission archived by admin')
-            """, (sid, g.user["cp_id"]))
+                INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'system', 'Submission archived by admin')
+            """, (sid, g.user.get("cp_id"), g.user.get("rm_id")))
             log_activity(
                 cur, action="submission_deleted", category="submission",
                 entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
@@ -1561,11 +1576,12 @@ def schedule_visit(sid: int):
 
             cur.execute("""
                 INSERT INTO submission_events
-                    (submission_id, actor_cp_id, kind, text)
-                VALUES (%s, %s, 'system', %s)
+                    (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'system', %s)
             """, (
                 sid,
-                g.user.get("cp_id"),  # NULL for admins/RMs/managers — column allows it
+                g.user.get("cp_id"),  # NULL for RMs/managers
+                g.user.get("rm_id"),  # NULL for admins/CPs
                 f"Visit scheduled for {schedule_date} {schedule_time} with {field_exec_name}. "
                 f"Forms UID: {forms_uid}{' (already existed)' if already_existed else ''}",
             ))
@@ -2081,11 +2097,12 @@ def bulk_schedule_visit():
                     """, (s["uid"], schedule_date, s["schedule_time"], s["field_exec_name"], s["sid"]))
                     cur.execute("""
                         INSERT INTO submission_events
-                            (submission_id, actor_cp_id, kind, text)
-                        VALUES (%s, %s, 'system', %s)
+                            (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                        VALUES (%s, %s, %s, 'system', %s)
                     """, (
                         s["sid"],
-                        g.user.get("cp_id"),  # NULL for admins/RMs/managers
+                        g.user.get("cp_id"),  # NULL for RMs/managers
+                        g.user.get("rm_id"),  # NULL for admins/CPs
                         f"Visit scheduled (bulk) for {schedule_date} {s['schedule_time']} "
                         f"with {s['field_exec_name']}. Forms UID: {s['uid']}"
                         f"{' (already existed)' if s['already_existed'] else ''}",
@@ -2374,9 +2391,9 @@ def bulk_status():
                 )
                 cur.execute("""
                     INSERT INTO submission_events
-                        (submission_id, actor_cp_id, kind, from_status, to_status, text)
-                    VALUES (%s, %s, 'status_change', %s, %s, 'Bulk action')
-                """, (sid, g.user.get("cp_id"), old_status, new_status))
+                        (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status, text)
+                    VALUES (%s, %s, %s, 'status_change', %s, %s, 'Bulk action')
+                """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), old_status, new_status))
                 updated += 1
 
             out_of_scope = len(clean_ids) - len(in_scope)
@@ -3193,9 +3210,9 @@ def set_listing_rm(sid: int):
                 },
             )
             cur.execute("""
-                INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
-                VALUES (%s, %s, 'system', %s)
-            """, (sid, g.user.get("cp_id"), event_text))
+                INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'system', %s)
+            """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), event_text))
             conn.commit()
     finally:
         put_app_conn(conn)
@@ -3323,9 +3340,9 @@ def bulk_reassign_listing_rm():
                 event_text += f"; future submissions for {len(society_ids_mapped)} societ{'y' if len(society_ids_mapped) == 1 else 'ies'} also route to {target_rm_name}"
             for sid in updated_ids:
                 cur.execute("""
-                    INSERT INTO submission_events (submission_id, actor_cp_id, kind, text)
-                    VALUES (%s, %s, 'system', %s)
-                """, (sid, g.user.get("cp_id"), event_text))
+                    INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                    VALUES (%s, %s, %s, 'system', %s)
+                """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), event_text))
             log_activity(
                 cur,
                 action=("listing_rm_set_bulk" if target_rm_id is not None else "listing_rm_cleared_bulk"),
