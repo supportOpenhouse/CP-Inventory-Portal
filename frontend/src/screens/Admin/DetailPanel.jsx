@@ -379,7 +379,17 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     disabled={busy}
                   >
                     {STAGES.map((st) => (
-                      <option key={st.key} value={st.key}>{st.key}</option>
+                      // Visit Completed is set automatically when the visit form is
+                      // submitted (sync_visit_completed in backend/routes/admin.py).
+                      // Keep it visible so already-completed rows still display, but
+                      // block manual selection unless it's already the current value.
+                      <option
+                        key={st.key}
+                        value={st.key}
+                        disabled={st.key === 'Visit Completed' && s.status !== 'Visit Completed'}
+                      >
+                        {st.key}
+                      </option>
                     ))}
                   </select>
                 ) : (

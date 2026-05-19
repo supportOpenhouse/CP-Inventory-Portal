@@ -562,7 +562,7 @@ export default function Admin() {
         <div className="bulk-action-bar">
           <span>{selectedIds.size} selected</span>
           <span style={{ fontSize: 12, color: '#666' }}>Move to:</span>
-          {STAGES.map((st) => (
+          {STAGES.filter((st) => st.key !== 'Visit Completed').map((st) => (
             <button
               key={st.key}
               className="btn-secondary-sm"
