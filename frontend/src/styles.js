@@ -323,8 +323,10 @@ export const css = `
   .board-card-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .board-chip { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; line-height: 1.5; }
   .board-chip-sqft { background: #F3F2EE; color: #555; }
+  .board-chip-perfect { background: #DC2626; color: #fff; }
   .board-chip-collated { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
   .board-chip-submissions { background: #EDE9FE; color: #5B21B6; border: 1px solid #C4B5FD; }
+  .board-chip-moved { background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD; }
   .board-chip-weak { background: #FEE2E2; color: #B91C1C; border: 1px solid #FCA5A5; }
 
   .board-card-schedule { margin-top: 10px; padding: 6px 10px; background: #ECFDF5; border: 1px solid #6EE7B7; border-radius: 8px; font-size: 11px; font-weight: 600; color: #047857; line-height: 1.4; }

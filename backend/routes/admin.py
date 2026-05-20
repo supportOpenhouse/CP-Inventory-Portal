@@ -533,7 +533,8 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     rm.name AS assigned_rm_name,
                     listing_rm.name AS listing_rm_name,
                     acq.acq_price_lakhs, acq.acq_sqft,
-                    tmr.submitted_stage_at, tmr.visit_completed_stage_at
+                    tmr.submitted_stage_at, tmr.visit_completed_stage_at,
+                    tmr.moved_from_status
         """
     else:
         select_clause = """
@@ -553,7 +554,8 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     rm.name AS assigned_rm_name,
                     listing_rm.name AS listing_rm_name,
                     acq.acq_price_lakhs, acq.acq_sqft,
-                    tmr.submitted_stage_at, tmr.visit_completed_stage_at
+                    tmr.submitted_stage_at, tmr.visit_completed_stage_at,
+                    tmr.moved_from_status
         """
     conn = get_app_conn()
     try:
@@ -598,7 +600,20 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                         (SELECT MAX(e.created_at)
                          FROM submission_events e
                          WHERE e.submission_id = s.id
-                           AND e.to_status = 'Visit Completed') AS visit_completed_stage_at
+                           AND e.to_status = 'Visit Completed') AS visit_completed_stage_at,
+                        -- moved_from_status: the stage a card was demoted FROM on the
+                        -- most recent transition INTO 'Unapproved'. NULL when the card
+                        -- was created directly as Unapproved (only a 'system' seed
+                        -- event, no status_change into Unapproved). The frontend uses
+                        -- this to paint cards blue + show a "Moved from X" chip.
+                        (SELECT e.from_status
+                         FROM submission_events e
+                         WHERE e.submission_id = s.id
+                           AND e.to_status = 'Unapproved'
+                           AND e.from_status IS NOT NULL
+                           AND e.from_status <> 'Unapproved'
+                         ORDER BY e.created_at DESC
+                         LIMIT 1) AS moved_from_status
                 ) tmr ON TRUE
                 WHERE TRUE {scope_sql}
             """

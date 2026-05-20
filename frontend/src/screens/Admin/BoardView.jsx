@@ -92,23 +92,27 @@ export default function BoardView({
               const isChecked = selectedIds.has(s.id);
               const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
               const isSubmissionsPartial = s.status === 'Unapproved' && s.submissions_match === true;
-              // New flags: perfect-match overrides yellow; withdrawn = soft yellow tint
+              // perfect-match → red overlay (highest signal).
               const isPerfectMatch = s.perfect_match_at_submit === true;
-              const isWithdrawn = !!s.deleted_at;
-              const isUnitLess = s.unit_less === true;
+              // Card currently in Unapproved that was moved here from another
+              // stage (admin demotion) — moved_from_status holds the just-
+              // previous stage. Null when the card was created as Unapproved.
+              const movedFromStage = (s.status === 'Unapproved' && s.moved_from_status)
+                ? s.moved_from_status
+                : null;
               // Style priority:
               //   1. Perfect match                       → red (highest signal)
               //   2. Submissions match (incl. both)      → purple (another CP — stronger signal)
               //   3. Collated match                      → yellow
-              //   4. Withdrawn / unit-less unapproved    → yellow
+              //   4. Moved into Unapproved from a stage  → blue (provenance flag)
               const cardOverlayStyle = isPerfectMatch
                 ? { background: '#fef2f2', border: '1.5px solid #f87171' }
                 : isSubmissionsPartial
                   ? { background: '#f5f3ff', border: '1.5px solid #c4b5fd' }
                   : isCollatedPartial
                     ? { background: '#fffbeb', border: '1.5px solid #fcd34d' }
-                    : (isWithdrawn || (isUnitLess && s.status === 'Unapproved'))
-                      ? { background: '#fffbeb', border: '1.5px solid #fcd34d' }
+                    : movedFromStage
+                      ? { background: '#eff6ff', border: '1.5px solid #93c5fd' }
                       : undefined;
               const handleClick = (e) => {
                 if (bulkMode) {
@@ -212,6 +216,14 @@ export default function BoardView({
                       </span>
                     )}
                     {s.sqft ? <span className="board-chip board-chip-sqft">{s.sqft} sqft</span> : null}
+                    {isPerfectMatch && (
+                      <span
+                        className="board-chip board-chip-perfect"
+                        title="Perfect match — tower + unit exactly matched an existing record at submit time"
+                      >
+                        Perfect match
+                      </span>
+                    )}
                     {isCollatedPartial && (
                       <span
                         className="board-chip board-chip-collated"
@@ -226,6 +238,14 @@ export default function BoardView({
                         title="Partial match from submissions table — society + BHK + floor matched another CP's submission; tower/unit couldn't be verified"
                       >
                         Submissions match
+                      </span>
+                    )}
+                    {movedFromStage && (
+                      <span
+                        className="board-chip board-chip-moved"
+                        title={`Moved into Unapproved from ${movedFromStage}`}
+                      >
+                        Moved from {movedFromStage}
                       </span>
                     )}
                     {isWeakMatch && (
