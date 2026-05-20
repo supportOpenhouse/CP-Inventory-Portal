@@ -44,6 +44,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   const [rmAssignMode, setRmAssignMode] = useState('listing');
   const fileInputRef = useRef(null);
   const eventsEndRef = useRef(null);
+  // Tracks the events count across renders so the auto-scroll fires only
+  // when a new event/comment is appended — never on a card's initial load.
+  const prevEventCount = useRef(null);
 
   const user = getUser();
   const isAdmin = user?.role === 'admin';
@@ -68,7 +71,12 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
     }
   }, [submissionId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    // New card opened — reset the scroll baseline so the events effect
+    // below doesn't treat the first populate as "new activity".
+    prevEventCount.current = null;
+    load();
+  }, [load]);
 
   useEffect(() => {
     if ((!isStaff && !isViewer) || rms.length > 0) return;
@@ -76,7 +84,15 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   }, [isStaff, isViewer, rms.length]);
 
   useEffect(() => {
-    eventsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const count = data?.events?.length;
+    if (count == null) return;
+    // Scroll to the latest activity only when an event/comment was just
+    // added — skip the initial load (prevEventCount starts null), which
+    // otherwise yanks the whole panel down to the Activity section.
+    if (prevEventCount.current != null && count > prevEventCount.current) {
+      eventsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+    prevEventCount.current = count;
   }, [data?.events?.length]);
 
   const handleStatusChange = async (newStatus) => {
