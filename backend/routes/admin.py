@@ -901,18 +901,18 @@ def change_status(sid: int):
 @require_staff
 @require_acting_staff
 def send_counter_offer(sid: int):
-    """Admin sends a counter offer. Submission stays in 'Submitted'.
+    """Admin sends a counter offer. Submission stays in 'Visit Completed'.
 
     Payload: { "price_rupees": 9500000 }  (integer, in rupees)
     OR       { "price_lakhs":  95 }        (integer, in lakhs — converted server-side)
 
-    Stage does NOT change here — stays 'Submitted'. CP responds via
+    Stage does NOT change here — stays 'Visit Completed'. CP responds via
     /api/submissions/<id>/counter-offer-response, which moves to
     'Offer Given' (accept) or 'Price Rejected' (reject).
 
-    Note: the gate used to be 'Evaluation' before that stage was removed
-    in the May 2026 pipeline simplification. 'Submitted' now plays the
-    same role (listing is in admin's hands awaiting decision).
+    Note: the gate is 'Visit Completed' — counter offers are sent after the
+    visit is done, while the listing is in admin's hands awaiting a price
+    decision.
     """
     data = request.get_json(silent=True) or {}
     price_rupees = data.get("price_rupees")
@@ -948,9 +948,9 @@ def send_counter_offer(sid: int):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Submission not found"}), 404
-            if row["status"] != "Submitted":
+            if row["status"] != "Visit Completed":
                 return jsonify({
-                    "error": "Counter offer only allowed when status is 'Submitted'",
+                    "error": "Counter offer only allowed when status is 'Visit Completed'",
                     "current_status": row["status"],
                 }), 409
 
