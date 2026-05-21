@@ -116,7 +116,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
       return;
     }
     if (!window.confirm(
-      `Send counter offer of ₹${lakhs} lakhs to the CP?\n\nThe CP will see this on their dashboard and can accept (moves to 'Offer Given') or reject (moves to 'Price Rejected').`
+      `Send counter offer of ₹${lakhs} lakhs to the CP?\n\nThis moves the listing to 'Offer Given'. The CP can accept, reject (moves to 'Price Rejected'), or counter back.`
     )) return;
     setSendingCounter(true);
     try {
@@ -550,10 +550,13 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     </div>
                   )}
 
-                  {/* Input — only when status is Visit Completed AND no pending counter already out.
-                      Gated on isStaff so viewers see the existing-offer card above but
-                      can't send a new one. */}
-                  {isStaff && s.status === 'Visit Completed' && s.counter_offer_status !== 'pending' && (
+                  {/* Input — shown for the first counter ('Visit Completed') and for a
+                      follow-up counter once the broker has countered back ('Offer Given'
+                      + 'broker_countered'). Hidden while a counter is still pending.
+                      Gated on isStaff so viewers can't send one. */}
+                  {isStaff && s.counter_offer_status !== 'pending'
+                    && (s.status === 'Visit Completed'
+                        || (s.status === 'Offer Given' && s.counter_offer_status === 'broker_countered')) && (
                     <>
                       <div className="admin-panel-label">Send counter offer (in lakhs)</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

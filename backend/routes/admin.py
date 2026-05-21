@@ -903,18 +903,17 @@ def change_status(sid: int):
 @require_staff
 @require_acting_staff
 def send_counter_offer(sid: int):
-    """Admin sends a counter offer. Submission stays in 'Visit Completed'.
+    """Admin sends a counter offer.
 
     Payload: { "price_rupees": 9500000 }  (integer, in rupees)
     OR       { "price_lakhs":  95 }        (integer, in lakhs — converted server-side)
 
-    Stage does NOT change here — stays 'Visit Completed'. CP responds via
-    /api/submissions/<id>/counter-offer-response, which moves to
-    'Offer Given' (accept) or 'Price Rejected' (reject).
-
-    Note: the gate is 'Visit Completed' — counter offers are sent after the
-    visit is done, while the listing is in admin's hands awaiting a price
-    decision.
+    Sending a counter offer from 'Visit Completed' moves the listing to
+    'Offer Given' — an offer is now on the table. The CP responds via
+    /api/submissions/<id>/counter-offer-response: accept keeps 'Offer Given',
+    reject moves to 'Price Rejected', counter loops counter_offer_status back
+    to 'pending' (the admin can send a fresh counter while still in
+    'Offer Given').
     """
     data = request.get_json(silent=True) or {}
     price_rupees = data.get("price_rupees")
@@ -950,22 +949,35 @@ def send_counter_offer(sid: int):
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "Submission not found"}), 404
-            if row["status"] != "Visit Completed":
+            status = row["status"]
+            co_status = row["counter_offer_status"]
+            # First counter goes out from 'Visit Completed'. A follow-up
+            # counter is allowed while in 'Offer Given', but only once the
+            # broker has countered back (counter_offer_status='broker_countered').
+            first_counter = status == "Visit Completed"
+            re_counter = status == "Offer Given" and co_status == "broker_countered"
+            if not (first_counter or re_counter):
                 return jsonify({
-                    "error": "Counter offer only allowed when status is 'Visit Completed'",
-                    "current_status": row["status"],
+                    "error": "Counter offer only allowed at 'Visit Completed', "
+                             "or in 'Offer Given' after the broker counters back",
+                    "current_status": status,
                 }), 409
 
+            # Sending the offer advances 'Visit Completed' -> 'Offer Given'
+            # (an offer is now on the table). A re-counter is already in
+            # 'Offer Given', so the status just stays put.
+            new_status = "Offer Given" if first_counter else status
             cur.execute(
                 """
                 UPDATE submissions
                 SET counter_offer_price  = %s,
                     counter_offer_status = 'pending',
                     counter_offer_at     = NOW(),
-                    counter_offer_by     = %s
+                    counter_offer_by     = %s,
+                    status               = %s
                 WHERE id = %s
                 """,
-                (price_rupees, g.user["cp_id"], sid),
+                (price_rupees, g.user["cp_id"], new_status, sid),
             )
             cur.execute(
                 """
@@ -975,6 +987,16 @@ def send_counter_offer(sid: int):
                 """,
                 (sid, g.user.get("cp_id"), g.user.get("rm_id"), f"Counter offer sent: ₹{price_rupees:,}"),
             )
+            if first_counter:
+                cur.execute(
+                    """
+                    INSERT INTO submission_events
+                        (submission_id, actor_cp_id, actor_rm_id,
+                         kind, from_status, to_status)
+                    VALUES (%s, %s, %s, 'status_change', %s, %s)
+                    """,
+                    (sid, g.user.get("cp_id"), g.user.get("rm_id"), status, new_status),
+                )
             log_activity(
                 cur, action="counter_offer_sent", category="submission",
                 entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
@@ -984,7 +1006,7 @@ def send_counter_offer(sid: int):
     finally:
         put_app_conn(conn)
 
-    return jsonify({"ok": True, "counter_offer_price": price_rupees}), 200
+    return jsonify({"ok": True, "counter_offer_price": price_rupees, "new_status": new_status}), 200
 
 
 @bp.post("/submissions/<int:sid>/comment")
