@@ -52,6 +52,7 @@ export default function WhatsAppThread({
   phone,
   hideEmpty = false,
   canSend = true,
+  autoScroll = true,
 }) {
   const [state, setState] = useState({ loading: true, messages: [], error: null });
   const [resolvedPhone, setResolvedPhone] = useState(phone || null);
@@ -98,10 +99,13 @@ export default function WhatsAppThread({
   }, [submissionId, phone]);
 
   // Auto-scroll to the bottom whenever the message list grows so new
-  // replies (or the message we just sent) land in view.
+  // replies (or the message we just sent) land in view. Disabled when the
+  // thread is embedded inside a larger scroll container (e.g. the admin
+  // detail panel), where scrollIntoView would yank the whole panel down.
   useEffect(() => {
+    if (!autoScroll) return;
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [state.messages.length]);
+  }, [state.messages.length, autoScroll]);
 
   const handleSend = async () => {
     const text = draft.trim();

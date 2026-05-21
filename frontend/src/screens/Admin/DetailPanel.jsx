@@ -488,8 +488,8 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </div>
               </div>
 
-              {/* Counter offer — visible when in Submitted (admin can send one) or when one already exists */}
-              {(s.status === 'Submitted' || s.counter_offer_status) && (
+              {/* Counter offer — visible when in Visit Completed (admin can send one) or when one already exists */}
+              {(s.status === 'Visit Completed' || s.counter_offer_status) && (
                 <div className="admin-panel-section">
                   <div className="admin-panel-section-title">Counter Offer</div>
 
@@ -540,10 +540,10 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     </div>
                   )}
 
-                  {/* Input — only when status is Submitted AND no pending counter already out.
+                  {/* Input — only when status is Visit Completed AND no pending counter already out.
                       Gated on isStaff so viewers see the existing-offer card above but
                       can't send a new one. */}
-                  {isStaff && s.status === 'Submitted' && s.counter_offer_status !== 'pending' && (
+                  {isStaff && s.status === 'Visit Completed' && s.counter_offer_status !== 'pending' && (
                     <>
                       <div className="admin-panel-label">Send counter offer (in lakhs)</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -784,7 +784,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   viewers see read-only. */}
               <div className="admin-panel-section">
                 <div className="admin-panel-section-title">WhatsApp</div>
-                <WhatsAppThread submissionId={s.id} hideEmpty={false} canSend={isStaff} />
+                <WhatsAppThread submissionId={s.id} hideEmpty={false} canSend={isStaff} autoScroll={false} />
               </div>
 
               {/* Events */}
