@@ -523,6 +523,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     s.sqft, s.bhk,
                     s.asking_price, s.seller_name,
                     s.counter_offer_price, s.counter_offer_status,
+                    s.broker_counter_price,
                     s.status, s.submitted_at,
                     s.weak_match, s.collated_match, s.submissions_match,
                     s.deleted_at, s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,

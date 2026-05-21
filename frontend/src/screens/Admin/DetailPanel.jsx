@@ -516,6 +516,16 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       <div style={{ fontSize: 11, color: 'var(--oh-gray)' }}>
                         Sent {s.counter_offer_at ? formatDateTime(s.counter_offer_at) : '—'}
                       </div>
+                      {s.counter_offer_status === 'broker_countered' && s.broker_counter_price != null && (
+                        <div style={{ fontWeight: 600, marginTop: 6 }}>
+                          Broker countered: {formatPrice(s.broker_counter_price)}
+                          {s.broker_counter_at && (
+                            <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--oh-gray)', marginLeft: 6 }}>
+                              {formatDateTime(s.broker_counter_at)}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {s.counter_offer_response_text && (
                         <div
                           style={{

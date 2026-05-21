@@ -147,12 +147,17 @@ export default function BoardView({
 
               // Counter offer — shown on the card next to the asking price
               // whenever one has been sent. Colour mirrors the detail panel:
-              // amber pending / green accepted / red rejected.
+              // amber pending / green accepted / red rejected / indigo once
+              // the broker counters back. For a broker counter we surface the
+              // broker's price (broker_counter_price), not our own.
               const counterStatus = s.counter_offer_status || null;
+              const isBrokerCounter = counterStatus === 'broker_countered';
               const counterColor = counterStatus === 'pending' ? '#E8A838'
                 : counterStatus === 'accepted' ? '#10B981'
                   : counterStatus === 'rejected' ? '#DC2626'
                     : '#6366F1';
+              const counterLabel = isBrokerCounter ? 'Counter Offer' : `Counter · ${counterStatus}`;
+              const counterPrice = isBrokerCounter ? s.broker_counter_price : s.counter_offer_price;
 
               const towerUnit = s.tower && s.unit_no
                 ? `${s.tower}-${s.unit_no}`
@@ -284,9 +289,9 @@ export default function BoardView({
                     </div>
                     {counterStatus && (
                       <div>
-                        <div className="board-card-price-label">Counter · {counterStatus}</div>
+                        <div className="board-card-price-label">{counterLabel}</div>
                         <div className="board-card-price-value" style={{ color: counterColor }}>
-                          {formatPrice(s.counter_offer_price)}
+                          {formatPrice(counterPrice)}
                         </div>
                       </div>
                     )}
