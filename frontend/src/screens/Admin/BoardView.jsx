@@ -145,6 +145,15 @@ export default function BoardView({
                 acqValue = v;
               }
 
+              // Counter offer — shown on the card next to the asking price
+              // whenever one has been sent. Colour mirrors the detail panel:
+              // amber pending / green accepted / red rejected.
+              const counterStatus = s.counter_offer_status || null;
+              const counterColor = counterStatus === 'pending' ? '#E8A838'
+                : counterStatus === 'accepted' ? '#10B981'
+                  : counterStatus === 'rejected' ? '#DC2626'
+                    : '#6366F1';
+
               const towerUnit = s.tower && s.unit_no
                 ? `${s.tower}-${s.unit_no}`
                 : (s.tower || s.unit_no || null);
@@ -268,11 +277,19 @@ export default function BoardView({
 
                   <div className="board-card-divider" />
 
-                  <div className={`board-card-prices${acq ? '' : ' solo'}`}>
+                  <div className={`board-card-prices${acq || counterStatus ? '' : ' solo'}`}>
                     <div>
                       <div className="board-card-price-label">Asking</div>
                       <div className="board-card-price-value asking">{formatPrice(s.asking_price)}</div>
                     </div>
+                    {counterStatus && (
+                      <div>
+                        <div className="board-card-price-label">Counter · {counterStatus}</div>
+                        <div className="board-card-price-value" style={{ color: counterColor }}>
+                          {formatPrice(s.counter_offer_price)}
+                        </div>
+                      </div>
+                    )}
                     {acq && (
                       <div title={acq.tooltip}>
                         <div className="board-card-price-label">{acqLabel}</div>
