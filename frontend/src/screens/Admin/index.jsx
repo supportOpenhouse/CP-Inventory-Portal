@@ -456,9 +456,11 @@ export default function Admin() {
           <button
             className="export-btn"
             onClick={handleExport}
-            disabled={exporting || submissions.length === 0}
+            disabled={exporting || !counts.Total}
           >
-            {exporting ? 'Exporting…' : `Export ${submissions.length > 0 ? '(' + submissions.length + ')' : ''}`}
+            {/* Count reflects the full filtered result set (what the CSV
+                actually contains), not the lazily-loaded board cards. */}
+            {exporting ? 'Exporting…' : `Export ${counts.Total > 0 ? '(' + counts.Total + ')' : ''}`}
           </button>
         </div>
       </div>
