@@ -493,6 +493,16 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 <div className="admin-panel-section">
                   <div className="admin-panel-section-title">Counter Offer</div>
 
+                  {/* Negotiation tally — how many offers we sent vs how many
+                      times the CP countered back. Signals the CP's intent. */}
+                  {(s.counter_offers_sent > 0 || s.cp_counter_offers > 0) && (
+                    <div style={{ fontSize: 12, color: 'var(--oh-gray)', marginBottom: 10 }}>
+                      <strong style={{ color: 'var(--oh-charcoal)' }}>{s.counter_offers_sent || 0}</strong> sent
+                      {' · '}
+                      <strong style={{ color: 'var(--oh-charcoal)' }}>{s.cp_counter_offers || 0}</strong> countered by CP
+                    </div>
+                  )}
+
                   {/* Show current counter offer state if any */}
                   {s.counter_offer_status && (
                     <div

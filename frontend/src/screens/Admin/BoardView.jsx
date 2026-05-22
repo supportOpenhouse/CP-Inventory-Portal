@@ -293,6 +293,12 @@ export default function BoardView({
                         <div className="board-card-price-value" style={{ color: counterColor }}>
                           {formatPrice(counterPrice)}
                         </div>
+                        <div
+                          style={{ fontSize: 9.5, fontWeight: 600, color: '#999', marginTop: 3 }}
+                          title="Counter offers — sent by us · countered back by the CP"
+                        >
+                          Sent {s.counter_offers_sent || 0} · CP {s.cp_counter_offers || 0}
+                        </div>
                       </div>
                     )}
                     {acq && (

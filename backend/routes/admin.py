@@ -536,7 +536,8 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     listing_rm.name AS listing_rm_name,
                     acq.acq_price_lakhs, acq.acq_sqft,
                     tmr.submitted_stage_at, tmr.visit_completed_stage_at,
-                    tmr.moved_from_status
+                    tmr.moved_from_status,
+                    co.counter_offers_sent, co.cp_counter_offers
         """
     else:
         select_clause = """
@@ -557,7 +558,8 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     listing_rm.name AS listing_rm_name,
                     acq.acq_price_lakhs, acq.acq_sqft,
                     tmr.submitted_stage_at, tmr.visit_completed_stage_at,
-                    tmr.moved_from_status
+                    tmr.moved_from_status,
+                    co.counter_offers_sent, co.cp_counter_offers
         """
     conn = get_app_conn()
     try:
@@ -617,6 +619,20 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                          ORDER BY e.created_at DESC
                          LIMIT 1) AS moved_from_status
                 ) tmr ON TRUE
+                LEFT JOIN LATERAL (
+                    -- Counter-offer breakdown: how many counter offers we sent
+                    -- vs how many the CP countered back. A CP counter is the
+                    -- only counter_offer event whose actor is the submission's
+                    -- own CP (actor_cp_id = s.cp_id); ours carry a different
+                    -- (admin) cp_id or an rm actor, so actor_cp_id is DISTINCT.
+                    SELECT
+                        COUNT(*) FILTER (WHERE e.actor_cp_id IS DISTINCT FROM s.cp_id)
+                            AS counter_offers_sent,
+                        COUNT(*) FILTER (WHERE e.actor_cp_id = s.cp_id)
+                            AS cp_counter_offers
+                    FROM submission_events e
+                    WHERE e.submission_id = s.id AND e.kind = 'counter_offer'
+                ) co ON TRUE
                 WHERE TRUE {scope_sql}
             """
             params = list(scope_params)
@@ -793,7 +809,8 @@ def get_submission(sid: int):
                        rm.name AS assigned_rm_name,
                        listing_rm.name AS listing_rm_name,
                        acq.acq_price_lakhs, acq.acq_sqft,
-                       tmr.submitted_stage_at, tmr.visit_completed_stage_at
+                       tmr.submitted_stage_at, tmr.visit_completed_stage_at,
+                       co.counter_offers_sent, co.cp_counter_offers
                 FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
@@ -819,6 +836,16 @@ def get_submission(sid: int):
                         (SELECT MAX(e.created_at) FROM submission_events e
                          WHERE e.submission_id = s.id AND e.to_status = 'Visit Completed') AS visit_completed_stage_at
                 ) tmr ON TRUE
+                LEFT JOIN LATERAL (
+                    -- Counter-offer breakdown (see _list_submissions_core).
+                    SELECT
+                        COUNT(*) FILTER (WHERE e.actor_cp_id IS DISTINCT FROM s.cp_id)
+                            AS counter_offers_sent,
+                        COUNT(*) FILTER (WHERE e.actor_cp_id = s.cp_id)
+                            AS cp_counter_offers
+                    FROM submission_events e
+                    WHERE e.submission_id = s.id AND e.kind = 'counter_offer'
+                ) co ON TRUE
                 WHERE s.id = %s {scope_sql}
             """, [sid, *scope_params])
             submission = cur.fetchone()
