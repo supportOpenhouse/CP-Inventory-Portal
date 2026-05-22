@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS submissions (
     asking_price     BIGINT,
     seller_name      VARCHAR(200),
     seller_phone     VARCHAR(20),
-    status           VARCHAR(30) DEFAULT 'Submitted',
+    status           VARCHAR(30) DEFAULT 'Submitted',          -- one of the 7 board stages
+    real_status      VARCHAR(40),                              -- granular real-world stage (e.g. 'OH Rejected'); staff-only display. status above is its 7-stage projection. See migrations/2026-05-23-real-status.sql
     collated_match   BOOLEAN     DEFAULT FALSE NOT NULL,  -- partial match from external-scraper collated_data; admin UI highlights this in Unapproved queue
     submitted_at     TIMESTAMPTZ DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()

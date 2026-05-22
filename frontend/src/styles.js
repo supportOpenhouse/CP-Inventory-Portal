@@ -331,6 +331,10 @@ export const css = `
 
   .board-card-schedule { margin-top: 10px; padding: 6px 10px; background: #ECFDF5; border: 1px solid #6EE7B7; border-radius: 8px; font-size: 11px; font-weight: 600; color: #047857; line-height: 1.4; }
 
+  .board-card-realstatus { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 8px 3px 4px; background: #FBF7EC; border: 1px solid #E7DFC4; border-radius: 6px; }
+  .board-card-realstatus-tag { font-size: 8px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: #fff; background: #B8860B; padding: 2px 5px; border-radius: 4px; flex-shrink: 0; }
+  .board-card-realstatus-value { font-size: 11px; font-weight: 700; color: #7A5C0A; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
   .board-card-divider { margin-top: 12px; border-top: 1px solid #F0EEE9; }
   .board-card-prices { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 10px; row-gap: 6px; }
   .board-card-prices.solo { grid-template-columns: 1fr; }

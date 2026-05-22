@@ -7,6 +7,37 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-05-23] — Real status: granular stage preserved alongside the 7 board stages
+
+### Added
+- **Real status on the admin board card.** Each card now shows the
+  listing's true lifecycle stage (e.g. `OH Rejected`, `Negotiation`,
+  `Token Transferred`) as an "Actual" label right above the price
+  divider — but only when it differs from the card's board stage.
+  Staff-only: rendered on the admin board, and `real_status` is
+  returned only by the `/api/admin` routes, never by the CP-facing
+  `/api/submissions` routes.
+- **"Real Status" column in the CSV export**
+  (`GET /api/admin/submissions.csv`), placed right after "Status", so
+  the next round of status mapping has the granular values to work from.
+
+### Changed
+- **Bulk status clean-up — 1,717 submissions.** An admin-edited export
+  CSV was applied via the new
+  [`backend/import_status_update.py`](backend/import_status_update.py):
+  `submissions.status` corrected to one of the 7 board stages (963 rows
+  changed) and `submissions.real_status` set to the verbatim stage on
+  every row. 18 granular statuses were projected onto the 7 board
+  stages per an admin-supplied mapping (OH Rejected → Duplicate
+  Rejected, Negotiation → Offer Given, …). Silent update — no
+  `submission_events`, no notifications, reminder timers untouched.
+
+### Schema
+- **Migration** [`backend/migrations/2026-05-23-real-status.sql`](backend/migrations/2026-05-23-real-status.sql).
+  Adds `submissions.real_status VARCHAR(40)` — the granular real-world
+  stage; `status` stays the 7-stage projection the board, counts and
+  filters depend on.
+
 ## [2026-05-13] — Fix: role flips to/from viewer were rejected
 
 ### Fixed

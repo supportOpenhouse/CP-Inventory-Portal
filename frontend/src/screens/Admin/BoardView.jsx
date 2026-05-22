@@ -280,6 +280,19 @@ export default function BoardView({
                     </div>
                   )}
 
+                  {/* Real (granular) lifecycle stage — staff-only. Shown only
+                      when it differs from the projected board stage. The whole
+                      board is admin/manager/RM-only, so this never reaches CPs. */}
+                  {s.real_status && s.real_status !== s.status && (
+                    <div
+                      className="board-card-realstatus"
+                      title="Actual stage — staff only, not shown to CPs"
+                    >
+                      <span className="board-card-realstatus-tag">Actual</span>
+                      <span className="board-card-realstatus-value">{s.real_status}</span>
+                    </div>
+                  )}
+
                   <div className="board-card-divider" />
 
                   <div className={`board-card-prices${acq || counterStatus ? '' : ' solo'}`}>
