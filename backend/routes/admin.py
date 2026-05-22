@@ -368,6 +368,132 @@ def _sync_visit_completed_from_properties() -> int:
         return 0
 
 
+def _sync_status_from_cp_inventory() -> int:
+    """Sync submission status from the Properties DB `cp_inventory_status` table.
+
+    `cp_inventory_status` lives alongside `properties` in the Properties DB and
+    is auto-populated by the Forms app. Each row carries a `cp_id` (which holds
+    a submission's public_id), a `valid_cp_id` flag, and an auto-filled
+    `cp_status`.
+
+    Logic:
+      1. Find non-terminal submissions with public_id set, not deleted.
+      2. Look up cp_inventory_status rows where valid_cp_id = TRUE, cp_status is
+         non-empty, and cp_id matches one of those public_ids.
+      3. For each match whose cp_status is a recognised pipeline stage and
+         differs from the current status, UPDATE submissions.status and seed a
+         'status_change' submission_event so the timeline, reminder timers and
+         activity log all stay consistent.
+
+    Terminal cards (Price Rejected / Duplicate Rejected) are skipped — a
+    rejection is a final human decision the sync must not override.
+
+    Idempotent (only rows whose cp_status differs are touched). Read-only on
+    the Properties DB. Best-effort: any error is swallowed and logged so the
+    calling list endpoint still returns successfully.
+
+    Returns: count of submissions updated in this call.
+    """
+    if not properties_configured():
+        return 0
+    try:
+        # 1. Candidate submissions — non-terminal, identifiable, live.
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, public_id, status FROM submissions
+                    WHERE public_id IS NOT NULL
+                      AND deleted_at IS NULL
+                      AND status NOT IN ('Price Rejected', 'Duplicate Rejected')
+                """)
+                candidates = cur.fetchall()
+        finally:
+            put_app_conn(conn)
+
+        if not candidates:
+            return 0
+
+        id_by_pubid = {c["public_id"]: c["id"] for c in candidates}
+        status_by_pubid = {c["public_id"]: c["status"] for c in candidates}
+
+        # 2. Properties DB — validated cp_inventory_status rows for those ids.
+        pconn = get_props_conn()
+        try:
+            with pconn.cursor() as cur:
+                cur.execute("""
+                    SELECT cp_id, cp_status
+                    FROM cp_inventory_status
+                    WHERE valid_cp_id = TRUE
+                      AND cp_status <> ''
+                      AND cp_id = ANY(%s)
+                """, (list(id_by_pubid.keys()),))
+                rows = cur.fetchall()
+        finally:
+            put_props_conn(pconn)
+
+        if not rows:
+            return 0
+
+        # 3. Keep only rows that need a real, valid status change.
+        to_update = []  # list of (submission_id, old_status, new_status)
+        for r in rows:
+            pubid = r["cp_id"]
+            new_status = (r["cp_status"] or "").strip()
+            old_status = status_by_pubid.get(pubid)
+            if old_status is None:
+                continue
+            if new_status not in VALID_STAGES:
+                log.warning(
+                    "[sync_cp_status] public_id=%s — ignoring unrecognised "
+                    "cp_status=%r", pubid, new_status,
+                )
+                continue
+            if new_status == old_status:
+                continue
+            to_update.append((id_by_pubid[pubid], old_status, new_status))
+
+        if not to_update:
+            return 0
+
+        # 4. Apply each change + seed a status_change event.
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                updated = 0
+                for sub_id, old_status, new_status in to_update:
+                    # Re-assert old_status in the WHERE so a status changed by
+                    # someone else between step 1 and now isn't clobbered (this
+                    # also keeps terminal cards skipped — old_status is never
+                    # terminal here).
+                    cur.execute("""
+                        UPDATE submissions SET status = %s
+                        WHERE id = %s AND status = %s
+                    """, (new_status, sub_id, old_status))
+                    if cur.rowcount == 0:
+                        continue
+                    cur.execute("""
+                        INSERT INTO submission_events
+                            (submission_id, actor_cp_id, kind, from_status, to_status, text)
+                        VALUES (%s, NULL, 'status_change', %s, %s, %s)
+                    """, (
+                        sub_id, old_status, new_status,
+                        "Status synced from cp_inventory_status.",
+                    ))
+                    updated += 1
+                conn.commit()
+        finally:
+            put_app_conn(conn)
+
+        if updated:
+            log.info("[sync_cp_status] updated %d submissions", updated)
+        return updated
+    except Exception:
+        # Best-effort: never break the admin list because of a sync hiccup.
+        log.exception("[sync_cp_status] failed; admin list will continue uninterrupted")
+        return 0
+
+
 def _sync_unit_details_from_properties() -> int:
     """Overwrite tower / unit_no / floor on submissions from the Forms-app
     properties table. Field execs sometimes register the actual unit
@@ -761,6 +887,11 @@ def list_submissions():
     # forms_uid — field execs register the actual unit details on-site and
     # properties is the authoritative source after a visit. Always overwrites.
     _sync_unit_details_from_properties()
+    # Sync submission status from the Forms-app cp_inventory_status table:
+    # valid_cp_id rows whose cp_id matches our public_id push their cp_status
+    # onto submissions.status. Runs last so the cp_status table has final say.
+    # Best-effort; skips terminal (rejected) cards.
+    _sync_status_from_cp_inventory()
 
     # Pagination: default 15 per stage, capped at 500 for safety. Frontend
     # passes `offset` only when paginating a single stage (status filter is
