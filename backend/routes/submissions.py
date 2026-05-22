@@ -79,8 +79,23 @@ def list_my_submissions():
                            AS submitted_stage_at,
                        (SELECT MAX(e.created_at) FROM submission_events e
                         WHERE e.submission_id = s.id AND e.to_status = 'Visit Completed')
-                           AS visit_completed_stage_at
+                           AS visit_completed_stage_at,
+                       co.counter_offers_sent, co.cp_counter_offers
                 FROM submissions s
+                LEFT JOIN LATERAL (
+                    -- Counter-offer breakdown: how many counter offers we sent
+                    -- vs how many the CP countered back. A CP counter is the
+                    -- only counter_offer event whose actor is the submission's
+                    -- own CP (actor_cp_id = s.cp_id); ours carry a different
+                    -- (admin) cp_id or an rm actor, so actor_cp_id is DISTINCT.
+                    SELECT
+                        COUNT(*) FILTER (WHERE e.actor_cp_id IS DISTINCT FROM s.cp_id)
+                            AS counter_offers_sent,
+                        COUNT(*) FILTER (WHERE e.actor_cp_id = s.cp_id)
+                            AS cp_counter_offers
+                    FROM submission_events e
+                    WHERE e.submission_id = s.id AND e.kind = 'counter_offer'
+                ) co ON TRUE
                 WHERE s.cp_id = %s
                 ORDER BY s.submitted_at DESC
                 LIMIT 100
