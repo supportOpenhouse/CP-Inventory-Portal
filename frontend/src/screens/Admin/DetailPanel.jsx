@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../api';
-import { formatDateTime, formatDateOnly, formatTime12, formatPrice, formatAcqPrice, STAGES, todayInIST } from '../../format';
+import {
+  formatDateTime, formatDateOnly, formatTime12, formatPrice, formatAcqPrice,
+  STAGES, AUTO_ONLY_STAGES, REJECTED_REASONS, todayInIST,
+} from '../../format';
 import { getUser } from '../../auth';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
@@ -31,6 +34,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   const [busy, setBusy] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
+  // 'Rejected' picked in the parent dropdown but reason not yet chosen —
+  // shows the reason sub-dropdown without persisting the status change yet.
+  const [pendingRejected, setPendingRejected] = useState(false);
   const [rms, setRms] = useState([]);
   const [uploadingPct, setUploadingPct] = useState(null);
   // Counter offer inputs
@@ -95,11 +101,13 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
     prevEventCount.current = count;
   }, [data?.events?.length]);
 
-  const handleStatusChange = async (newStatus) => {
-    if (!data || busy || newStatus === data.submission.status) return;
+  const handleStatusChange = async (newStatus, newReason = null) => {
+    if (!data || busy) return;
+    const cur = data.submission;
+    if (newStatus === cur.status && (newReason || null) === (cur.status_reason || null)) return;
     setBusy(true);
     try {
-      await api.adminChangeStatus(submissionId, newStatus);
+      await api.adminChangeStatus(submissionId, newStatus, newReason);
       await load();
       onChanged?.();
     } catch (err) {
@@ -384,41 +392,83 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 );
               })()}
 
-              {/* Status — selectable for staff, read-only label for viewers. */}
+              {/* Status — selectable for staff, read-only label for viewers.
+                  Restrictions:
+                    - Visit Scheduled / Visit Completed / Offer Given are
+                      AUTO_ONLY: never offered as manual destinations, and
+                      when the row is already in one of them the dropdown is
+                      hidden (transitions out happen via dedicated flows).
+                    - Picking 'Rejected' reveals a second dropdown of 8
+                      sub-reasons (status_reason) — submission only fires
+                      once both are set. */}
               <div className="admin-panel-section">
                 <div className="admin-panel-label">Status</div>
-                {isStaff ? (
-                  <select
-                    className="status-select"
-                    value={s.status}
-                    onChange={(e) => handleStatusChange(e.target.value)}
-                    disabled={busy}
-                  >
-                    {STAGES.map((st) => (
-                      // Visit Completed is set automatically when the visit form is
-                      // submitted (sync_visit_completed in backend/routes/admin.py).
-                      // Keep it visible so already-completed rows still display, but
-                      // block manual selection unless it's already the current value.
-                      <option
-                        key={st.key}
-                        value={st.key}
-                        disabled={st.key === 'Visit Completed' && s.status !== 'Visit Completed'}
+                {isStaff && !AUTO_ONLY_STAGES.has(s.status) ? (
+                  <>
+                    <select
+                      className="status-select"
+                      value={pendingRejected ? 'Rejected' : s.status}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === 'Rejected') {
+                          // Show the reason sub-dropdown; don't persist yet.
+                          // If the row is already Rejected, reuse existing reason.
+                          setPendingRejected(true);
+                          return;
+                        }
+                        setPendingRejected(false);
+                        handleStatusChange(v, null);
+                      }}
+                      disabled={busy}
+                    >
+                      {STAGES.map((st) => (
+                        <option
+                          key={st.key}
+                          value={st.key}
+                          disabled={AUTO_ONLY_STAGES.has(st.key)}
+                        >
+                          {st.key}{AUTO_ONLY_STAGES.has(st.key) ? ' (auto)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {(s.status === 'Rejected' || pendingRejected) && (
+                      <select
+                        className="status-select"
+                        style={{ marginTop: 6 }}
+                        value={s.status_reason || ''}
+                        onChange={(e) => {
+                          const reason = e.target.value || null;
+                          setPendingRejected(false);
+                          if (reason) handleStatusChange('Rejected', reason);
+                        }}
+                        disabled={busy}
                       >
-                        {st.key}
-                      </option>
-                    ))}
-                  </select>
+                        <option value="" disabled>Select reason…</option>
+                        {REJECTED_REASONS.map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    )}
+                  </>
                 ) : (
-                  <div className="admin-panel-val" style={{ fontWeight: 500 }}>{s.status}</div>
+                  <div className="admin-panel-val" style={{ fontWeight: 500 }}>
+                    {s.status}{s.status_reason ? ` (${s.status_reason})` : ''}
+                    {AUTO_ONLY_STAGES.has(s.status) && (
+                      <div style={{ fontSize: 11, color: '#888', fontWeight: 400, marginTop: 2 }}>
+                        Set automatically — not manually changeable from here.
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {/* Schedule Visit — only when status is 'Visit Scheduled'.
-                  Shows current schedule info if forms_uid is set, or
-                  the Schedule Visit button if not. Viewers only ever see
-                  the info pill (already-scheduled state); the un-scheduled
-                  branch with the action button is hidden from them. */}
-              {s.status === 'Visit Scheduled' && (s.forms_uid || isStaff) && (
+              {/* Schedule Visit — admin clicks this on a 'Submitted' row.
+                  Successful scheduling auto-promotes status to 'Visit Scheduled'
+                  (handled server-side). For rows already in 'Visit Scheduled'
+                  the section shows the existing schedule pill so admins can
+                  see/reschedule. Viewers see only the info pill. */}
+              {(s.status === 'Submitted' || s.status === 'Visit Scheduled')
+                && (s.forms_uid || isStaff) && (
                 <ScheduleVisitSection
                   submission={s}
                   onScheduled={(result) => {
@@ -432,6 +482,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                         scheduled_date: result.scheduled_date,
                         scheduled_time: result.scheduled_time,
                         field_exec_name: result.field_exec_name,
+                        // Server auto-promotes Submitted → Visit Scheduled.
+                        status: result.status_promoted ? 'Visit Scheduled' : prev.submission.status,
+                        status_reason: result.status_promoted ? null : prev.submission.status_reason,
                       },
                     } : prev);
                     onChanged?.();

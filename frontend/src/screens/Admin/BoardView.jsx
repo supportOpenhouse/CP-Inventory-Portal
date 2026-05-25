@@ -72,7 +72,7 @@ export default function BoardView({
     <div className="admin-board">
       {visibleStages.map((stage) => {
         const colSubs = submissions.filter((s) => s.status === stage.key);
-        const isRejectedCol = stage.key === 'Price Rejected' || stage.key === 'Duplicate Rejected';
+        const isRejectedCol = stage.key === 'Price Rejected' || stage.key === 'Rejected';
         return (
           <div
             className={`board-column ${isRejectedCol ? 'is-rejected' : ''}`}
@@ -280,16 +280,16 @@ export default function BoardView({
                     </div>
                   )}
 
-                  {/* Real (granular) lifecycle stage — staff-only. Shown only
-                      when it differs from the projected board stage. The whole
-                      board is admin/manager/RM-only, so this never reaches CPs. */}
-                  {s.real_status && s.real_status !== s.status && (
+                  {/* Status sub-category (status_reason) — staff-only. Today
+                      only populated for status='Rejected'; shown as a chip
+                      reading "<Status> (<reason>)" e.g. "Rejected (OH Rejected)". */}
+                  {s.status_reason && (
                     <div
                       className="board-card-realstatus"
-                      title="Actual stage — staff only, not shown to CPs"
+                      title="Sub-category — staff only, not shown to CPs"
                     >
-                      <span className="board-card-realstatus-tag">Actual</span>
-                      <span className="board-card-realstatus-value">{s.real_status}</span>
+                      <span className="board-card-realstatus-tag">{s.status}</span>
+                      <span className="board-card-realstatus-value">({s.status_reason})</span>
                     </div>
                   )}
 

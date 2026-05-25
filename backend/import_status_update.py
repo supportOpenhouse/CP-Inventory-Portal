@@ -2,7 +2,7 @@
 
 Context
 -------
-The portal recognises only 7 board stages (VALID_STAGES below). The admin
+The portal recognises 7 board stages (VALID_STAGES below). The admin
 exported every listing via the "Export" button and hand-corrected the
 Status column to each listing's REAL lifecycle stage. Many corrected
 values are finer-grained than the board supports (OH Rejected,
@@ -10,18 +10,19 @@ Negotiation, Token Transferred, Hold, Followup, ...).
 
 This script writes two columns per matched row:
 
-    submissions.status       <- Status projected onto the 7 board stages
-                                (so the board / counts / filters keep working)
-    submissions.real_status  <- Status verbatim (granular, staff-only;
-                                shown on the admin board card)
+    submissions.status         <- one of the 7 board stages
+    submissions.status_reason  <- the granular sub-category when applicable
+                                  (today only populated for status='Rejected')
 
 Matching key : Internal ID  ==  submissions.id  (present on every CSV row).
 Update style : SILENT — no submission_events, no WhatsApp/email, reminder
                timers untouched. Idempotent — safe to re-run.
 
-The status -> stage mapping for the 18 non-board statuses was supplied by
-the admin on 2026-05-23. The script ABORTS if the CSV contains any status
-it has no mapping for — it never guesses.
+The status -> (stage, reason) mapping for the 18 non-board statuses was
+supplied by the admin on 2026-05-23 and revised on 2026-05-25 when the
+'Duplicate Rejected' stage was renamed to 'Rejected' and status_reason was
+introduced. The script ABORTS if the CSV contains any status it has no
+mapping for — it never guesses.
 
 Usage
 -----
@@ -39,8 +40,7 @@ from collections import Counter
 from db import get_app_conn, init_pools, put_app_conn
 
 
-# The 7 board stages the portal supports. A Status already equal to one of
-# these is kept unchanged (identity mapping).
+# The 7 board stages the portal supports.
 VALID_STAGES = {
     "Unapproved",
     "Submitted",
@@ -48,39 +48,61 @@ VALID_STAGES = {
     "Visit Completed",
     "Offer Given",
     "Price Rejected",
-    "Duplicate Rejected",
+    "Rejected",
 }
 
-# Granular CSV statuses -> board stage. Supplied by the admin on 2026-05-23.
-# Every non-VALID_STAGES value in the CSV MUST appear here, or the script
-# aborts before touching the database.
+# CSV Status -> (board stage, status_reason).
+#
+# Identity entries (CSV value already equals a board stage) keep
+# status_reason=None. Granular CSV values either:
+#   - project onto 'Rejected' with status_reason=verbatim (the 8 rejection
+#     sub-reasons the admin maintains in the UI dropdown), or
+#   - project onto another board stage with status_reason=None (per the
+#     2026-05-25 decision to ignore non-rejection granular reasons for now).
+#
+# 'Future Prospect' is the one historical Duplicate-Rejected value that is
+# NOT in the new 8-reason dropdown — we still send it to 'Rejected' but
+# leave status_reason NULL for admin clean-up.
 NEW_STATUS_MAP = {
-    "OH Rejected":           "Duplicate Rejected",
-    "Negotiation":           "Offer Given",
-    "Price High":            "Price Rejected",
-    "Hold":                  "Duplicate Rejected",
-    "Seller Rejected":       "Duplicate Rejected",
-    "Dead - Sold":           "Duplicate Rejected",
-    "Followup":              "Offer Given",
-    "Future Prospect":       "Duplicate Rejected",
-    "New":                   "Submitted",
-    "Dead - Not Interested": "Duplicate Rejected",
-    "Duplicacy":             "Duplicate Rejected",
-    "Key Handover":          "Offer Given",
-    "Token Transferred":     "Offer Given",
-    "Listed":                "Offer Given",
-    "Dead - Legal":          "Duplicate Rejected",
-    "AMA Signed":            "Offer Given",
-    "AMA Req":               "Offer Given",
-    "Cancelled Post Token":  "Offer Given",
+    # Identity (board stages)
+    "Unapproved":            ("Unapproved",      None),
+    "Submitted":             ("Submitted",       None),
+    "Visit Scheduled":       ("Visit Scheduled", None),
+    "Visit Completed":       ("Visit Completed", None),
+    "Offer Given":           ("Offer Given",     None),
+    "Price Rejected":        ("Price Rejected",  None),
+    "Rejected":              ("Rejected",        None),
+
+    # Rejection sub-reasons -> 'Rejected' + status_reason
+    "OH Rejected":           ("Rejected", "OH Rejected"),
+    "Hold":                  ("Rejected", "Hold"),
+    "Seller Rejected":       ("Rejected", "Seller Rejected"),
+    "Dead - Sold":           ("Rejected", "Dead - Sold"),
+    "Dead - Not Interested": ("Rejected", "Dead - Not Interested"),
+    "Dead - Legal":          ("Rejected", "Dead - Legal"),
+    "Duplicacy":             ("Rejected", "Duplicacy"),
+    "Cancelled Post Token":  ("Rejected", "Cancelled Post Token"),
+
+    # Historical reject value that lacks a dropdown counterpart — admin
+    # will re-categorise later.
+    "Future Prospect":       ("Rejected", None),
+
+    # Non-rejection granular values: keep current projection, no reason.
+    "Negotiation":           ("Offer Given",     None),
+    "Followup":              ("Offer Given",     None),
+    "Key Handover":          ("Offer Given",     None),
+    "Token Transferred":     ("Offer Given",     None),
+    "Listed":                ("Offer Given",     None),
+    "AMA Signed":            ("Offer Given",     None),
+    "AMA Req":               ("Offer Given",     None),
+    "Price High":            ("Price Rejected",  None),
+    "New":                   ("Submitted",       None),
 }
 
 
-def project(real_status: str) -> str:
-    """Return the board stage a CSV Status value projects onto."""
-    if real_status in VALID_STAGES:
-        return real_status
-    return NEW_STATUS_MAP[real_status]
+def project(csv_status: str) -> tuple[str, str | None]:
+    """Return (board stage, status_reason) for a CSV Status value."""
+    return NEW_STATUS_MAP[csv_status]
 
 
 def read_csv(path: str) -> list[tuple[int, str]]:
@@ -113,10 +135,8 @@ def read_csv(path: str) -> list[tuple[int, str]]:
 
 
 def validate_mapping(rows: list[tuple[int, str]]) -> None:
-    """Abort if any CSV status has neither an identity nor an explicit mapping."""
-    unknown = sorted(
-        {s for _, s in rows if s not in VALID_STAGES and s not in NEW_STATUS_MAP}
-    )
+    """Abort if any CSV status has no explicit mapping."""
+    unknown = sorted({s for _, s in rows if s not in NEW_STATUS_MAP})
     if unknown:
         print("ABORT: the CSV contains status values with no mapping:")
         for u in unknown:
@@ -127,19 +147,22 @@ def validate_mapping(rows: list[tuple[int, str]]) -> None:
 
 def run(conn, rows: list[tuple[int, str]], dry_run: bool) -> None:
     ids = [iid for iid, _ in rows]
-    real_by_id = {iid: status for iid, status in rows}
+    raw_by_id = {iid: status for iid, status in rows}
 
     with conn.cursor() as cur:
         cur.execute("""
             SELECT 1 FROM information_schema.columns
-            WHERE table_name = 'submissions' AND column_name = 'real_status'
+            WHERE table_name = 'submissions' AND column_name = 'status_reason'
         """)
-        has_col = cur.fetchone() is not None
+        if cur.fetchone() is None:
+            sys.exit(
+                "ABORT: submissions.status_reason does not exist. Run "
+                "migrations/2026-05-25-status-reason-and-rename-rejected.sql first."
+            )
 
-        extra = ", real_status" if has_col else ""
         cur.execute(
-            f"SELECT id, status, deleted_at, withdraw_reason{extra} "
-            f"FROM submissions WHERE id = ANY(%s)",
+            "SELECT id, status, status_reason, deleted_at, withdraw_reason "
+            "FROM submissions WHERE id = ANY(%s)",
             (ids,),
         )
         db_rows = {r["id"]: r for r in cur.fetchall()}
@@ -147,23 +170,25 @@ def run(conn, rows: list[tuple[int, str]], dry_run: bool) -> None:
     found = [iid for iid in ids if iid in db_rows]
     missing = [iid for iid in ids if iid not in db_rows]
 
-    status_changes: Counter = Counter()   # (old_stage -> new_stage)
+    status_changes: Counter = Counter()   # (old_stage, new_stage)
     status_same = 0
     deleted_hits: list[tuple[int, str]] = []
-    plan: list[tuple[int, str, str, str]] = []  # (id, old_status, new_status, real)
+    plan: list[tuple[int, str, str | None, str, str | None, str]] = []
+    # plan rows: (id, new_status, new_reason, old_status, old_reason, raw)
 
     for iid in found:
         db = db_rows[iid]
-        real = real_by_id[iid]
-        new_status = project(real)
+        raw = raw_by_id[iid]
+        new_status, new_reason = project(raw)
         old_status = db["status"]
+        old_reason = db.get("status_reason")
         if db.get("deleted_at") is not None:
             deleted_hits.append((iid, db.get("withdraw_reason")))
         if old_status != new_status:
             status_changes[(old_status, new_status)] += 1
         else:
             status_same += 1
-        plan.append((iid, old_status, new_status, real))
+        plan.append((iid, new_status, new_reason, old_status, old_reason, raw))
 
     # ---------------- report ----------------
     print()
@@ -189,12 +214,12 @@ def run(conn, rows: list[tuple[int, str]], dry_run: bool) -> None:
             print(f"      {n:5d}   {(old or '(none)'):<22} ->  {new}")
 
     print()
-    print(f"  submissions.real_status — set on .... {len(found)} matched rows")
-    print("  real_status  ->  board stage  (× rows):")
-    rs: Counter = Counter((real, new) for (_, _, new, real) in plan)
-    for (real, new), n in sorted(rs.items(), key=lambda x: -x[1]):
-        tag = "" if real in VALID_STAGES else "   [mapped]"
-        print(f"      {n:5d}   {real:<24} ->  {new}{tag}")
+    print(f"  submissions.status_reason — written on .... {sum(1 for p in plan if p[2])} matched rows")
+    print("  raw CSV value  ->  status (status_reason)  (× rows):")
+    rs: Counter = Counter((raw, new_status, new_reason) for (_, new_status, new_reason, _, _, raw) in plan)
+    for (raw, new_status, new_reason), n in sorted(rs.items(), key=lambda x: -x[1]):
+        reason_str = f" / reason={new_reason}" if new_reason else ""
+        print(f"      {n:5d}   {raw:<24} ->  {new_status}{reason_str}")
 
     if dry_run:
         print()
@@ -204,20 +229,15 @@ def run(conn, rows: list[tuple[int, str]], dry_run: bool) -> None:
         return
 
     # ---------------- apply ----------------
-    to_update: list[tuple[str, str, int]] = []  # (new_status, real, id)
-    for iid, old_status, new_status, real in plan:
-        cur_real = db_rows[iid].get("real_status") if has_col else None
-        if old_status == new_status and cur_real == real:
+    to_update: list[tuple[str, str | None, int]] = []  # (new_status, new_reason, id)
+    for iid, new_status, new_reason, old_status, old_reason, _ in plan:
+        if old_status == new_status and old_reason == new_reason:
             continue  # already correct — skip (idempotent re-run)
-        to_update.append((new_status, real, iid))
+        to_update.append((new_status, new_reason, iid))
 
     with conn.cursor() as cur:
-        # Additive, instant, idempotent — safe even if the migration already ran.
-        cur.execute(
-            "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS real_status VARCHAR(40)"
-        )
         cur.executemany(
-            "UPDATE submissions SET status = %s, real_status = %s WHERE id = %s",
+            "UPDATE submissions SET status = %s, status_reason = %s WHERE id = %s",
             to_update,
         )
     conn.commit()

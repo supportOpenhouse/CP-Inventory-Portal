@@ -117,8 +117,11 @@ export const api = {
   adminListSubmissions: (filters = {}) =>
     request(`/admin/submissions${buildQuery(filters)}`),
   adminGetSubmission: (id) => request(`/admin/submissions/${id}`),
-  adminChangeStatus: (id, status) =>
-    request(`/admin/submissions/${id}/status`, { method: 'POST', body: { status } }),
+  adminChangeStatus: (id, status, statusReason = null) =>
+    request(`/admin/submissions/${id}/status`, {
+      method: 'POST',
+      body: statusReason == null ? { status } : { status, status_reason: statusReason },
+    }),
   adminAddComment: (id, text) =>
     request(`/admin/submissions/${id}/comment`, { method: 'POST', body: { text } }),
   adminUpdateSubmission: (id, fields) =>

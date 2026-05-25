@@ -4,7 +4,7 @@ Matching sources for an EXACT (perfect-match) block — only these two
 count, because they're the only sources with tower/unit columns:
   1. properties (ground truth from LSQ + legacy — in Properties DB)
   2. submissions (active CP portal submissions — in app DB,
-     status NOT IN ('Price Rejected', 'Duplicate Rejected', 'Unapproved'))
+     status NOT IN ('Price Rejected', 'Rejected', 'Unapproved'))
 
 A third source, collated_data (external scrapers like 99acres), has no
 tower/unit columns so it can match at most at society+bhk+floor. It is
@@ -19,7 +19,7 @@ Matching fields:
 Decision table:
   CP inputs                                     Match found?        Result
   ────────────────────────────────────────────  ─────────────────   ─────────────────────────────
-  society+bhk+floor+tower+unit                  full exact match    EXACT block (Duplicate Rejected)
+  society+bhk+floor+tower+unit                  full exact match    EXACT block (Rejected, reason='Duplicacy')
   society+bhk+floor+tower+unit                  soc+bhk+floor only  PARTIAL (informational, no block)
   society+bhk+floor+tower (no unit)             any match           PARTIAL (informational, no block)
   society+bhk+floor+unit (no tower)             any match           PARTIAL (informational, no block)
@@ -29,7 +29,7 @@ Decision table:
 EXACT match (match_level='exact', block=True) requires the CP to supply
 BOTH tower AND unit_no AND for a matching row in properties or submissions
 to share society+bhk+floor+tower+unit. This is the only path that drives
-"Duplicate Rejected" status downstream. If either tower or unit_no is
+"Rejected" status (with status_reason='Duplicacy') downstream. If either tower or unit_no is
 missing on the CP side — or the inventory has only a coarser match — the
 result is reported as 'partial': the dup signal is surfaced (collated_match
 / submissions_match flags, banner copy) but block=False so callers route
@@ -40,7 +40,7 @@ BHK is normalized by stripping "BHK" and matching digits only:
 Properties DB stores config as "2 BHK" etc; submissions stores bhk as "2 BHK" etc.
 We normalize both sides.
 
-Submissions with status 'Price Rejected' or 'Duplicate Rejected' are ignored
+Submissions with status 'Price Rejected' or 'Rejected' are ignored
 (freed up for other CPs).
 
 If the properties DB isn't configured, only that source is skipped — the
@@ -138,8 +138,8 @@ def _no_match():
     }
 
 
-# Statuses that still occupy a unit in inventory. The 3 reject statuses
-# (Price Rejected, Duplicate Rejected) and Unapproved free it up. Visit Completed
+# Statuses that still occupy a unit in inventory. The 2 reject statuses
+# (Price Rejected, Rejected) and Unapproved free it up. Visit Completed
 # means a CP has gotten this far through the pipeline — the unit is committed.
 _ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Offer Given", "Visit Scheduled", "Visit Completed")
 
@@ -337,7 +337,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     def _exact(submissions_match: bool):
         """Build an exact-match response: a full 5-field hit, hard block.
 
-        This is the only result that drives Duplicate Rejected downstream.
+        This is the only result that drives 'Rejected' (status_reason='Duplicacy') downstream.
         `submissions_match` records whether the hit came from the submissions
         table (True) or the properties table (False).
         """
@@ -359,7 +359,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     # ---------- EXACT BLOCK: requires CP to supply BOTH tower AND unit ----------
     # Only a full 5-field match (society+bhk+floor+tower+unit) qualifies as an
     # exact/perfect match. Anything coarser falls through to the partial path.
-    # Exact is the only result that drives Duplicate Rejected.
+    # Exact is the only result that drives 'Rejected' (status_reason='Duplicacy').
     #
     # The two sources are checked independently: properties only when the
     # optional properties DB is configured, submissions always (app DB) —

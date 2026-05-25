@@ -194,7 +194,7 @@ export default function TableView({
           {(sorted && sorted.length > 0 ? sorted : submissions).map((s) => {
             const stage = stageMeta(s.status);
             const isWeakMatch = s.weak_match === true;
-            const isRejected = s.status === 'Price Rejected' || s.status === 'Duplicate Rejected';
+            const isRejected = s.status === 'Price Rejected' || s.status === 'Rejected';
             const isChecked = selectedIds.has(s.id);
             const isCollatedPartial = s.status === 'Unapproved' && s.collated_match === true;
             const isSubmissionsPartial = s.status === 'Unapproved' && s.submissions_match === true;
@@ -319,7 +319,7 @@ export default function TableView({
                     className={`status-pill ${isRejected ? 'is-rejected' : ''}`}
                     style={{ background: stage.bg, color: stage.color }}
                   >
-                    {s.status}
+                    {s.status}{s.status_reason ? ` (${s.status_reason})` : ''}
                   </span>
                   {isCollatedPartial && (
                     <span

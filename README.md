@@ -28,15 +28,25 @@ approve or reject deals.
 ```
 Unapproved → Submitted → Visit Scheduled → Visit Completed (terminal: green)
                        ↘ Offer Given
-                       ↘ Price Rejected | Duplicate Rejected (terminal: red)
+                       ↘ Price Rejected | Rejected (terminal: red)
 ```
 
-Removed in May 2026 simplification: `Evaluation`, `Closed`, `Rejected`. Status is a
-plain VARCHAR with no DB CHECK constraint — adding/removing stages is a code change
-plus an UPDATE migration for existing rows.
+`Visit Scheduled` / `Visit Completed` / `Offer Given` are **auto-only** — they're
+set by dedicated flows (Schedule Visit button auto-promotes from Submitted, the
+visit-completion cron, the counter-offer endpoint). The status dropdown in the
+admin detail panel hides these as destinations and is disabled entirely while a
+row is in one of them.
+
+`Rejected` (renamed from `Duplicate Rejected` on 2026-05-25) carries an optional
+`status_reason` (one of: Cancelled Post Token, Dead - Legal, Dead - Not Interested,
+Dead - Sold, Duplicacy, Hold, OH Rejected, Seller Rejected). Staff-only — shown
+on the admin board card as `Rejected (<reason>)`.
+
+Status is a plain VARCHAR with no DB CHECK constraint — adding/removing stages
+is a code change plus an UPDATE migration for existing rows.
 
 **Display order** (left-to-right in the admin board stat cards / kanban columns):
-`All → Unapproved → Submitted → Visit Scheduled → Visit Completed → Offer Given → Price Rejected → Duplicate Rejected`. This is configured in [`frontend/src/format.js`](frontend/src/format.js) `STAGES`; the underlying status values themselves don't change.
+`All → Unapproved → Submitted → Visit Scheduled → Visit Completed → Offer Given → Price Rejected → Rejected`. This is configured in [`frontend/src/format.js`](frontend/src/format.js) `STAGES`.
 
 ### Auto-sync Visit Completed from `properties`
 

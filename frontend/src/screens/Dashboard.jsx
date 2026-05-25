@@ -10,7 +10,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import AgingStrip from '../components/AgingStrip';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
-// Note: 'Price Rejected' / 'Duplicate Rejected' are intentionally NOT in the filter row
+// Note: 'Price Rejected' / 'Rejected' are intentionally NOT in the filter row
 //       (still visible under 'All').
 const FILTER_BOXES = [
   { key: 'All',             label: 'All',            color: '#6366F1' },
@@ -29,7 +29,7 @@ function badgeClass(s) {
   if (status === 'Unapproved') return 'badge';
   if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Visit Completed' || status === 'Visit Scheduled') return 'badge badge-closed';
-  if (status === 'Price Rejected' || status === 'Duplicate Rejected') return 'badge badge-rejected';
+  if (status === 'Price Rejected' || status === 'Rejected') return 'badge badge-rejected';
   return 'badge badge-submitted';
 }
 
@@ -115,7 +115,7 @@ export default function Dashboard({ onAdd }) {
   // 'Submitted' filter (counter offer banner still appears on the card itself).
   // Once the CP accepts, status moves to Offer Given and so does the synthetic.
   const syntheticStatus = (s) => {
-    // Note: perfect_match_at_submit rows have status='Duplicate Rejected'
+    // Note: perfect_match_at_submit rows have status='Rejected'
     // directly (since the May 2026 migration), so no special remap is needed —
     // they naturally land outside the Pending Review tile.
     if (s.counter_offer_status === 'pending') return 'Submitted';

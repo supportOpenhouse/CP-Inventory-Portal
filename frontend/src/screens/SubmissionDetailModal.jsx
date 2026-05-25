@@ -26,12 +26,15 @@ export default function SubmissionDetailModal({ submission, onClose }) {
     return () => { alive = false; };
   }, [s.id]);
 
-  // Determine clear rejection source
+  // Determine clear rejection source.
+  // CPs see only the 'Rejected' label (status_reason is admin-only), so we
+  // use the perfect_match_at_submit flag — already exposed to the CP — to
+  // distinguish "auto-rejected as duplicate at submit" from other rejections.
   let rejectionSource = null;
-  if (s.status === 'Price Rejected' || s.status === 'Duplicate Rejected') {
+  if (s.status === 'Price Rejected' || s.status === 'Rejected') {
     if (s.counter_offer_status === 'rejected') {
       rejectionSource = { by: 'you', label: 'You rejected the counter offer from Openhouse' };
-    } else if (s.status === 'Duplicate Rejected') {
+    } else if (s.perfect_match_at_submit) {
       rejectionSource = { by: 'openhouse', label: 'This listing was already in Openhouse inventory' };
     } else {
       rejectionSource = { by: 'openhouse', label: 'This listing was rejected by Openhouse' };

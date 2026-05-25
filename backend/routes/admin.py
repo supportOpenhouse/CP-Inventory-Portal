@@ -36,7 +36,27 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Duplicate Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+
+# Stages that are set automatically by other flows (visit scheduling, visit
+# completion cron, counter-offer endpoint). The /status endpoint refuses
+# manual moves INTO these, and the frontend hides the status dropdown when
+# the current status is one of these (status changes out of them happen via
+# the dedicated endpoints).
+AUTO_ONLY_STAGES = {"Visit Scheduled", "Visit Completed", "Offer Given"}
+
+# Allowed sub-categories when status='Rejected'. Anything else is rejected
+# by the API. Order matches the dropdown the admin sees.
+REJECTED_REASONS = [
+    "Cancelled Post Token",
+    "Dead - Legal",
+    "Dead - Not Interested",
+    "Dead - Sold",
+    "Duplicacy",
+    "Hold",
+    "OH Rejected",
+    "Seller Rejected",
+]
 
 
 def require_admin_role(f):
@@ -385,7 +405,7 @@ def _sync_status_from_cp_inventory() -> int:
          'status_change' submission_event so the timeline, reminder timers and
          activity log all stay consistent.
 
-    Terminal cards (Price Rejected / Duplicate Rejected) are skipped — a
+    Terminal cards (Price Rejected / Rejected) are skipped — a
     rejection is a final human decision the sync must not override.
 
     Idempotent (only rows whose cp_status differs are touched). Read-only on
@@ -405,7 +425,7 @@ def _sync_status_from_cp_inventory() -> int:
                     SELECT id, public_id, status FROM submissions
                     WHERE public_id IS NOT NULL
                       AND deleted_at IS NULL
-                      AND status NOT IN ('Price Rejected', 'Duplicate Rejected')
+                      AND status NOT IN ('Price Rejected', 'Rejected')
                 """)
                 candidates = cur.fetchall()
         finally:
@@ -440,6 +460,10 @@ def _sync_status_from_cp_inventory() -> int:
         for r in rows:
             pubid = r["cp_id"]
             new_status = (r["cp_status"] or "").strip()
+            # Properties DB may still use the legacy stage name — treat it
+            # as an alias of the renamed 'Rejected' stage.
+            if new_status == "Duplicate Rejected":
+                new_status = "Rejected"
             old_status = status_by_pubid.get(pubid)
             if old_status is None:
                 continue
@@ -650,7 +674,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     s.asking_price, s.seller_name,
                     s.counter_offer_price, s.counter_offer_status,
                     s.broker_counter_price,
-                    s.status, s.real_status, s.submitted_at,
+                    s.status, s.status_reason, s.submitted_at,
                     s.weak_match, s.collated_match, s.submissions_match,
                     s.deleted_at, s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
@@ -671,7 +695,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     s.sqft, s.bhk, s.occupancy_status,
                     s.asking_price,
                     s.seller_name, s.seller_phone,
-                    s.status, s.real_status, s.submitted_at, s.photos, s.weak_match, s.collated_match, s.submissions_match,
+                    s.status, s.status_reason, s.submitted_at, s.photos, s.weak_match, s.collated_match, s.submissions_match,
                     s.deleted_at, s.drive_links, s.assigned_rm_id, s.listing_rm_id,
                     s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
@@ -1017,17 +1041,44 @@ def get_submission(sid: int):
 @require_staff
 @require_acting_staff
 def change_status(sid: int):
+    """Manual status change.
+
+    Restrictions:
+      - new_status must be in VALID_STAGES.
+      - Manual moves INTO AUTO_ONLY_STAGES (Visit Scheduled / Visit Completed
+        / Offer Given) are rejected — those stages are set by dedicated
+        endpoints (schedule_visit, the visit-completion cron, counter offer).
+      - When new_status='Rejected', body MUST include status_reason as one of
+        REJECTED_REASONS. status_reason is cleared on any other status.
+    """
     data = request.get_json(silent=True) or {}
     new_status = to_str(data.get("status"))
     if not new_status or new_status not in VALID_STAGES:
         return jsonify({"error": f"Invalid status. Must be one of: {VALID_STAGES}"}), 400
+
+    if new_status in AUTO_ONLY_STAGES:
+        return jsonify({
+            "error": (
+                f"'{new_status}' is set automatically, not manually. "
+                f"Use Schedule Visit / Counter Offer / the visit-completion flow."
+            )
+        }), 400
+
+    new_reason = to_str(data.get("status_reason")) or None
+    if new_status == "Rejected":
+        if new_reason not in REJECTED_REASONS:
+            return jsonify({
+                "error": f"status_reason is required for 'Rejected'. Must be one of: {REJECTED_REASONS}"
+            }), 400
+    else:
+        new_reason = None
 
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
-                SELECT s.id, s.public_id, s.status FROM submissions s
+                SELECT s.id, s.public_id, s.status, s.status_reason FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}
                 FOR UPDATE OF s
@@ -1037,10 +1088,23 @@ def change_status(sid: int):
                 return jsonify({"error": "Not found or out of scope"}), 404
 
             old_status = existing["status"]
-            if old_status == new_status:
+            old_reason = existing.get("status_reason")
+
+            if old_status in AUTO_ONLY_STAGES:
+                return jsonify({
+                    "error": (
+                        f"Cannot manually change status from '{old_status}'. "
+                        f"Use the dedicated flow (Counter Offer / re-schedule)."
+                    )
+                }), 400
+
+            if old_status == new_status and old_reason == new_reason:
                 return jsonify({"ok": True, "unchanged": True}), 200
 
-            cur.execute("UPDATE submissions SET status = %s WHERE id = %s", (new_status, sid))
+            cur.execute(
+                "UPDATE submissions SET status = %s, status_reason = %s WHERE id = %s",
+                (new_status, new_reason, sid),
+            )
             cur.execute("""
                 INSERT INTO submission_events
                     (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status)
@@ -1049,12 +1113,19 @@ def change_status(sid: int):
             log_activity(
                 cur, action="status_change", category="submission",
                 entity_uid=existing.get("public_id"), entity_type="submission", entity_id=sid,
-                details={"from": old_status, "to": new_status},
+                details={
+                    "from": old_status, "to": new_status,
+                    "from_reason": old_reason, "to_reason": new_reason,
+                },
             )
             conn.commit()
     finally:
         put_app_conn(conn)
-    return jsonify({"ok": True, "from": old_status, "to": new_status}), 200
+    return jsonify({
+        "ok": True,
+        "from": old_status, "to": new_status,
+        "from_reason": old_reason, "to_reason": new_reason,
+    }), 200
 
 
 @bp.post("/submissions/<int:sid>/counter-offer")
@@ -1490,7 +1561,10 @@ def schedule_visit(sid: int):
         submission row.
       - On Forms-app error: returns the error to the admin without touching
         the submission row.
-      - Does NOT change submission status (admin moves to 'Visit Scheduled' first).
+      - Auto-promotes status: if the submission is currently 'Submitted',
+        flips it to 'Visit Scheduled' in the same transaction and seeds a
+        status_change event so timers/timeline stay coherent. Rows already
+        in 'Visit Scheduled' (re-schedule) are untouched.
     """
     if not Config.FORMS_APP_URL or not Config.INTERNAL_API_KEY:
         return jsonify({
@@ -1758,18 +1832,38 @@ def schedule_visit(sid: int):
     if not forms_uid:
         return jsonify({"error": "Forms app did not return a UID."}), 502
 
-    # Persist on our side
+    # Persist on our side + auto-promote status from 'Submitted' to 'Visit Scheduled'
+    old_status = sub.get("status")
+    promote_status = old_status == "Submitted"
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                UPDATE submissions
-                SET forms_uid       = %s,
-                    scheduled_date  = %s,
-                    scheduled_time  = %s,
-                    field_exec_name = %s
-                WHERE id = %s
-            """, (forms_uid, schedule_date, schedule_time, field_exec_name, sid))
+            if promote_status:
+                cur.execute("""
+                    UPDATE submissions
+                    SET forms_uid       = %s,
+                        scheduled_date  = %s,
+                        scheduled_time  = %s,
+                        field_exec_name = %s,
+                        status          = 'Visit Scheduled',
+                        status_reason   = NULL
+                    WHERE id = %s
+                """, (forms_uid, schedule_date, schedule_time, field_exec_name, sid))
+                cur.execute("""
+                    INSERT INTO submission_events
+                        (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status, text)
+                    VALUES (%s, %s, %s, 'status_change', %s, 'Visit Scheduled',
+                            'Auto-promoted to Visit Scheduled on visit scheduling')
+                """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), old_status))
+            else:
+                cur.execute("""
+                    UPDATE submissions
+                    SET forms_uid       = %s,
+                        scheduled_date  = %s,
+                        scheduled_time  = %s,
+                        field_exec_name = %s
+                    WHERE id = %s
+                """, (forms_uid, schedule_date, schedule_time, field_exec_name, sid))
 
             cur.execute("""
                 INSERT INTO submission_events
@@ -1791,6 +1885,7 @@ def schedule_visit(sid: int):
                     "field_exec_name": field_exec_name,
                     "forms_uid": forms_uid,
                     "already_existed": already_existed,
+                    "status_promoted": promote_status,
                 },
             )
             conn.commit()
@@ -1804,6 +1899,7 @@ def schedule_visit(sid: int):
         "scheduled_date": schedule_date,
         "scheduled_time": schedule_time,
         "field_exec_name": field_exec_name,
+        "status_promoted": promote_status,
     }), 200
 
 
@@ -2266,6 +2362,7 @@ def bulk_schedule_visit():
             "already_existed": already_existed,
             "field_exec_name": r["field_exec_name"],
             "schedule_time": r["schedule_time"],
+            "old_status": sub.get("status"),
         })
         new_results.append({
             "id": sid,
@@ -2284,14 +2381,33 @@ def bulk_schedule_visit():
         try:
             with conn.cursor() as cur:
                 for s in successes:
-                    cur.execute("""
-                        UPDATE submissions
-                        SET forms_uid       = %s,
-                            scheduled_date  = %s,
-                            scheduled_time  = %s,
-                            field_exec_name = %s
-                        WHERE id = %s
-                    """, (s["uid"], schedule_date, s["schedule_time"], s["field_exec_name"], s["sid"]))
+                    promote = s.get("old_status") == "Submitted"
+                    if promote:
+                        cur.execute("""
+                            UPDATE submissions
+                            SET forms_uid       = %s,
+                                scheduled_date  = %s,
+                                scheduled_time  = %s,
+                                field_exec_name = %s,
+                                status          = 'Visit Scheduled',
+                                status_reason   = NULL
+                            WHERE id = %s
+                        """, (s["uid"], schedule_date, s["schedule_time"], s["field_exec_name"], s["sid"]))
+                        cur.execute("""
+                            INSERT INTO submission_events
+                                (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status, text)
+                            VALUES (%s, %s, %s, 'status_change', %s, 'Visit Scheduled',
+                                    'Auto-promoted to Visit Scheduled on bulk visit scheduling')
+                        """, (s["sid"], g.user.get("cp_id"), g.user.get("rm_id"), s.get("old_status")))
+                    else:
+                        cur.execute("""
+                            UPDATE submissions
+                            SET forms_uid       = %s,
+                                scheduled_date  = %s,
+                                scheduled_time  = %s,
+                                field_exec_name = %s
+                            WHERE id = %s
+                        """, (s["uid"], schedule_date, s["schedule_time"], s["field_exec_name"], s["sid"]))
                     cur.execute("""
                         INSERT INTO submission_events
                             (submission_id, actor_cp_id, actor_rm_id, kind, text)
@@ -2384,7 +2500,7 @@ def export_csv():
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow([
-        "Listing ID", "Internal ID", "Submitted at", "Status", "Real Status", "City", "Society",
+        "Listing ID", "Internal ID", "Submitted at", "Status", "Status Reason", "City", "Society",
         "Tower", "Unit", "Floor", "BHK", "Sqft",
         "Occupancy",
         "Asking",
@@ -2397,7 +2513,7 @@ def export_csv():
             s["id"],
             s["submitted_at"].isoformat() if s.get("submitted_at") else "",
             s["status"],
-            s.get("real_status") or "",
+            s.get("status_reason") or "",
             s["city"] or "", s["society_name"] or "",
             s["tower"] or "", s["unit_no"] or "", s["floor"] or "",
             s["bhk"] or "", s["sqft"] or "",
@@ -2541,7 +2657,13 @@ def set_cp_rm(cp_id: int):
 def bulk_status():
     """
     Bulk status change.
-    Body: { "ids": [1, 2, 3], "status": "Visit Scheduled" }
+    Body: { "ids": [1, 2, 3], "status": "Submitted", "status_reason": "Hold" }
+
+    Same restrictions as POST /submissions/<id>/status:
+      - new_status must NOT be in AUTO_ONLY_STAGES.
+      - When status='Rejected', status_reason must be one of REJECTED_REASONS
+        and is applied to every row. Otherwise status_reason is cleared.
+      - Rows currently in AUTO_ONLY_STAGES are skipped.
     Max 200 IDs per call.
     """
     data = request.get_json(silent=True) or {}
@@ -2554,6 +2676,19 @@ def bulk_status():
         return jsonify({"error": "Max 200 IDs per bulk operation"}), 400
     if not new_status or new_status not in VALID_STAGES:
         return jsonify({"error": f"Invalid status. Must be one of: {VALID_STAGES}"}), 400
+    if new_status in AUTO_ONLY_STAGES:
+        return jsonify({
+            "error": f"'{new_status}' is set automatically, not manually."
+        }), 400
+
+    new_reason = to_str(data.get("status_reason")) or None
+    if new_status == "Rejected":
+        if new_reason not in REJECTED_REASONS:
+            return jsonify({
+                "error": f"status_reason is required for 'Rejected'. Must be one of: {REJECTED_REASONS}"
+            }), 400
+    else:
+        new_reason = None
 
     # Coerce IDs to int
     clean_ids = []
@@ -2570,22 +2705,25 @@ def bulk_status():
             scope_sql, scope_params = _scoped_city_filter(cur)
             # Pull in-scope, not-deleted, not-already-at-target
             cur.execute(f"""
-                SELECT s.id, s.status FROM submissions s
+                SELECT s.id, s.status, s.status_reason FROM submissions s
                 LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = ANY(%s)
                   AND s.deleted_at IS NULL
                   {scope_sql}
             """, [clean_ids, *scope_params])
             rows = cur.fetchall()
-            in_scope = {r["id"]: r["status"] for r in rows}
+            in_scope = {r["id"]: (r["status"], r.get("status_reason")) for r in rows}
 
-            for sid, old_status in in_scope.items():
-                if old_status == new_status:
+            for sid, (old_status, old_reason) in in_scope.items():
+                if old_status in AUTO_ONLY_STAGES:
+                    skipped += 1
+                    continue
+                if old_status == new_status and old_reason == new_reason:
                     skipped += 1
                     continue
                 cur.execute(
-                    "UPDATE submissions SET status = %s WHERE id = %s",
-                    (new_status, sid),
+                    "UPDATE submissions SET status = %s, status_reason = %s WHERE id = %s",
+                    (new_status, new_reason, sid),
                 )
                 cur.execute("""
                     INSERT INTO submission_events
@@ -2875,7 +3013,7 @@ def create_submission_on_behalf():
       - submission_event text annotates "submitted by <staff> on behalf of CP <cp>".
 
     Same dup-check + status routing as the CP flow:
-      - perfect match  -> Duplicate Rejected (returns 409 + duplicate dict)
+      - perfect match  -> Rejected (status_reason='Duplicacy', returns 409 + duplicate dict)
       - unit_less + collated/submissions match -> Unapproved + show_contact_rm_page
       - clean / force_create on weak dup       -> Submitted (or Unapproved if force on dup)
     """
@@ -2963,15 +3101,18 @@ def create_submission_on_behalf():
     force_create = bool(data.get("force_create"))
 
     # Status logic mirrors the CP-side flow in routes/submissions.py:
-    #   - Perfect match → Duplicate Rejected
+    #   - Perfect match → Rejected (status_reason='Duplicacy')
     #   - Unit-less     → Unapproved (always; no tower/unit means admin must verify)
     #   - Otherwise     → Submitted, unless force_create is set on a blocked dup
     if is_perfect_match:
-        initial_status = "Duplicate Rejected"
+        initial_status = "Rejected"
+        initial_status_reason = "Duplicacy"
     elif is_unit_less:
         initial_status = "Unapproved"
+        initial_status_reason = None
     else:
         initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
+        initial_status_reason = None
 
     collated_match = has_collated_match and initial_status == "Unapproved"
     submissions_match = has_submissions_match and initial_status == "Unapproved"
@@ -3003,7 +3144,7 @@ def create_submission_on_behalf():
                     tower, unit_no, floor, sqft, bhk,
                     occupancy_status,
                     asking_price, seller_name, seller_phone, photos,
-                    status, collated_match, submissions_match,
+                    status, status_reason, collated_match, submissions_match,
                     unit_less, perfect_match_at_submit,
                     submitted_by_name,
                     listing_rm_id
@@ -3012,7 +3153,7 @@ def create_submission_on_behalf():
                     %s, %s, %s, %s, %s,
                     %s,
                     %s, %s, %s, %s::jsonb,
-                    %s, %s, %s,
+                    %s, %s, %s, %s,
                     %s, %s,
                     %s,
                     %s
@@ -3035,6 +3176,7 @@ def create_submission_on_behalf():
                 to_str(data.get("seller_phone"), 20),
                 json.dumps(data.get("photos") or []),
                 initial_status,
+                initial_status_reason,
                 collated_match,
                 submissions_match,
                 is_unit_less,

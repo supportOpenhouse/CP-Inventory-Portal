@@ -68,12 +68,13 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
     setTimeBySid(sync);
   }, [selectedSubmissions]);
 
-  // Selected submissions sorted by status priority (Visit Scheduled first), then public_id
+  // Sort by status: Submitted (will be promoted) first, then Visit Scheduled
+  // (reschedules), then anything else; ties broken by public_id.
   const sortedSubs = useMemo(() => {
+    const prio = (s) => (s.status === 'Submitted' ? 0 : s.status === 'Visit Scheduled' ? 1 : 2);
     return [...selectedSubmissions].sort((a, b) => {
-      const ap = a.status === 'Visit Scheduled' ? 0 : 1;
-      const bp = b.status === 'Visit Scheduled' ? 0 : 1;
-      if (ap !== bp) return ap - bp;
+      const d = prio(a) - prio(b);
+      if (d !== 0) return d;
       return (a.public_id || '').localeCompare(b.public_id || '');
     });
   }, [selectedSubmissions]);
@@ -81,11 +82,16 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
   // Validation summary up-front for UX (the same checks happen server-side too)
   const clientWarnings = useMemo(() => {
     const warnings = [];
-    const wrongStatus = sortedSubs.filter((s) => s.status !== 'Visit Scheduled');
+    // Visits are normally scheduled from 'Submitted' (auto-promotes to
+    // 'Visit Scheduled') or 'Visit Scheduled' (reschedule). Anything else
+    // is unusual — flag it but don't block, the server is the authority.
+    const wrongStatus = sortedSubs.filter(
+      (s) => s.status !== 'Submitted' && s.status !== 'Visit Scheduled'
+    );
     if (wrongStatus.length > 0) {
       warnings.push(
-        `${wrongStatus.length} listing(s) are not in 'Visit Scheduled' status. ` +
-        `The Forms app may still accept them, but normally these are scheduled from the Visit Scheduled column.`
+        `${wrongStatus.length} listing(s) are not in 'Submitted' or 'Visit Scheduled' status. ` +
+        `The Forms app may still accept them, but normally visits are scheduled from those columns.`
       );
     }
     const alreadyScheduled = sortedSubs.filter((s) => s.forms_uid);

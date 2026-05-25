@@ -15,7 +15,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Duplicate Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
 
 
 @bp.get("/submissions/stats")
@@ -190,15 +190,17 @@ def create_submission():
     has_submissions_match = bool(dup.get("submissions_match"))
 
     # Status logic:
-    #   - Perfect match → Duplicate Rejected (admin sees red card; CP saw 409 + Contact RM)
+    #   - Perfect match → Rejected (status_reason='Duplicacy'; admin sees red card; CP saw 409 + Contact RM)
     #   - Unit-less     → Unapproved (always — CP didn't give tower/unit, so admin
     #                                 must verify before the listing enters the pipeline,
     #                                 even when no partial match was found)
     #   - Normal submit → Submitted by default; force_create on a weak/collated dup
     #                     (the legacy "Add anyway" path) lands in Unapproved
     force_create = bool(data.get("force_create"))
+    initial_status_reason = None
     if is_perfect_match:
-        initial_status = "Duplicate Rejected"
+        initial_status = "Rejected"
+        initial_status_reason = "Duplicacy"
     elif is_unit_less:
         initial_status = "Unapproved"
     else:
@@ -237,7 +239,7 @@ def create_submission():
                     tower, unit_no, floor, sqft, bhk,
                     occupancy_status,
                     asking_price, seller_name, seller_phone, photos,
-                    status, collated_match, submissions_match,
+                    status, status_reason, collated_match, submissions_match,
                     unit_less, perfect_match_at_submit,
                     listing_rm_id
                 ) VALUES (
@@ -245,7 +247,7 @@ def create_submission():
                     %s, %s, %s, %s, %s,
                     %s,
                     %s, %s, %s, %s::jsonb,
-                    %s, %s, %s,
+                    %s, %s, %s, %s,
                     %s, %s,
                     %s
                 )
@@ -267,6 +269,7 @@ def create_submission():
                 to_str(data.get("seller_phone"), 20),
                 json.dumps(data.get("photos") or []),
                 initial_status,
+                initial_status_reason,
                 collated_match,
                 submissions_match,
                 is_unit_less,

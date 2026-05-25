@@ -53,27 +53,36 @@ COLUMN_MAP = {
 }
 
 
+# Each value is (status, status_reason). status is one of the 7 board stages;
+# status_reason is the granular sub-category — only populated for 'Rejected'
+# today (NULL elsewhere). map_status() aborts on an unknown key — we no
+# longer silently fall back to 'Submitted'.
 STATUS_MAP = {
-    "":                       "Submitted",
-    "followup":               "Submitted",
-    "visit to be scheduled":  "Submitted",
-    "visittobescheduled":     "Submitted",   # Gurgaon CSV — concatenated form
-    "lead":                   "Submitted",   # Gurgaon CSV
-    "hold":                   "Submitted",
-    "visit completed":        "Visit Completed",
-    "visited":                "Visit Completed",  # Gurgaon CSV
-    "onboarded":              "Offer Given", # Gurgaon CSV
-    "visit scheduled":        "Visit Scheduled",
-    "rejected":               "Price Rejected",
-    "sold out":               "Price Rejected",
-    "duplicate":              "Duplicate Rejected",   # Gurgaon CSV
+    "":                       ("Submitted",       None),
+    "followup":               ("Submitted",       None),
+    "visit to be scheduled":  ("Submitted",       None),
+    "visittobescheduled":     ("Submitted",       None),   # Gurgaon CSV — concatenated form
+    "lead":                   ("Submitted",       None),   # Gurgaon CSV
+    "hold":                   ("Rejected",        "Hold"),
+    "visit completed":        ("Visit Completed", None),
+    "visited":                ("Visit Completed", None),   # Gurgaon CSV
+    "onboarded":              ("Offer Given",     None),   # Gurgaon CSV
+    "visit scheduled":        ("Visit Scheduled", None),
+    "rejected":               ("Price Rejected",  None),
+    "sold out":               ("Price Rejected",  None),
+    "duplicate":              ("Rejected",        "Duplicacy"),   # Gurgaon CSV
 }
 
 
-def map_status(csv_status: Optional[str]) -> str:
-    if not csv_status:
-        return "Submitted"
-    return STATUS_MAP.get(csv_status.strip().lower(), "Submitted")
+def map_status(csv_status: Optional[str]) -> tuple[str, Optional[str]]:
+    """Return (status, status_reason) for a CSV Status cell. Raises on unknown."""
+    key = (csv_status or "").strip().lower()
+    if key not in STATUS_MAP:
+        raise ValueError(
+            f"Unrecognised CSV Status {csv_status!r}. Add it to STATUS_MAP "
+            f"explicitly — we no longer fall back to 'Submitted'."
+        )
+    return STATUS_MAP[key]
 
 
 def clean_str(v, max_len: Optional[int] = None) -> Optional[str]:
@@ -334,7 +343,7 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
                 comments_parts.append(v)
         additional_comments = "\n\n".join(comments_parts) if comments_parts else None
 
-        pipeline_stage = map_status(clean_str(row_dict.get("csv_status")))
+        pipeline_stage, pipeline_reason = map_status(clean_str(row_dict.get("csv_status")))
         stats.status_counter[pipeline_stage] += 1
 
         ts = parse_timestamp(row_dict.get("timestamp")) or datetime.now()
@@ -357,6 +366,7 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
             "referred_by_email":   clean_str(row_dict.get("referred_by_email"), 200),
             "weak_match":          is_weak_match,
             "status":              pipeline_stage,
+            "status_reason":       pipeline_reason,
             "submitted_at":        ts,
         }
 
@@ -375,7 +385,7 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
                         asking_price,
                         seller_name, seller_phone,
                         additional_comments, referred_by_email, weak_match,
-                        status, submitted_at
+                        status, status_reason, submitted_at
                     ) VALUES (
                         %(cp_id)s, %(society_id)s, %(society_name)s, %(city_id)s,
                         %(tower)s, %(unit_no)s, %(floor)s, %(sqft)s, %(bhk)s,
@@ -383,7 +393,7 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
                         %(asking_price)s,
                         %(seller_name)s, %(seller_phone)s,
                         %(additional_comments)s, %(referred_by_email)s, %(weak_match)s,
-                        %(status)s, %(submitted_at)s
+                        %(status)s, %(status_reason)s, %(submitted_at)s
                     )
                     RETURNING id
                 """, payload)

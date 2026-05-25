@@ -126,7 +126,26 @@ export const STAGES = [
   { key: 'Visit Completed',    color: '#10B981', bg: '#D1FAE5' },   // green = success
   { key: 'Offer Given',        color: '#FF6B2B', bg: '#FFF3ED' },
   { key: 'Price Rejected',     color: '#DC2626', bg: '#FEE2E2' },
-  { key: 'Duplicate Rejected', color: '#DC2626', bg: '#FEE2E2' },
+  { key: 'Rejected',           color: '#DC2626', bg: '#FEE2E2' },
+];
+
+// Stages that are set automatically — never offered as a manual destination
+// in the status dropdown, and when a row is already in one of these the
+// dropdown is hidden entirely (movement out happens via dedicated flows like
+// counter-offer or visit completion). Mirrors AUTO_ONLY_STAGES in backend.
+export const AUTO_ONLY_STAGES = new Set(['Visit Scheduled', 'Visit Completed', 'Offer Given']);
+
+// Sub-categories the admin picks from when setting status='Rejected'. Stored
+// on submissions.status_reason and shown as "Rejected (<reason>)" in cards.
+export const REJECTED_REASONS = [
+  'Cancelled Post Token',
+  'Dead - Legal',
+  'Dead - Not Interested',
+  'Dead - Sold',
+  'Duplicacy',
+  'Hold',
+  'OH Rejected',
+  'Seller Rejected',
 ];
 
 export function stageMeta(key) {
