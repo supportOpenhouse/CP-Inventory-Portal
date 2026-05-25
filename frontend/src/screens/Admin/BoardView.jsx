@@ -281,25 +281,36 @@ export default function BoardView({
                   )}
 
                   {/* Status sub-category (status_reason) — staff-only.
-                      Shown as plain coloured text (orange for Offer Given,
-                      red for Price Rejected / Rejected). Hidden for other
-                      statuses to avoid noise on the card. */}
+                      Rendered as a pill matching the "Moved from …" chip
+                      style (rounded, 1px border), coloured by status:
+                      orange for Offer Given, red for Price Rejected /
+                      Rejected. Hidden for other statuses to avoid noise. */}
                   {s.status_reason
                     && (s.status === 'Offer Given'
                         || s.status === 'Price Rejected'
-                        || s.status === 'Rejected') && (
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: s.status === 'Offer Given' ? '#FF6B2B' : '#DC2626',
-                      }}
-                      title="Sub-category — staff only, not shown to CPs"
-                    >
-                      {s.status_reason}
-                    </div>
-                  )}
+                        || s.status === 'Rejected') && (() => {
+                    const isOffer = s.status === 'Offer Given';
+                    return (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          marginTop: 6,
+                          fontSize: 10,
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          fontWeight: 600,
+                          letterSpacing: 0.2,
+                          lineHeight: 1.5,
+                          color:      isOffer ? '#FF6B2B' : '#B91C1C',
+                          background: isOffer ? '#FFF3ED' : '#FEE2E2',
+                          border:     `1px solid ${isOffer ? '#FED7AA' : '#FCA5A5'}`,
+                        }}
+                        title="Sub-category — staff only, not shown to CPs"
+                      >
+                        {s.status_reason}
+                      </span>
+                    );
+                  })()}
 
                   <div className="board-card-divider" />
 
