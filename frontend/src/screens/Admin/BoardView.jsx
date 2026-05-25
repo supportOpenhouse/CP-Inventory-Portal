@@ -280,16 +280,24 @@ export default function BoardView({
                     </div>
                   )}
 
-                  {/* Status sub-category (status_reason) — staff-only. Today
-                      only populated for status='Rejected'; shown as a chip
-                      reading "<Status> (<reason>)" e.g. "Rejected (OH Rejected)". */}
-                  {s.status_reason && (
+                  {/* Status sub-category (status_reason) — staff-only.
+                      Shown as plain coloured text (orange for Offer Given,
+                      red for Price Rejected / Rejected). Hidden for other
+                      statuses to avoid noise on the card. */}
+                  {s.status_reason
+                    && (s.status === 'Offer Given'
+                        || s.status === 'Price Rejected'
+                        || s.status === 'Rejected') && (
                     <div
-                      className="board-card-realstatus"
+                      style={{
+                        marginTop: 4,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: s.status === 'Offer Given' ? '#FF6B2B' : '#DC2626',
+                      }}
                       title="Sub-category — staff only, not shown to CPs"
                     >
-                      <span className="board-card-realstatus-tag">{s.status}</span>
-                      <span className="board-card-realstatus-value">({s.status_reason})</span>
+                      {s.status_reason}
                     </div>
                   )}
 
