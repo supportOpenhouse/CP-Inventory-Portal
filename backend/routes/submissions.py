@@ -190,12 +190,14 @@ def create_submission():
     has_submissions_match = bool(dup.get("submissions_match"))
 
     # Status logic:
-    #   - Perfect match → Rejected (status_reason='Duplicacy'; admin sees red card; CP saw 409 + Contact RM)
-    #   - Unit-less     → Unapproved (always — CP didn't give tower/unit, so admin
-    #                                 must verify before the listing enters the pipeline,
-    #                                 even when no partial match was found)
-    #   - Normal submit → Submitted by default; force_create on a weak/collated dup
-    #                     (the legacy "Add anyway" path) lands in Unapproved
+    #   - Perfect match  → Rejected (status_reason='Duplicacy'; admin sees red
+    #                      card; CP saw 409 + Contact RM)
+    #   - Unit-less      → Unapproved (CP didn't give tower/unit, admin must
+    #                      verify before the listing enters the pipeline)
+    #   - Collated match → Unapproved (scraper saw the same society+bhk+floor;
+    #                      admin reviews even when full tower/unit was given)
+    #   - Normal submit  → Submitted by default; force_create on a weak/perfect
+    #                      dup (legacy "Add anyway" path) lands in Unapproved
     force_create = bool(data.get("force_create"))
     initial_status_reason = None
     if is_perfect_match:
@@ -203,13 +205,16 @@ def create_submission():
         initial_status_reason = "Duplicacy"
     elif is_unit_less:
         initial_status = "Unapproved"
+    elif has_collated_match:
+        initial_status = "Unapproved"
     else:
-        # Normal flow with unit details: weak/collated dups go to Unapproved if force_create,
-        # else Submitted. Note we still 409 on perfect match (handled above).
         initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
 
-    # Persist match flags only when row lands in Unapproved (admin highlight context).
-    collated_match = has_collated_match and initial_status == "Unapproved"
+    # Persist match flags whenever they are true so admin sees the highlight.
+    # (Was previously gated on initial_status=='Unapproved' — but collated_match
+    # rows now always land in Unapproved, and submissions_match is only useful
+    # in the Unapproved highlight context.)
+    collated_match = has_collated_match
     submissions_match = has_submissions_match and initial_status == "Unapproved"
 
     import logging
