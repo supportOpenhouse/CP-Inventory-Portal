@@ -49,10 +49,12 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   // insert time for new submissions of the same society).
   const [rmAssignMode, setRmAssignMode] = useState('listing');
   const fileInputRef = useRef(null);
-  const eventsEndRef = useRef(null);
-  // Tracks the events count across renders so the auto-scroll fires only
-  // when a new event/comment is appended — never on a card's initial load.
-  const prevEventCount = useRef(null);
+  const notesEndRef = useRef(null);
+  // Tracks the notes (comment) count across renders so the auto-scroll fires
+  // only when a new note is appended — never on a card's initial load. The
+  // Add-a-note input lives at the top of the Notes section, so when a note
+  // is added we scroll the notes list down to make the new entry visible.
+  const prevNotesCount = useRef(null);
 
   const user = getUser();
   const isAdmin = user?.role === 'admin';
@@ -78,9 +80,9 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   }, [submissionId]);
 
   useEffect(() => {
-    // New card opened — reset the scroll baseline so the events effect
-    // below doesn't treat the first populate as "new activity".
-    prevEventCount.current = null;
+    // New card opened — reset the scroll baseline so the notes effect
+    // below doesn't treat the first populate as "new note".
+    prevNotesCount.current = null;
     load();
   }, [load]);
 
@@ -89,17 +91,22 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
     api.adminListRms().then((r) => setRms(r.rms || [])).catch(() => {});
   }, [isStaff, isViewer, rms.length]);
 
+  // Events split: comments are "notes" (user-authored), the rest is "activity"
+  // (status changes, system events). Computed here so the auto-scroll effect
+  // and the render below share the same partition.
+  const allEvents = data?.events || [];
+  const notes = allEvents.filter((ev) => ev.kind === 'comment');
+  const activityEvents = allEvents.filter((ev) => ev.kind !== 'comment');
+
   useEffect(() => {
-    const count = data?.events?.length;
-    if (count == null) return;
-    // Scroll to the latest activity only when an event/comment was just
-    // added — skip the initial load (prevEventCount starts null), which
-    // otherwise yanks the whole panel down to the Activity section.
-    if (prevEventCount.current != null && count > prevEventCount.current) {
-      eventsEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    // Scroll the notes list to the latest note when one is appended — skip
+    // the initial load (prevNotesCount starts null) so opening a card with
+    // existing notes doesn't yank the whole panel.
+    if (prevNotesCount.current != null && notes.length > prevNotesCount.current) {
+      notesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-    prevEventCount.current = count;
-  }, [data?.events?.length]);
+    prevNotesCount.current = notes.length;
+  }, [notes.length]);
 
   const handleStatusChange = async (newStatus, newReason = null) => {
     if (!data || busy) return;
@@ -281,7 +288,6 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
   };
 
   const s = data?.submission;
-  const events = data?.events || [];
 
   return (
     <>
@@ -853,21 +859,54 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 )}
               </div>
 
-              {/* WhatsApp thread — outbound reminders the cron fired +
-                  every CP reply Interakt forwarded for this CP's phone.
-                  Staff (admin/manager/RM) get a composer to reply
-                  free-text inside the 24h customer-service window;
-                  viewers see read-only. */}
+              {/* Notes — user-authored comments. Input lives at the top of
+                  the section (staff only); the list of existing notes scrolls
+                  below it. Was previously merged into the Activity timeline. */}
               <div className="admin-panel-section">
-                <div className="admin-panel-section-title">WhatsApp</div>
-                <WhatsAppThread submissionId={s.id} hideEmpty={false} canSend={isStaff} autoScroll={false} />
+                <div className="admin-panel-section-title">Notes ({notes.length})</div>
+                {isStaff && (
+                  <div className="admin-comment-input" style={{ padding: 0, background: 'transparent', borderTop: 'none', marginBottom: notes.length > 0 ? 12 : 0 }}>
+                    <input
+                      placeholder="Add a note…"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleAddComment();
+                        }
+                      }}
+                      disabled={busy}
+                    />
+                    <button onClick={handleAddComment} disabled={busy || !newComment.trim()}>
+                      {busy ? '…' : 'Send'}
+                    </button>
+                  </div>
+                )}
+                {notes.length > 0 && (
+                  <div className="admin-events">
+                    {notes.map((ev) => (
+                      <div key={ev.id} className="admin-event">
+                        <div className="admin-event-head">
+                          <strong>{ev.actor_name || 'System'}</strong>
+                          {ev.actor_role && ev.actor_role !== 'cp' && (
+                            <span className="admin-event-role">{ev.actor_role}</span>
+                          )}
+                          <span className="admin-event-time">{formatDateTime(ev.created_at)}</span>
+                        </div>
+                        <div className="admin-event-body"><span>{ev.text}</span></div>
+                      </div>
+                    ))}
+                    <div ref={notesEndRef} />
+                  </div>
+                )}
               </div>
 
-              {/* Events */}
-              <div className="admin-panel-section" style={{ borderBottom: 'none' }}>
-                <div className="admin-panel-section-title">Activity ({events.length})</div>
+              {/* Activity — status changes and system events (no comments). */}
+              <div className="admin-panel-section">
+                <div className="admin-panel-section-title">Activity ({activityEvents.length})</div>
                 <div className="admin-events">
-                  {events.map((ev) => (
+                  {activityEvents.map((ev) => (
                     <div key={ev.id} className={`admin-event ${ev.kind === 'system' ? 'is-system' : ''}`}>
                       <div className="admin-event-head">
                         <strong>{ev.actor_name || 'System'}</strong>
@@ -880,13 +919,25 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                         {ev.kind === 'status_change' && (
                           <span>Status: <strong>{ev.from_status || '—'}</strong> → <strong>{ev.to_status}</strong></span>
                         )}
-                        {ev.kind === 'comment' && <span>{ev.text}</span>}
-                        {ev.kind === 'system' && <em>{ev.text || 'Unit submitted'}</em>}
+                        {ev.kind === 'system' ? (
+                          <em>{ev.text || 'Unit submitted'}</em>
+                        ) : (
+                          ev.kind !== 'status_change' && ev.text ? <span>{ev.text}</span> : null
+                        )}
                       </div>
                     </div>
                   ))}
-                  <div ref={eventsEndRef} />
                 </div>
+              </div>
+
+              {/* WhatsApp thread — outbound reminders the cron fired +
+                  every CP reply Interakt forwarded for this CP's phone.
+                  Staff (admin/manager/RM) get a composer to reply
+                  free-text inside the 24h customer-service window;
+                  viewers see read-only. */}
+              <div className="admin-panel-section" style={{ borderBottom: 'none' }}>
+                <div className="admin-panel-section-title">WhatsApp</div>
+                <WhatsAppThread submissionId={s.id} hideEmpty={false} canSend={isStaff} autoScroll={false} />
               </div>
             </>
           )}
@@ -929,28 +980,6 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
             </div>
           )}
         </div>
-
-        {/* Comment input — staff only. Viewers see comments in the timeline
-            but can't add their own. */}
-        {s && !editMode && isStaff && (
-          <div className="admin-comment-input">
-            <input
-              placeholder="Add a comment…"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleAddComment();
-                }
-              }}
-              disabled={busy}
-            />
-            <button onClick={handleAddComment} disabled={busy || !newComment.trim()}>
-              {busy ? '…' : 'Send'}
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Lightbox for photos */}
