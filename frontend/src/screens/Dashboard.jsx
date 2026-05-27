@@ -205,12 +205,14 @@ export default function Dashboard({ onAdd }) {
         </div>
       </div>
 
-      {/* 5 clickable filter/stat boxes */}
+      {/* Clickable filter/stat boxes — fixed-width chips centered as a group,
+          so removing a box doesn't stretch the remaining ones. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
+          gridTemplateColumns: `repeat(${FILTER_BOXES.length}, 88px)`,
           gap: 8,
+          justifyContent: 'center',
           padding: '12px 16px 8px',
         }}
       >
@@ -220,7 +222,8 @@ export default function Dashboard({ onAdd }) {
           return (
             <button
               key={box.key}
-              onClick={() => setFilter(box.key)}
+              type="button"
+              onClick={() => setFilter(active && box.key !== 'All' ? 'All' : box.key)}
               style={{
                 padding: '10px 6px',
                 borderRadius: 10,
