@@ -12,12 +12,14 @@ import AgingStrip from '../components/AgingStrip';
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
 // Note: 'Price Rejected' / 'Rejected' are intentionally NOT in the filter row
 //       (still visible under 'All').
+// Buckets are coarser than DB statuses — see syntheticStatus() for the fold:
+//   'Submitted' bucket = Submitted + Visit Scheduled + Visit Completed
+//   'Offer'     bucket = Offer + Closure
 const FILTER_BOXES = [
   { key: 'All',             label: 'All',            color: '#6366F1' },
   { key: 'Unapproved',      label: 'Pending Review', color: '#B8860B' },
   { key: 'Submitted',       label: 'Submitted',      color: '#6366F1' },
   { key: 'Offer',           label: 'Offers',         color: '#FF6B2B' },
-  { key: 'Visit Completed', label: 'Visits Done',    color: '#10B981' },
 ];
 
 function badgeClass(s) {
@@ -27,7 +29,7 @@ function badgeClass(s) {
   if (s.perfect_match_at_submit) return 'badge badge-rejected';
   const status = s.status;
   if (status === 'Unapproved') return 'badge';
-  if (status === 'Offer' || status === 'Accepted') return 'badge badge-offer';
+  if (status === 'Offer' || status === 'Closure' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Visit Completed' || status === 'Visit Scheduled') return 'badge badge-closed';
   if (status === 'Price Rejected' || status === 'Rejected') return 'badge badge-rejected';
   return 'badge badge-submitted';
@@ -111,14 +113,19 @@ export default function Dashboard({ onAdd }) {
   }, [user.city]);
 
   // Synthetic status used for filtering/counting only (actual DB status unchanged).
-  // While there's a pending counter offer, the CP sees the listing in the
-  // 'Submitted' filter (counter offer banner still appears on the card itself).
-  // Once the CP accepts, status moves to 'Offer' (displayed as "Offer Given") and so does the synthetic.
+  // Buckets:
+  //   - 'Submitted' bucket also contains Visit Scheduled / Visit Completed (CP
+  //     just wants to know "this is moving through the pipeline"), plus any row
+  //     with a pending counter offer.
+  //   - 'Offer' bucket also contains Closure (Closure is downstream of Offer
+  //     from the CP's point of view — the deal is being closed).
+  //   - perfect_match_at_submit rows have status='Rejected' directly (since the
+  //     May 2026 migration), so no special remap is needed — they naturally
+  //     land outside the Pending Review tile.
   const syntheticStatus = (s) => {
-    // Note: perfect_match_at_submit rows have status='Rejected'
-    // directly (since the May 2026 migration), so no special remap is needed —
-    // they naturally land outside the Pending Review tile.
     if (s.counter_offer_status === 'pending') return 'Submitted';
+    if (s.status === 'Visit Scheduled' || s.status === 'Visit Completed') return 'Submitted';
+    if (s.status === 'Closure') return 'Offer';
     return s.status;
   };
 

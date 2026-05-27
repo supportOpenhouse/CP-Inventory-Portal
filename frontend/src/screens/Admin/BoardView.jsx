@@ -283,13 +283,14 @@ export default function BoardView({
                   {/* Status sub-category (status_reason) — staff-only.
                       Rendered as a pill matching the "Moved from …" chip
                       style (rounded, 1px border), coloured by status:
-                      orange for Offer (displayed as "Offer Given"), red for
+                      orange for Offer ("Offer Given") and Closure, red for
                       Price Rejected / Rejected. Hidden otherwise. */}
                   {s.status_reason
                     && (s.status === 'Offer'
+                        || s.status === 'Closure'
                         || s.status === 'Price Rejected'
                         || s.status === 'Rejected') && (() => {
-                    const isOffer = s.status === 'Offer';
+                    const isOffer = s.status === 'Offer' || s.status === 'Closure';
                     return (
                       <span
                         style={{

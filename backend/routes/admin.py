@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
 
 # Stages that are set automatically by other flows (visit scheduling, visit
 # completion cron, counter-offer endpoint). The /status endpoint refuses

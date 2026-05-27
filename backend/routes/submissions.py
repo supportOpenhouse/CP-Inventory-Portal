@@ -15,7 +15,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
 
 
 @bp.get("/submissions/stats")
