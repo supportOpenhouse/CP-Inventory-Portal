@@ -15,7 +15,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
 
 
 @bp.get("/submissions/stats")
@@ -48,7 +48,7 @@ def my_submissions_stats():
         if r["status"] in stats:
             stats[r["status"]] = r["n"]
     stats["submitted"] = stats["Submitted"]
-    stats["offers"] = stats["Offer Given"]
+    stats["offers"] = stats["Offer"]
     return jsonify({"stats": stats}), 200
 
 
@@ -115,7 +115,7 @@ def list_my_submissions():
             stats[s["status"]] += 1
 
     stats["submitted"] = stats["Submitted"]
-    stats["offers"] = stats["Offer Given"]
+    stats["offers"] = stats["Offer"]
     # Note: 'closures' (Closed) was removed in May 2026 pipeline simplification.
     # If any legacy frontend still expects this key, it'll be undefined.
     return jsonify({"submissions": subs, "stats": stats}), 200
@@ -461,7 +461,7 @@ def withdraw_submission(sid):
 def counter_offer_response(sid):
     """CP accepts, rejects, or counters back a pending admin counter offer.
 
-    action='accept'  -> status='Offer Given',     counter_offer_status='accepted'
+    action='accept'  -> status='Offer',            counter_offer_status='accepted'
     action='reject'  -> status='Price Rejected',  counter_offer_status='rejected'
     action='counter' -> status unchanged,         counter_offer_status='broker_countered'
                         + stores broker_counter_price / broker_counter_at / broker_counter_comment
@@ -544,7 +544,7 @@ def counter_offer_response(sid):
                     "broker_counter_price": broker_price,
                 }), 200
 
-            new_status = "Offer Given" if action == "accept" else "Price Rejected"
+            new_status = "Offer" if action == "accept" else "Price Rejected"
             new_co_status = "accepted" if action == "accept" else "rejected"
             event_text = (
                 "CP accepted counter offer"

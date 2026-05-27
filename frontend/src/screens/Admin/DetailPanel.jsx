@@ -433,7 +433,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                           value={st.key}
                           disabled={AUTO_ONLY_STAGES.has(st.key)}
                         >
-                          {st.key}{AUTO_ONLY_STAGES.has(st.key) ? ' (auto)' : ''}
+                          {(st.label || st.key)}{AUTO_ONLY_STAGES.has(st.key) ? ' (auto)' : ''}
                         </option>
                       ))}
                     </select>
@@ -625,7 +625,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       Gated on isStaff so viewers can't send one. */}
                   {isStaff && s.counter_offer_status !== 'pending'
                     && (s.status === 'Visit Completed'
-                        || (s.status === 'Offer Given' && s.counter_offer_status === 'broker_countered')) && (
+                        || (s.status === 'Offer' && s.counter_offer_status === 'broker_countered')) && (
                     <>
                       <div className="admin-panel-label">Send counter offer (in lakhs)</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

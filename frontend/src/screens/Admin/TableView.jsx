@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, stageMeta, timeAgo } from '../../format';
+import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, stageLabel, stageMeta, timeAgo } from '../../format';
 
 /**
  * Bottom-of-table infinite-scroll sentinel. Two modes:
@@ -319,7 +319,7 @@ export default function TableView({
                     className={`status-pill ${isRejected ? 'is-rejected' : ''}`}
                     style={{ background: stage.bg, color: stage.color }}
                   >
-                    {s.status}{s.status_reason ? ` (${s.status_reason})` : ''}
+                    {stageLabel(s.status)}{s.status_reason ? ` (${s.status_reason})` : ''}
                   </span>
                   {isCollatedPartial && (
                     <span

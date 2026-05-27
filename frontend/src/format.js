@@ -117,14 +117,15 @@ export function validatePhone(raw) {
 
 // Display order for the stage tabs / columns. The STATUS values themselves
 // are unchanged; this is purely how they appear left-to-right in the UI.
-// Visit Scheduled + Visit Completed sit before Offer Given because admin
+// Visit Scheduled + Visit Completed sit before Offer because admin
 // triage scans visit-related queues before rebalancing pricing.
+// `label` (when set) is what the UI renders — `key` is the DB value.
 export const STAGES = [
   { key: 'Unapproved',         color: '#B8860B', bg: '#FFF8E1', adminOnly: true },
   { key: 'Submitted',          color: '#6366F1', bg: '#EEF2FF' },
   { key: 'Visit Scheduled',    color: '#D946EF', bg: '#FDF4FF' },
   { key: 'Visit Completed',    color: '#10B981', bg: '#D1FAE5' },   // green = success
-  { key: 'Offer Given',        color: '#FF6B2B', bg: '#FFF3ED' },
+  { key: 'Offer',              label: 'Offer Given', color: '#FF6B2B', bg: '#FFF3ED' },
   { key: 'Price Rejected',     color: '#DC2626', bg: '#FEE2E2' },
   { key: 'Rejected',           color: '#DC2626', bg: '#FEE2E2' },
 ];
@@ -133,7 +134,7 @@ export const STAGES = [
 // in the status dropdown, and when a row is already in one of these the
 // dropdown is hidden entirely (movement out happens via dedicated flows like
 // counter-offer or visit completion). Mirrors AUTO_ONLY_STAGES in backend.
-export const AUTO_ONLY_STAGES = new Set(['Visit Scheduled', 'Visit Completed', 'Offer Given']);
+export const AUTO_ONLY_STAGES = new Set(['Visit Scheduled', 'Visit Completed', 'Offer']);
 
 // Sub-categories the admin picks from when setting status='Rejected'. Stored
 // on submissions.status_reason and shown as "Rejected (<reason>)" in cards.
@@ -150,6 +151,14 @@ export const REJECTED_REASONS = [
 
 export function stageMeta(key) {
   return STAGES.find((s) => s.key === key) || STAGES[0];
+}
+
+/** Display label for a stage key. Falls back to the key itself when no
+ *  override is set (most stages render their key directly). Use this any
+ *  place the UI needs to show a stage name from a raw status string. */
+export function stageLabel(key) {
+  const s = STAGES.find((st) => st.key === key);
+  return (s && s.label) || key;
 }
 /**
  * Format the Openhouse acquisition price for display next to a submission.

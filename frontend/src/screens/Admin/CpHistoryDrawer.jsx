@@ -105,7 +105,7 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
                     <div key={st.key} className="cp-stat">
                       <span className="cp-stat-dot" style={{ background: st.color }} />
                       <span className="cp-stat-count">{summary[st.key] || 0}</span>
-                      <span className="cp-stat-label">{st.key}</span>
+                      <span className="cp-stat-label">{st.label || st.key}</span>
                     </div>
                   ))}
                 </div>

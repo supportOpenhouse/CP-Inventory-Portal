@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     asking_price     BIGINT,
     seller_name      VARCHAR(200),
     seller_phone     VARCHAR(20),
-    status           VARCHAR(30) DEFAULT 'Submitted',          -- one of the 7 board stages (Unapproved/Submitted/Visit Scheduled/Visit Completed/Offer Given/Price Rejected/Rejected)
+    status           VARCHAR(30) DEFAULT 'Submitted',          -- one of the 7 board stages (Unapproved/Submitted/Visit Scheduled/Visit Completed/Offer/Price Rejected/Rejected); UI displays 'Offer' as "Offer Given"
     status_reason    VARCHAR(40),                              -- sub-category for the current status; for status='Rejected' it is one of: Cancelled Post Token, Dead - Legal, Dead - Not Interested, Dead - Sold, Duplicacy, Hold, OH Rejected, Seller Rejected. Staff-only display.
     real_status      VARCHAR(40),                              -- DEPRECATED, superseded by status_reason; no longer read/written. Kept temporarily for audit. See migrations/2026-05-25-status-reason-and-rename-rejected.sql
     collated_match   BOOLEAN     DEFAULT FALSE NOT NULL,  -- partial match from external-scraper collated_data; admin UI highlights this in Unapproved queue

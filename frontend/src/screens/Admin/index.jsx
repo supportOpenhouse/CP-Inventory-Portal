@@ -547,7 +547,7 @@ export default function Admin() {
               <div className="stat-num" style={{ color: s.color }}>
                 {counts[s.key] ?? 0}
               </div>
-              <div className="stat-label">{s.key}</div>
+              <div className="stat-label">{s.label || s.key}</div>
             </button>
           );
         })}
@@ -572,7 +572,7 @@ export default function Admin() {
               onClick={() => bulkChangeStatus(st.key)}
               disabled={bulkBusy}
             >
-              {st.key}
+              {st.label || st.key}
             </button>
           ))}
           <button

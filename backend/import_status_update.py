@@ -46,7 +46,7 @@ VALID_STAGES = {
     "Submitted",
     "Visit Scheduled",
     "Visit Completed",
-    "Offer Given",
+    "Offer",
     "Price Rejected",
     "Rejected",
 }
@@ -69,7 +69,7 @@ NEW_STATUS_MAP = {
     "Submitted":             ("Submitted",       None),
     "Visit Scheduled":       ("Visit Scheduled", None),
     "Visit Completed":       ("Visit Completed", None),
-    "Offer Given":           ("Offer Given",     None),
+    "Offer Given":           ("Offer",           None),
     "Price Rejected":        ("Price Rejected",  None),
     "Rejected":              ("Rejected",        None),
 
@@ -88,13 +88,13 @@ NEW_STATUS_MAP = {
     "Future Prospect":       ("Rejected", None),
 
     # Non-rejection granular values: keep current projection, no reason.
-    "Negotiation":           ("Offer Given",     None),
-    "Followup":              ("Offer Given",     None),
-    "Key Handover":          ("Offer Given",     None),
-    "Token Transferred":     ("Offer Given",     None),
-    "Listed":                ("Offer Given",     None),
-    "AMA Signed":            ("Offer Given",     None),
-    "AMA Req":               ("Offer Given",     None),
+    "Negotiation":           ("Offer",           None),
+    "Followup":              ("Offer",           None),
+    "Key Handover":          ("Offer",           None),
+    "Token Transferred":     ("Offer",           None),
+    "Listed":                ("Offer",           None),
+    "AMA Signed":            ("Offer",           None),
+    "AMA Req":               ("Offer",           None),
     "Price High":            ("Price Rejected",  None),
     "New":                   ("Submitted",       None),
 }

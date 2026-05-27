@@ -141,7 +141,7 @@ def _no_match():
 # Statuses that still occupy a unit in inventory. The 2 reject statuses
 # (Price Rejected, Rejected) and Unapproved free it up. Visit Completed
 # means a CP has gotten this far through the pipeline — the unit is committed.
-_ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Offer Given", "Visit Scheduled", "Visit Completed")
+_ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Offer", "Visit Scheduled", "Visit Completed")
 
 
 def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):

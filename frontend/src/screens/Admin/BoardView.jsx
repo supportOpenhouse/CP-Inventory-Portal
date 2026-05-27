@@ -58,7 +58,7 @@ export default function BoardView({
           <div className="board-column" key={s.key}>
             <div className="col-header">
               <span className="col-dot" style={{ background: s.color }} />
-              <span className="col-title">{s.key}</span>
+              <span className="col-title">{s.label || s.key}</span>
             </div>
             <div className="board-card-skel" />
             <div className="board-card-skel" />
@@ -80,7 +80,7 @@ export default function BoardView({
           >
             <div className="col-header">
               <span className="col-dot" style={{ background: stage.color }} />
-              <span className="col-title">{stage.key}</span>
+              <span className="col-title">{stage.label || stage.key}</span>
               <span className="col-count">{colSubs.length}</span>
             </div>
 
@@ -283,13 +283,13 @@ export default function BoardView({
                   {/* Status sub-category (status_reason) — staff-only.
                       Rendered as a pill matching the "Moved from …" chip
                       style (rounded, 1px border), coloured by status:
-                      orange for Offer Given, red for Price Rejected /
-                      Rejected. Hidden for other statuses to avoid noise. */}
+                      orange for Offer (displayed as "Offer Given"), red for
+                      Price Rejected / Rejected. Hidden otherwise. */}
                   {s.status_reason
-                    && (s.status === 'Offer Given'
+                    && (s.status === 'Offer'
                         || s.status === 'Price Rejected'
                         || s.status === 'Rejected') && (() => {
-                    const isOffer = s.status === 'Offer Given';
+                    const isOffer = s.status === 'Offer';
                     return (
                       <span
                         style={{

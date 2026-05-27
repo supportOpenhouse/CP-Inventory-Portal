@@ -36,14 +36,14 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer Given", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
 
 # Stages that are set automatically by other flows (visit scheduling, visit
 # completion cron, counter-offer endpoint). The /status endpoint refuses
 # manual moves INTO these, and the frontend hides the status dropdown when
 # the current status is one of these (status changes out of them happen via
 # the dedicated endpoints).
-AUTO_ONLY_STAGES = {"Visit Scheduled", "Visit Completed", "Offer Given"}
+AUTO_ONLY_STAGES = {"Visit Scheduled", "Visit Completed", "Offer"}
 
 # Allowed sub-categories when status='Rejected'. Anything else is rejected
 # by the API. Order matches the dropdown the admin sees.
@@ -1046,7 +1046,7 @@ def change_status(sid: int):
     Restrictions:
       - new_status must be in VALID_STAGES.
       - Manual moves INTO AUTO_ONLY_STAGES (Visit Scheduled / Visit Completed
-        / Offer Given) are rejected — those stages are set by dedicated
+        / Offer) are rejected — those stages are set by dedicated
         endpoints (schedule_visit, the visit-completion cron, counter offer).
       - When new_status='Rejected', body MUST include status_reason as one of
         REJECTED_REASONS. status_reason is cleared on any other status.
@@ -1138,11 +1138,11 @@ def send_counter_offer(sid: int):
     OR       { "price_lakhs":  95 }        (integer, in lakhs — converted server-side)
 
     Sending a counter offer from 'Visit Completed' moves the listing to
-    'Offer Given' — an offer is now on the table. The CP responds via
-    /api/submissions/<id>/counter-offer-response: accept keeps 'Offer Given',
-    reject moves to 'Price Rejected', counter loops counter_offer_status back
-    to 'pending' (the admin can send a fresh counter while still in
-    'Offer Given').
+    'Offer' (displayed as "Offer Given") — an offer is now on the table.
+    The CP responds via /api/submissions/<id>/counter-offer-response:
+    accept keeps 'Offer', reject moves to 'Price Rejected', counter loops
+    counter_offer_status back to 'pending' (the admin can send a fresh
+    counter while still in 'Offer').
     """
     data = request.get_json(silent=True) or {}
     price_rupees = data.get("price_rupees")
@@ -1181,21 +1181,21 @@ def send_counter_offer(sid: int):
             status = row["status"]
             co_status = row["counter_offer_status"]
             # First counter goes out from 'Visit Completed'. A follow-up
-            # counter is allowed while in 'Offer Given', but only once the
+            # counter is allowed while in 'Offer', but only once the
             # broker has countered back (counter_offer_status='broker_countered').
             first_counter = status == "Visit Completed"
-            re_counter = status == "Offer Given" and co_status == "broker_countered"
+            re_counter = status == "Offer" and co_status == "broker_countered"
             if not (first_counter or re_counter):
                 return jsonify({
                     "error": "Counter offer only allowed at 'Visit Completed', "
-                             "or in 'Offer Given' after the broker counters back",
+                             "or in 'Offer' after the broker counters back",
                     "current_status": status,
                 }), 409
 
-            # Sending the offer advances 'Visit Completed' -> 'Offer Given'
+            # Sending the offer advances 'Visit Completed' -> 'Offer'
             # (an offer is now on the table). A re-counter is already in
-            # 'Offer Given', so the status just stays put.
-            new_status = "Offer Given" if first_counter else status
+            # 'Offer', so the status just stays put.
+            new_status = "Offer" if first_counter else status
             cur.execute(
                 """
                 UPDATE submissions
@@ -3134,9 +3134,14 @@ def create_submission_on_behalf():
         with conn.cursor() as cur:
             public_id = generate_public_id(cur, city_name)
 
-            # Routing: society mapping → city RM → NULL. Same path as the
-            # CP-side insert so on-behalf rows route identically.
-            listing_rm_id = resolve_listing_rm(cur, society_id)
+            # Routing for on-behalf: the acting RM owns the listing, not
+            # the society's default RM. The premise of on-behalf is that the
+            # RM is taking the listing from this CP themselves, so they need
+            # it on their own board regardless of who the CP's permanent RM
+            # is or which RM the society defaults to. Admins don't carry an
+            # rm_id — fall back to the society-driven resolver in that case.
+            acting_rm_id = g.user.get("rm_id")
+            listing_rm_id = acting_rm_id if acting_rm_id else resolve_listing_rm(cur, society_id)
 
             cur.execute("""
                 INSERT INTO submissions (

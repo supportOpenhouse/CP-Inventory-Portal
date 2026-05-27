@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '../api';
 import { thumbnailUrl } from '../cloudinary';
 import { useAuth } from '../contexts/AuthContext';
-import { formatPrice } from '../format';
+import { formatPrice, stageLabel } from '../format';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import SubmissionDetailModal from './SubmissionDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -16,7 +16,7 @@ const FILTER_BOXES = [
   { key: 'All',             label: 'All',            color: '#6366F1' },
   { key: 'Unapproved',      label: 'Pending Review', color: '#B8860B' },
   { key: 'Submitted',       label: 'Submitted',      color: '#6366F1' },
-  { key: 'Offer Given',     label: 'Offers',         color: '#FF6B2B' },
+  { key: 'Offer',           label: 'Offers',         color: '#FF6B2B' },
   { key: 'Visit Completed', label: 'Visits Done',    color: '#10B981' },
 ];
 
@@ -27,7 +27,7 @@ function badgeClass(s) {
   if (s.perfect_match_at_submit) return 'badge badge-rejected';
   const status = s.status;
   if (status === 'Unapproved') return 'badge';
-  if (status === 'Offer Given' || status === 'Accepted') return 'badge badge-offer';
+  if (status === 'Offer' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Visit Completed' || status === 'Visit Scheduled') return 'badge badge-closed';
   if (status === 'Price Rejected' || status === 'Rejected') return 'badge badge-rejected';
   return 'badge badge-submitted';
@@ -46,7 +46,7 @@ function badgeStyle(s) {
 function badgeLabel(s) {
   if (s.perfect_match_at_submit) return 'OH already has this';
   if (s.status === 'Unapproved') return 'Pending Review';
-  return s.status;
+  return stageLabel(s.status);
 }
 
 export default function Dashboard({ onAdd }) {
@@ -113,7 +113,7 @@ export default function Dashboard({ onAdd }) {
   // Synthetic status used for filtering/counting only (actual DB status unchanged).
   // While there's a pending counter offer, the CP sees the listing in the
   // 'Submitted' filter (counter offer banner still appears on the card itself).
-  // Once the CP accepts, status moves to Offer Given and so does the synthetic.
+  // Once the CP accepts, status moves to 'Offer' (displayed as "Offer Given") and so does the synthetic.
   const syntheticStatus = (s) => {
     // Note: perfect_match_at_submit rows have status='Rejected'
     // directly (since the May 2026 migration), so no special remap is needed —
