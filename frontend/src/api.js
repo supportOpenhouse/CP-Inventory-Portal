@@ -152,6 +152,11 @@ export const api = {
     }),
   // Forms-app integration — Schedule Visit
   adminListFieldExecs: () => request('/admin/field-execs'),
+  // Pre-flight for Schedule Visit: lists units already in the properties DB
+  // for the given society_name (case-insensitive). Used to warn the admin
+  // before pushing the visit to the Forms app.
+  adminListPropertiesBySociety: (societyName) =>
+    request(`/admin/properties/by-society?society_name=${encodeURIComponent(societyName || '')}`),
   adminScheduleVisit: (submissionId, payload) =>
     request(`/admin/submissions/${submissionId}/schedule-visit`, {
       method: 'POST', body: payload,

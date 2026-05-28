@@ -1444,6 +1444,55 @@ def list_field_execs():
     return jsonify({"field_execs": rows}), 200
 
 
+@bp.get("/properties/by-society")
+@require_staff
+def list_properties_by_society():
+    """Return units already in the properties DB for a given society_name.
+
+    Used by the Schedule Visit flows (single + bulk) to warn the admin that
+    Openhouse already has units in this society before pushing a new visit to
+    the Forms app. Match is case-insensitive on society_name only (no city
+    scoping) per product decision — surfacing extra matches is preferable to
+    missing one.
+
+    Query params:
+      society_name (required) — name to match against properties.society_name
+
+    Response: { units: [{uid, tower_no, unit_no, area_sqft, configuration, floor}, ...] }
+    Hard-capped at 200 rows; dead listings (is_dead=true) excluded.
+    """
+    society_name = (request.args.get("society_name") or "").strip()
+    if not society_name:
+        return jsonify({"units": []}), 200
+    if not properties_configured():
+        return jsonify({"units": []}), 200
+
+    pconn = get_props_conn()
+    try:
+        with pconn.cursor() as cur:
+            cur.execute("""
+                SELECT uid, tower_no, unit_no, area_sqft, configuration, floor
+                FROM properties
+                WHERE LOWER(TRIM(society_name)) = LOWER(TRIM(%s))
+                  AND COALESCE(is_dead, FALSE) = FALSE
+                ORDER BY tower_no NULLS LAST, unit_no NULLS LAST
+                LIMIT 200
+            """, (society_name,))
+            rows = cur.fetchall()
+    finally:
+        put_props_conn(pconn)
+
+    units = [{
+        "uid":           r.get("uid"),
+        "tower_no":      r.get("tower_no"),
+        "unit_no":       r.get("unit_no"),
+        "area_sqft":     float(r["area_sqft"]) if r.get("area_sqft") is not None else None,
+        "configuration": r.get("configuration"),
+        "floor":         str(r["floor"]) if r.get("floor") is not None else None,
+    } for r in rows]
+    return jsonify({"units": units}), 200
+
+
 # Required submission fields for scheduling — checked before pushing to Forms app.
 # Empty/missing values block the request with a friendly error message.
 # Note: owner_broker_name and contact_no are sourced from the CP record (channel_partners),

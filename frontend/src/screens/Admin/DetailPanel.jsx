@@ -1026,6 +1026,9 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
   const [error, setError] = useState('');
   const [missingFields, setMissingFields] = useState([]);
   const [toast, setToast] = useState(null);  // { kind: 'success' | 'error', text }
+  // Existing-units warning: when properties-DB has rows for this society, we
+  // pause submission and show a confirmation popup before pushing to Forms.
+  const [existingUnits, setExistingUnits] = useState(null); // null = not checked yet; [] = checked, none; [...] = matches
 
   // Auto-dismiss toast. MUST be declared before any conditional early-return —
   // React requires hook order to be identical on every render. If we return
@@ -1092,13 +1095,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
     setModalOpen(false);
   };
 
-  const handleSubmit = async () => {
-    setError('');
-    setMissingFields([]);
-    if (!date || !time || !fieldExecId) {
-      setError('Please fill in all fields.');
-      return;
-    }
+  const sendScheduleRequest = async () => {
     setSubmitting(true);
     try {
       const result = await api.adminScheduleVisit(s.id, {
@@ -1107,6 +1104,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
         field_exec_id: Number(fieldExecId),
       });
       setModalOpen(false);
+      setExistingUnits(null);
       const successMsg = result.already_existed
         ? `Visit was already scheduled — UID: ${result.uid}`
         : `Visit scheduled — UID: ${result.uid}`;
@@ -1122,6 +1120,40 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    setMissingFields([]);
+    if (!date || !time || !fieldExecId) {
+      setError('Please fill in all fields.');
+      return;
+    }
+    // Pre-flight: warn the admin if Openhouse already has units in this
+    // society. On lookup failure we don't block — fall through to schedule.
+    setSubmitting(true);
+    try {
+      const data = await api.adminListPropertiesBySociety(s.society_name || '');
+      const units = Array.isArray(data?.units) ? data.units : [];
+      if (units.length > 0) {
+        setExistingUnits(units);
+        setSubmitting(false);
+        return; // wait for explicit confirm
+      }
+    } catch (_) {
+      // ignore pre-flight failures — proceed to schedule
+    }
+    await sendScheduleRequest();
+  };
+
+  const confirmExistingAndSchedule = async () => {
+    setExistingUnits(null);
+    await sendScheduleRequest();
+  };
+
+  const cancelExistingWarning = () => {
+    if (submitting) return;
+    setExistingUnits(null);
   };
 
   // Auto-dismiss toast — moved above the early return.
@@ -1302,7 +1334,90 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
                   fontFamily: 'inherit',
                 }}
               >
-                {submitting ? 'Scheduling…' : 'Schedule'}
+                {submitting ? 'Checking…' : 'Schedule'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {existingUnits && existingUnits.length > 0 && (
+        <div
+          onClick={cancelExistingWarning}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)', zIndex: 1100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 14, padding: 20,
+              maxWidth: 640, width: '100%', maxHeight: '85vh',
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+              ⚠ Units already with Openhouse
+            </div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
+              {existingUnits.length} unit{existingUnits.length === 1 ? '' : 's'} already with Openhouse in <strong>{s.society_name}</strong>.
+            </div>
+            <div style={{ overflow: 'auto', flex: 1, border: '1px solid #eee', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ position: 'sticky', top: 0, background: '#FEF3C7' }}>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #FCD34D', fontWeight: 700 }}>UID</th>
+                    <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #FCD34D', fontWeight: 700 }}>Tower</th>
+                    <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #FCD34D', fontWeight: 700 }}>Unit</th>
+                    <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #FCD34D', fontWeight: 700 }}>Floor</th>
+                    <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #FCD34D', fontWeight: 700 }}>Config</th>
+                    <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid #FCD34D', fontWeight: 700 }}>Area (sqft)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {existingUnits.map((u, i) => (
+                    <tr key={u.uid || i} style={{ background: i % 2 ? '#fff' : '#FFFBEB' }}>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5e6b2', fontFamily: 'monospace' }}>{u.uid || '—'}</td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5e6b2' }}>{u.tower_no || '—'}</td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5e6b2' }}>{u.unit_no || '—'}</td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5e6b2' }}>{u.floor || '—'}</td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5e6b2' }}>{u.configuration || '—'}</td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid #f5e6b2' }}>{u.area_sqft ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={cancelExistingWarning}
+                disabled={submitting}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 10,
+                  border: '1.5px solid var(--oh-border, #ddd)', background: '#fff',
+                  fontSize: 14, fontWeight: 600,
+                  cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmExistingAndSchedule}
+                disabled={submitting}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none',
+                  background: submitting ? '#FFB28D' : 'linear-gradient(135deg, #FF6B2B 0%, #FF8A50 100%)',
+                  color: '#fff', fontSize: 14, fontWeight: 700,
+                  cursor: submitting ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {submitting ? 'Scheduling…' : 'Schedule anyway'}
               </button>
             </div>
           </div>

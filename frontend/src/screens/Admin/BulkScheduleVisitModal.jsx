@@ -33,6 +33,10 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
   const [error, setError] = useState('');
   const [preflightErrors, setPreflightErrors] = useState([]); // [{id, errors: [{field, label}]}]
   const [resultsByid, setResultsBySid] = useState(null); // null = not yet submitted
+  // Existing-units warning shown before pushing the bulk request to Forms.
+  // Shape: { [societyName]: [{uid, tower_no, unit_no, area_sqft, configuration, floor}, ...] }
+  // null = not yet checked / dismissed; populated object = popup visible.
+  const [existingBySociety, setExistingBySociety] = useState(null);
 
   // Load field execs on mount
   useEffect(() => {
@@ -141,11 +145,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
     });
   };
 
-  const handleSubmit = async () => {
-    setError('');
-    setPreflightErrors([]);
-    setResultsBySid(null);
-    if (!canSubmit) return;
+  const sendBulkRequest = async () => {
     setSubmitting(true);
     try {
       const items = sortedSubs.map((s) => ({
@@ -172,6 +172,53 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = async () => {
+    setError('');
+    setPreflightErrors([]);
+    setResultsBySid(null);
+    if (!canSubmit) return;
+    // Pre-flight existing-units check per unique society_name. If anything
+    // matches we show the warning popup and wait for an explicit confirm
+    // before calling /bulk-schedule-visit.
+    setSubmitting(true);
+    try {
+      const eligible = sortedSubs.filter((s) => !s.forms_uid);
+      const uniqueSocieties = Array.from(new Set(
+        eligible.map((s) => (s.society_name || '').trim()).filter(Boolean)
+      ));
+      const lookups = await Promise.all(uniqueSocieties.map(async (name) => {
+        try {
+          const data = await api.adminListPropertiesBySociety(name);
+          return [name, Array.isArray(data?.units) ? data.units : []];
+        } catch (_) {
+          return [name, []];
+        }
+      }));
+      const grouped = {};
+      for (const [name, units] of lookups) {
+        if (units.length > 0) grouped[name] = units;
+      }
+      if (Object.keys(grouped).length > 0) {
+        setExistingBySociety(grouped);
+        setSubmitting(false);
+        return; // wait for confirm
+      }
+    } catch (_) {
+      // ignore — fall through to send the bulk request
+    }
+    await sendBulkRequest();
+  };
+
+  const confirmExistingAndBulkSchedule = async () => {
+    setExistingBySociety(null);
+    await sendBulkRequest();
+  };
+
+  const cancelExistingWarning = () => {
+    if (submitting) return;
+    setExistingBySociety(null);
   };
 
   const handleCloseAfterSuccess = () => {
@@ -422,6 +469,88 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
           )}
         </div>
       </div>
+
+      {existingBySociety && Object.keys(existingBySociety).length > 0 && (
+        <div
+          onClick={cancelExistingWarning}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff', borderRadius: 10, padding: 20,
+              width: '100%', maxWidth: 760, maxHeight: '88vh',
+              display: 'flex', flexDirection: 'column',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+              ⚠ Units already with Openhouse
+            </div>
+            <div style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
+              The following societies already have units with Openhouse. Review before scheduling.
+            </div>
+            <div style={{ overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {Object.entries(existingBySociety).map(([society, units]) => (
+                <div key={society}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>
+                    {society} <span style={{ color: '#666', fontWeight: 500 }}>({units.length} unit{units.length === 1 ? '' : 's'})</span>
+                  </div>
+                  <div style={{ border: '1px solid #FCD34D', borderRadius: 6, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead style={{ background: '#FEF3C7' }}>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>UID</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Tower</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Unit</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Floor</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Config</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Area (sqft)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {units.map((u, i) => (
+                          <tr key={u.uid || `${society}-${i}`} style={{ background: i % 2 ? '#fff' : '#FFFBEB' }}>
+                            <td style={{ padding: '6px 8px', fontFamily: 'monospace' }}>{u.uid || '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{u.tower_no || '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{u.unit_no || '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{u.floor || '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{u.configuration || '—'}</td>
+                            <td style={{ padding: '6px 8px' }}>{u.area_sqft ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button
+                onClick={cancelExistingWarning}
+                disabled={submitting}
+                style={{ padding: '8px 16px', border: '1px solid #ccc', background: '#fff', borderRadius: 4, cursor: submitting ? 'not-allowed' : 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmExistingAndBulkSchedule}
+                disabled={submitting}
+                style={{
+                  padding: '8px 16px', border: 0, borderRadius: 4,
+                  background: submitting ? '#FFB28D' : '#FF6B2B',
+                  color: '#fff', cursor: submitting ? 'not-allowed' : 'pointer', fontWeight: 600,
+                }}
+              >
+                {submitting ? 'Scheduling…' : 'Schedule anyway'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
