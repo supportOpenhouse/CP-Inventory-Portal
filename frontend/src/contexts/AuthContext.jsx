@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
-import { clearSession, getUser, setUser } from '../auth';
+import { clearSession, getToken, getUser, setToken, setUser } from '../auth';
 
 const AuthContext = createContext(null);
 
@@ -11,19 +11,19 @@ export function AuthProvider({ children }) {
 
 
   useEffect(() => {
-    // The session lives in an HttpOnly cookie we can't read from JS, so verify
-    // it by calling /me unconditionally (the cookie rides along automatically).
-    // 200 → logged in; 401 → no/expired session → show Login.
-    (async () => {
-      try {
-        const { user: me } = await api.meBootstrap();
-        setUserState(me);
-        setUser(me);
-      } catch {
-        clearSession();
-        setUserState(null);
-      }
-    })();
+    const token = getToken();
+    if (token && !user) {
+      (async () => {
+        try {
+          const { user: me } = await api.me();
+          setUserState(me);
+          setUser(me);
+        } catch {
+          clearSession();
+          setUserState(null);
+        }
+      })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -35,8 +35,7 @@ export function AuthProvider({ children }) {
     try {
       const res = await api.phoneLogin(phone);
       if (res.token && res.user) {
-        // Session is carried by the HttpOnly cookie the backend just set; we
-        // only cache the user object for instant UI.
+        setToken(res.token);
         setUser(res.user);
         setUserState(res.user);
         return { kind: 'authenticated', user: res.user };
@@ -93,8 +92,7 @@ export function AuthProvider({ children }) {
     try {
       const res = await api.verifyOtp(phone, code);
       if (res.token && res.user) {
-        // Session is carried by the HttpOnly cookie the backend just set; we
-        // only cache the user object for instant UI.
+        setToken(res.token);
         setUser(res.user);
         setUserState(res.user);
         return { kind: 'authenticated', user: res.user };
@@ -114,13 +112,7 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function logout() {
-    // Clear the HttpOnly cookie server-side, then drop the cached user.
-    try {
-      await api.logout();
-    } catch {
-      // best effort — clear local state regardless
-    }
+  function logout() {
     clearSession();
     setUserState(null);
   }
