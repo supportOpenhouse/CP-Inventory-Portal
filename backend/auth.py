@@ -11,26 +11,37 @@ from config import Config
 from db import get_app_conn, put_app_conn
 
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24
+# Auto-logout windows: CPs get 1 day, all other roles (rm/manager/viewer/admin)
+# get 7 days. Tokens are stateless session tokens — once `exp` passes the
+# frontend hits a 401 and clears the session (see api.js).
+JWT_EXPIRY_HOURS = 24  # CP / default
+JWT_EXPIRY_HOURS_STAFF = 24 * 7  # non-CP roles
 
 log = logging.getLogger(__name__)
 
 
+def expiry_hours_for_role(role: str | None) -> int:
+    """Hours until auto-logout for a given role. CP = 1 day, others = 7 days."""
+    return JWT_EXPIRY_HOURS if (role or "cp") == "cp" else JWT_EXPIRY_HOURS_STAFF
+
+
 def generate_token(cp: dict) -> str:
-    """Given a CP record, issue a 24h JWT. Includes role for routing.
+    """Given a CP record, issue a JWT. Includes role for routing.
+    Auto-logout window is role-based: CP = 1 day, other roles = 7 days.
     `iat` is included so the auth middleware can compare against the
     user's `force_logout_at` (if set) and reject pre-logout tokens.
     """
     now = datetime.now(timezone.utc)
+    role = cp.get("role") or "cp"
     payload = {
         "cp_id": cp["id"],
         "cp_code": cp["cp_code"],
         "phone": cp["phone"],
         "is_admin": bool(cp.get("is_admin", False)),
-        "role": cp.get("role") or "cp",
+        "role": role,
         "city_id": cp.get("city_id"),
         "iat": int(now.timestamp()),
-        "exp": now + timedelta(hours=JWT_EXPIRY_HOURS),
+        "exp": now + timedelta(hours=expiry_hours_for_role(role)),
     }
     return jwt.encode(payload, Config.JWT_SECRET, algorithm=JWT_ALGORITHM)
 

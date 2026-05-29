@@ -199,21 +199,24 @@ def _generate_rm_token(rm: dict) -> str:
     """
     import jwt
     from datetime import datetime, timedelta, timezone
+    from auth import expiry_hours_for_role
     is_mgr = bool(rm.get("is_manager"))
     is_viewer = bool(rm.get("is_viewer"))
+    role = _resolve_role(rm)
     now = datetime.now(timezone.utc)
     payload = {
         "rm_id": rm["id"],
         "cp_code": f"RM{rm['id']:04d}",
         "phone": rm["phone"],
         "is_admin": False,
-        "role": _resolve_role(rm),
+        "role": role,
         "is_manager": is_mgr,
         "is_viewer": is_viewer,
         "manager_id": rm.get("manager_id"),
         "city_id": rm.get("city_id"),
         "iat": int(now.timestamp()),  # for force-logout check in auth middleware
-        "exp": now + timedelta(hours=24),
+        # Non-CP roles auto-logout after 7 days (vs 1 day for CPs).
+        "exp": now + timedelta(hours=expiry_hours_for_role(role)),
     }
     return jwt.encode(payload, Config.JWT_SECRET, algorithm="HS256")
 
