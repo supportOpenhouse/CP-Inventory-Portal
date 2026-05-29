@@ -86,6 +86,33 @@ def send_cp_reminders():
     if auth_err is not None:
         return auth_err
 
+    # ------------------------------------------------------------------
+    # AUTO WHATSAPP REMINDERS DISABLED
+    # ------------------------------------------------------------------
+    # The automated `cp_visit_reminder` and `cp_sellermeeting_reminder`
+    # WhatsApp templates are turned OFF per request. We short-circuit here,
+    # BEFORE any DB reads/writes, so:
+    #   - no Interakt template messages are sent, and
+    #   - no `cp_reminders_sent` slots are reserved (so flipping the flag back
+    #     on later resumes cleanly without "already sent" gaps).
+    # The full dispatch logic below is left intact — set the flag to True (or
+    # delete this block) to re-enable.
+    _AUTO_CP_REMINDERS_ENABLED = False
+    if not _AUTO_CP_REMINDERS_ENABLED:
+        log.info("[cron] CP WhatsApp reminders are disabled — no-op.")
+        return jsonify({
+            "ok": True,
+            "disabled": True,
+            "message": (
+                "CP WhatsApp reminders (cp_visit_reminder / "
+                "cp_sellermeeting_reminder) are disabled."
+            ),
+            "sent": 0,
+            "failed": 0,
+            "skipped_already_sent": 0,
+            "skipped_other": 0,
+        }), 200
+
     # ?dry_run=true returns the planned sends without calling Interakt.
     # Used to verify the job before turning live sends on in production.
     dry_run = request.args.get("dry_run", "false").lower() == "true"
