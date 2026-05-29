@@ -616,6 +616,7 @@ export default function Admin() {
           selectedIds={selectedIds}
           onToggleSelect={toggleBulkSelect}
           isAdmin={isAdmin} isStaff={isStaff}
+          statusFilter={statusFilter}
           hasMoreByStage={hasMoreByStage}
           loadingByStage={loadingByStage}
           onLoadMore={loadMoreStage}

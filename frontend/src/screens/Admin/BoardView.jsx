@@ -44,12 +44,19 @@ export default function BoardView({
   bulkMode = false, selectedIds = new Set(), onToggleSelect,
   isAdmin = false,
   isStaff = false,
+  statusFilter = '',
   hasMoreByStage = {},
   loadingByStage = {},
   onLoadMore,
 }) {
-  // Staff (admin + manager + RM) see all stages including Unapproved
-  const visibleStages = STAGES.filter((s) => isStaff || isAdmin || !s.adminOnly);
+  // Staff (admin + manager + RM) see all stages including Unapproved.
+  // When a status filter is active, collapse to just that stage's column:
+  // the reload only fetches that stage, and rendering the other (empty)
+  // columns would re-fire their load-more sentinels — which fetch each
+  // stage independently and refill the board, defeating the filter.
+  const visibleStages = STAGES
+    .filter((s) => isStaff || isAdmin || !s.adminOnly)
+    .filter((s) => !statusFilter || s.key === statusFilter);
 
   if (loading) {
     return (
