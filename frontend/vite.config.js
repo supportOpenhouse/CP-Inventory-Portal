@@ -47,5 +47,15 @@ export default defineConfig({
   server: {
     port: 5173,
     host: 'localhost',
+    // Proxy /api to the Flask backend so dev is same-origin. This lets the
+    // HttpOnly session cookie work with SameSite=Lax over http (no Secure
+    // needed locally). cookieDomainRewrite rebinds the cookie to localhost.
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        cookieDomainRewrite: 'localhost',
+      },
+    },
   },
 });

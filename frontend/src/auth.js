@@ -1,31 +1,18 @@
 /**
- * Token and user persistence via localStorage.
- * Survives page refresh AND tab/browser close, so the user stays logged in
- * for the full life of the JWT (1 day for CPs, 7 days for other roles) without
- * being re-prompted for OTP. The backend `exp` still enforces auto-logout:
- * once the token expires, api.me() / any request returns 401 and the session
- * is cleared (see AuthContext + api.js).
+ * Session persistence.
+ *
+ * The JWT now lives in an HttpOnly cookie set by the backend — it is NOT
+ * accessible to JavaScript (XSS-safe), so there is no token getter/setter here.
+ * The cookie is sent automatically on every API request (credentials: 'include')
+ * and the backend auto-logout window is enforced by the cookie/JWT expiry
+ * (1 day for CPs, 7 days for other roles).
+ *
+ * We still cache the non-secret `user` object in localStorage so the UI can
+ * render instantly on reload before /me resolves. clearSession() drops it; the
+ * cookie itself is cleared server-side via POST /auth/logout.
  */
 
-const TOKEN_KEY = 'oh_token';
 const USER_KEY = 'oh_user';
-
-export function getToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setToken(token) {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // localStorage unavailable (private mode, etc.) — silent fail
-  }
-}
 
 export function getUser() {
   try {
@@ -46,6 +33,5 @@ export function setUser(user) {
 }
 
 export function clearSession() {
-  setToken(null);
   setUser(null);
 }

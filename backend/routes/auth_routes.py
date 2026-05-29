@@ -12,7 +12,7 @@ Plus /me to verify token.
 
 from flask import Blueprint, g, jsonify, request
 
-from auth import generate_token, require_auth
+from auth import clear_auth_cookie, generate_token, require_auth, set_auth_cookie
 from config import Config
 from db import get_app_conn, put_app_conn
 from services_otp import send_otp, verify_otp
@@ -307,11 +307,13 @@ def verify_otp_route():
                 except Exception:
                     conn.rollback()
                 token = _generate_rm_token(rm)
-                return jsonify({
+                resp = jsonify({
                     "success": True,
                     "token": token,
                     "user": _rm_user_response(rm),
-                }), 200
+                })
+                set_auth_cookie(resp, token, _resolve_role(rm))
+                return resp, 200
 
             cp = _fetch_active_cp(cur, phone)
             if cp:
@@ -321,11 +323,13 @@ def verify_otp_route():
                 )
                 conn.commit()
                 token = generate_token(cp)
-                return jsonify({
+                resp = jsonify({
                     "success": True,
                     "token": token,
                     "user": _user_response(cp),
-                }), 200
+                })
+                set_auth_cookie(resp, token, cp.get("role") or "cp")
+                return resp, 200
 
             return jsonify(_not_registered_response(cur)), 200
     finally:
@@ -364,11 +368,26 @@ def phone_login():
         put_app_conn(conn)
 
     token = generate_token(cp)
-    return jsonify({
+    resp = jsonify({
         "success": True,
         "token": token,
         "user": _user_response(cp),
-    }), 200
+    })
+    set_auth_cookie(resp, token, cp.get("role") or "cp")
+    return resp, 200
+
+
+# ------------------------------------------------------------------
+# Logout — clear the HttpOnly session cookie
+# ------------------------------------------------------------------
+
+@bp.post("/auth/logout")
+def logout_route():
+    """Clear the session cookie. Safe to call unauthenticated (idempotent) so
+    the SPA can fire it even when the token is already expired/invalid."""
+    resp = jsonify({"success": True})
+    clear_auth_cookie(resp)
+    return resp, 200
 
 
 # ------------------------------------------------------------------

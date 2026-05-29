@@ -36,7 +36,9 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    CORS(app, origins=[Config.FRONTEND_ORIGIN], supports_credentials=False)
+    # Credentialed CORS: the SPA sends the HttpOnly session cookie cross-origin,
+    # which requires supports_credentials + an explicit (non-wildcard) origin.
+    CORS(app, origins=[Config.FRONTEND_ORIGIN], supports_credentials=True)
 
     init_pools()
 

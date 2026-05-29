@@ -13,6 +13,20 @@ class Config:
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
     ENV = os.getenv("FLASK_ENV", "development")
 
+    # Auth session cookie (HttpOnly JWT). In production the SPA and API are on
+    # different origins, so the cookie must be SameSite=None; Secure to be sent
+    # cross-site. In dev we serve same-origin via the Vite proxy, so Lax over
+    # http works. Override any of these via env in atypical deployments.
+    AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "oh_token")
+    _is_prod = ENV != "development"
+    AUTH_COOKIE_SECURE = os.getenv(
+        "AUTH_COOKIE_SECURE", "true" if _is_prod else "false"
+    ).lower() == "true"
+    AUTH_COOKIE_SAMESITE = os.getenv(
+        "AUTH_COOKIE_SAMESITE", "None" if _is_prod else "Lax"
+    )
+    AUTH_COOKIE_DOMAIN = os.getenv("AUTH_COOKIE_DOMAIN") or None  # None => host-only
+
     # Gmail SMTP for alerts
     GMAIL_FROM_ADDRESS = os.getenv("GMAIL_FROM_ADDRESS") or None
     GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") or None

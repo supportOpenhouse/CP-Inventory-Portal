@@ -25,6 +25,50 @@ def expiry_hours_for_role(role: str | None) -> int:
     return JWT_EXPIRY_HOURS if (role or "cp") == "cp" else JWT_EXPIRY_HOURS_STAFF
 
 
+def set_auth_cookie(resp, token: str, role: str | None) -> None:
+    """Attach the session JWT to `resp` as an HttpOnly cookie. Max-Age matches
+    the role's auto-logout window (1 day for CP, 7 days for others) so the
+    cookie and the JWT `exp` expire together. Attributes (Secure/SameSite/
+    Domain) come from Config — see config.py for the dev-vs-prod defaults.
+    """
+    resp.set_cookie(
+        Config.AUTH_COOKIE_NAME,
+        token,
+        max_age=expiry_hours_for_role(role) * 3600,
+        httponly=True,
+        secure=Config.AUTH_COOKIE_SECURE,
+        samesite=Config.AUTH_COOKIE_SAMESITE,
+        domain=Config.AUTH_COOKIE_DOMAIN,
+        path="/",
+    )
+
+
+def clear_auth_cookie(resp) -> None:
+    """Delete the session cookie (logout). Name/domain/path must match the
+    attributes used in set_auth_cookie or the browser won't drop it.
+    """
+    resp.delete_cookie(
+        Config.AUTH_COOKIE_NAME,
+        domain=Config.AUTH_COOKIE_DOMAIN,
+        path="/",
+        # Mirror the set-time attributes so browsers reliably match & drop it.
+        secure=Config.AUTH_COOKIE_SECURE,
+        samesite=Config.AUTH_COOKIE_SAMESITE,
+        httponly=True,
+    )
+
+
+def _token_from_request():
+    """Pull the session JWT from the request: prefer the Authorization: Bearer
+    header (non-browser/relay header clients), fall back to the HttpOnly cookie
+    (browser SPA). Returns the raw token string or None.
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return request.cookies.get(Config.AUTH_COOKIE_NAME) or None
+
+
 def generate_token(cp: dict) -> str:
     """Given a CP record, issue a JWT. Includes role for routing.
     Auto-logout window is role-based: CP = 1 day, other roles = 7 days.
@@ -183,10 +227,10 @@ def require_auth(f):
             g.user = relay_user
             return f(*args, **kwargs)
 
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            return jsonify({"error": "Missing or invalid Authorization header"}), 401
-        payload, err = _decode_or_reject(auth[7:].strip())
+        token = _token_from_request()
+        if not token:
+            return jsonify({"error": "Missing authentication credentials"}), 401
+        payload, err = _decode_or_reject(token)
         if err:
             body, status = err
             return jsonify(body), status
@@ -203,10 +247,10 @@ def require_staff(f):
     """
     @wraps(f)
     def wrapper(*args, **kwargs):
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            return jsonify({"error": "Missing or invalid Authorization header"}), 401
-        payload, err = _decode_or_reject(auth[7:].strip())
+        token = _token_from_request()
+        if not token:
+            return jsonify({"error": "Missing authentication credentials"}), 401
+        payload, err = _decode_or_reject(token)
         if err:
             body, status = err
             return jsonify(body), status

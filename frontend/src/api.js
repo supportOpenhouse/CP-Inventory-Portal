@@ -1,8 +1,9 @@
 /**
- * Thin API client. Attaches JWT, parses JSON, throws ApiError on non-2xx.
+ * Thin API client. The session rides in an HttpOnly cookie sent via
+ * credentials: 'include'; this parses JSON and throws ApiError on non-2xx.
  */
 
-import { getToken, clearSession } from './auth';
+import { clearSession } from './auth';
 
 // Idempotent guard so multiple concurrent 401s don't fire reload() many times.
 let forceLogoutInFlight = false;
@@ -10,8 +11,13 @@ let forceLogoutInFlight = false;
 function forceLogoutOnExpiredToken() {
   if (forceLogoutInFlight) return;
   forceLogoutInFlight = true;
+  // Best-effort: clear the HttpOnly cookie server-side (we can't touch it from
+  // JS). Fire-and-forget so we don't block the redirect.
+  try {
+    fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+  } catch { /* ignore */ }
   clearSession();
-  // Full reload so AuthContext re-mounts, finds no token, and routes to Login.
+  // Full reload so AuthContext re-mounts, me() 401s, and routes to Login.
   // location.replace() drops the current history entry (no "back" button into
   // the protected page that was 401'ing).
   if (typeof window !== 'undefined' && window.location) {
@@ -19,7 +25,10 @@ function forceLogoutOnExpiredToken() {
   }
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api';
+// Default to a same-origin '/api' so dev goes through the Vite proxy and the
+// HttpOnly session cookie is first-party. Production sets VITE_API_BASE_URL to
+// the absolute API URL.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export class ApiError extends Error {
   constructor(status, data) {
@@ -29,17 +38,15 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body = null, auth = true } = {}) {
+async function request(path, { method = 'GET', body = null, auth = true, autoLogout = true } = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  if (auth) {
-    const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
+      // Send/receive the HttpOnly session cookie on every request.
+      credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (netErr) {
@@ -57,7 +64,7 @@ async function request(path, { method = 'GET', body = null, auth = true } = {}) 
     // so the user lands on Login instead of staring at a "Token expired"
     // message in the middle of the app. We DON'T trigger this for unauth'd
     // requests (login, send-otp) since those legitimately 401 on bad creds.
-    if (res.status === 401 && auth && getToken()) {
+    if (res.status === 401 && auth && autoLogout) {
       forceLogoutOnExpiredToken();
     }
     throw new ApiError(res.status, data || { error: `HTTP ${res.status}` });
@@ -81,7 +88,14 @@ export const api = {
     request('/auth/send-otp', { method: 'POST', body: { phone }, auth: false }),
   verifyOtp: (phone, code) =>
     request('/auth/verify-otp', { method: 'POST', body: { phone, code }, auth: false }),
+  // Clears the HttpOnly session cookie server-side. auth:false so it never
+  // triggers the 401 force-logout-reload loop.
+  logout: () => request('/auth/logout', { method: 'POST', auth: false }),
   me: () => request('/me'),
+  // Bootstrap check on app mount: a 401 here just means "not logged in" — let
+  // AuthContext route to Login instead of firing the global reload (which would
+  // loop on the login page).
+  meBootstrap: () => request('/me', { autoLogout: false }),
 
   // Public lookups
   getRmContacts: () => request('/rm-contacts', { auth: false }),
@@ -266,18 +280,17 @@ export const api = {
 };
 
 /**
- * CSV export requires the browser to follow a download. Use this helper:
- * it appends the JWT to the URL via a signed query param approach — but since
- * we use Authorization header, we fetch the CSV as a blob and trigger a download.
+ * CSV export requires the browser to follow a download. We fetch the CSV as a
+ * blob (sending the HttpOnly session cookie via credentials) and trigger a
+ * download.
  */
 export async function downloadAdminCsv(filters = {}) {
-  const token = getToken();
   const qs = buildQuery(filters);
   const res = await fetch(`${API_BASE}/admin/submissions.csv${qs}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
   });
   if (!res.ok) {
-    if (res.status === 401 && token) forceLogoutOnExpiredToken();
+    if (res.status === 401) forceLogoutOnExpiredToken();
     throw new ApiError(res.status, { error: 'Failed to export CSV' });
   }
   const blob = await res.blob();
