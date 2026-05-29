@@ -244,12 +244,12 @@ def _apply_filters(base_sql: str, params: list):
 
     if search:
         base_sql += """ AND (
-            s.society_name ILIKE %s OR cp.cp_code ILIKE %s
+            s.public_id ILIKE %s OR s.society_name ILIKE %s OR cp.cp_code ILIKE %s
             OR cp.name ILIKE %s OR s.unit_no ILIKE %s
             OR s.seller_name ILIKE %s
         )"""
         like = f"%{search}%"
-        params.extend([like, like, like, like, like])
+        params.extend([like, like, like, like, like, like])
 
     if since_days and since_days > 0:
         base_sql += " AND s.submitted_at > NOW() - (%s || ' days')::interval"
@@ -882,12 +882,12 @@ def _stage_counts():
                 params.append(city)
             if search:
                 base_sql += """ AND (
-                    s.society_name ILIKE %s OR cp.cp_code ILIKE %s
+                    s.public_id ILIKE %s OR s.society_name ILIKE %s OR cp.cp_code ILIKE %s
                     OR cp.name ILIKE %s OR s.unit_no ILIKE %s
                     OR s.seller_name ILIKE %s
                 )"""
                 like = f"%{search}%"
-                params.extend([like, like, like, like, like])
+                params.extend([like, like, like, like, like, like])
             if since_days and since_days > 0:
                 base_sql += " AND s.submitted_at > NOW() - (%s || ' days')::interval"
                 params.append(str(since_days))
