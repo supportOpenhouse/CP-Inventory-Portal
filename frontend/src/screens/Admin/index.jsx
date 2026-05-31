@@ -16,7 +16,7 @@ import AdminPanel from './AdminPanel';
 import WhatsAppInbox, { WaIcon } from './WhatsAppInbox';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
-const BHK_OPTIONS = ['', '1 BHK', '2 BHK', '3 BHK', '4 BHK', '5 BHK'];
+const BHK_OPTIONS = ['', '2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK'];
 
 export default function Admin() {
   const { user, logout } = useAuth();
