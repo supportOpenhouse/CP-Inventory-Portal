@@ -8,7 +8,7 @@ import DuplicateCard from './DuplicateCard';
 import ForceCreateWarning from './ForceCreateWarning';
 import NoUnitDetailsWarning from './NoUnitDetailsWarning';
 
-const BHK_OPTIONS = ['2 BHK', '3 BHK', '4 BHK'];
+const BHK_OPTIONS = ['2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK'];
 const CITY_OPTIONS = ['Gurgaon', 'Noida', 'Ghaziabad'];
 
 // Floor dropdown order: Ground, Top, 1..50. Stored as VARCHAR — legacy values
