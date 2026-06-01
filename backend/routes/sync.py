@@ -2,8 +2,10 @@
 Sync endpoints for bulk-ingesting data from external sources.
 
 Currently handles:
-  - Collated data sync: receives scraper-aggregated listings from the
-    "Leadsquare" Google Sheet via Apps Script, upserts into collated_data.
+  - Inventory sync: receives aggregated external listings from the
+    "Leadsquare" Google Sheet via Apps Script, upserts into the `inventory`
+    table (separate Inventory DB). The route path stays /collated-data for
+    backward-compat with the Apps Script caller.
 
 Auth: shared secret via `X-Sync-Token` header (env var SYNC_SECRET_TOKEN).
       Not tied to user sessions — caller is a service account (Apps Script).
@@ -14,15 +16,24 @@ import logging
 from flask import Blueprint, request, jsonify
 
 from config import Config
-from db import get_app_conn, put_app_conn
+from db import (
+    get_app_conn,
+    put_app_conn,
+    get_inv_conn,
+    put_inv_conn,
+    inventory_configured,
+)
 
 log = logging.getLogger(__name__)
 
 bp = Blueprint("sync", __name__, url_prefix="/api/sync")
 
-# Fields we accept from Apps Script. Extras are ignored; missing fields default to NULL.
-# Order matches the INSERT column order.
-COLLATED_FIELDS = (
+# Columns we write into the `inventory` table from the Apps Script payload.
+# Extras are ignored; missing fields default to NULL. Order matches the INSERT
+# column order. `bedrooms` is coerced to INTEGER (the inventory column type),
+# and `last_synced_at` is stamped to NOW() on insert. Dedupe is on
+# `listing_link` (UNIQUE NOT NULL) — inventory has no `listing_id` column.
+INVENTORY_FIELDS = (
     "source",
     "city",
     "locality",
@@ -31,7 +42,6 @@ COLLATED_FIELDS = (
     "area_sqft",
     "floor",
     "price",
-    "listing_id",
     "seller_name",
     "posting_date",
     "listing_link",
@@ -64,16 +74,34 @@ def _coerce(row, field):
     return v
 
 
+def _coerce_int(v):
+    """Coerce a raw value to int by stripping non-digits ('2 BHK' -> 2).
+    Returns None when there's nothing numeric. Used for inventory.bedrooms,
+    which is INTEGER (collated_data.bedrooms was TEXT)."""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v
+    digits = "".join(c for c in str(v) if c.isdigit())
+    return int(digits) if digits else None
+
+
 @bp.post("/collated-data")
 def sync_collated_data():
-    """Bulk insert new collated_data rows (append-only, dedupe by listing_id).
+    """Bulk insert new `inventory` rows (append-only, dedupe by listing_link).
 
-    Request body: {"rows": [ {source, city, ..., listing_id, ...}, ... ]}
+    Writes to the separate inventory DB. Request body:
+        {"rows": [ {source, city, ..., listing_link, ...}, ... ]}
     Response: {"ok": true, "inserted": N, "skipped": M, "total": N+M}
     """
     auth_err = _require_sync_auth()
     if auth_err is not None:
         return auth_err
+
+    if not inventory_configured():
+        return jsonify({"error": "Inventory DB not configured (set INVENTORY_DATABASE_URL)"}), 503
 
     data = request.get_json(silent=True) or {}
     rows = data.get("rows")
@@ -86,15 +114,16 @@ def sync_collated_data():
             "error": f"Batch too large: {len(rows)} > {_MAX_BATCH_SIZE}",
         }), 413
 
-    # Filter out rows without a listing_id — they can't be deduped
+    # Filter out rows without a listing_link — it's the dedupe key (UNIQUE
+    # NOT NULL on inventory) and rows can't be inserted/deduped without it.
     valid_rows = []
     skipped_no_id = 0
     for r in rows:
         if not isinstance(r, dict):
             skipped_no_id += 1
             continue
-        lid = _coerce(r, "listing_id")
-        if not lid:
+        link = _coerce(r, "listing_link")
+        if not link:
             skipped_no_id += 1
             continue
         valid_rows.append(r)
@@ -105,37 +134,41 @@ def sync_collated_data():
             "inserted": 0,
             "skipped": skipped_no_id,
             "total": len(rows),
-            "note": "no rows had a valid listing_id",
+            "note": "no rows had a valid listing_link",
         })
 
-    # Bulk INSERT with ON CONFLICT DO NOTHING (append-only semantics)
-    cols = ", ".join(COLLATED_FIELDS)
-    placeholders = ", ".join(["%s"] * len(COLLATED_FIELDS))
+    # Bulk INSERT with ON CONFLICT DO NOTHING (append-only semantics).
+    # `last_synced_at` is stamped server-side to NOW() on every insert.
+    cols = ", ".join(INVENTORY_FIELDS) + ", last_synced_at"
+    placeholders = ", ".join(["%s"] * len(INVENTORY_FIELDS)) + ", NOW()"
 
     inserted = 0
-    conn = get_app_conn()
+    conn = get_inv_conn()
     try:
         with conn.cursor() as cur:
             for r in valid_rows:
-                params = tuple(_coerce(r, f) for f in COLLATED_FIELDS)
+                params = tuple(
+                    _coerce_int(_coerce(r, f)) if f == "bedrooms" else _coerce(r, f)
+                    for f in INVENTORY_FIELDS
+                )
                 cur.execute(
                     f"""
-                    INSERT INTO collated_data ({cols})
+                    INSERT INTO inventory ({cols})
                     VALUES ({placeholders})
-                    ON CONFLICT (listing_id) DO NOTHING
+                    ON CONFLICT (listing_link) DO NOTHING
                     """,
                     params,
                 )
-                # rowcount is 1 if inserted, 0 if conflict (duplicate listing_id)
+                # rowcount is 1 if inserted, 0 if conflict (duplicate listing_link)
                 if cur.rowcount and cur.rowcount > 0:
                     inserted += 1
             conn.commit()
     except Exception as e:
         conn.rollback()
-        log.exception("[sync] collated-data insert failed: %s", e)
+        log.exception("[sync] inventory insert failed: %s", e)
         return jsonify({"error": "Insert failed", "detail": str(e)}), 500
     finally:
-        put_app_conn(conn)
+        put_inv_conn(conn)
 
     skipped_dupes = len(valid_rows) - inserted
     return jsonify({
@@ -150,20 +183,24 @@ def sync_collated_data():
 
 @bp.get("/collated-data/stats")
 def collated_data_stats():
-    """Quick health-check / observability endpoint. Same auth as sync."""
+    """Quick health-check / observability endpoint. Same auth as sync.
+    Reads from the inventory DB."""
     auth_err = _require_sync_auth()
     if auth_err is not None:
         return auth_err
 
-    conn = get_app_conn()
+    if not inventory_configured():
+        return jsonify({"error": "Inventory DB not configured (set INVENTORY_DATABASE_URL)"}), 503
+
+    conn = get_inv_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT
                     COUNT(*) AS total,
-                    MAX(synced_at) AS last_synced_at,
-                    COUNT(*) FILTER (WHERE synced_at > NOW() - INTERVAL '24 hours') AS added_24h
-                FROM collated_data
+                    MAX(last_synced_at) AS last_synced_at,
+                    COUNT(*) FILTER (WHERE last_synced_at > NOW() - INTERVAL '24 hours') AS added_24h
+                FROM inventory
             """)
             row = cur.fetchone()
             return jsonify({
@@ -172,7 +209,7 @@ def collated_data_stats():
                 "added_24h": row["added_24h"] if row else 0,
             })
     finally:
-        put_app_conn(conn)
+        put_inv_conn(conn)
 
 
 # ==============================================================

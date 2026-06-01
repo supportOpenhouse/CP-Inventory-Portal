@@ -25,11 +25,12 @@ logger = logging.getLogger("db")
 
 _app_pool: Optional[pool.SimpleConnectionPool] = None
 _props_pool: Optional[pool.SimpleConnectionPool] = None
+_inv_pool: Optional[pool.SimpleConnectionPool] = None
 
 
 def init_pools() -> None:
-    """Initialize both pools. Called once at app startup."""
-    global _app_pool, _props_pool
+    """Initialize the pools. Called once at app startup."""
+    global _app_pool, _props_pool, _inv_pool
 
     _app_pool = pool.SimpleConnectionPool(
         minconn=1,
@@ -48,6 +49,18 @@ def init_pools() -> None:
             minconn=1,
             maxconn=5,
             dsn=Config.PROPERTIES_DATABASE_URL,
+            cursor_factory=RealDictCursor,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
+        )
+
+    if Config.INVENTORY_DATABASE_URL:
+        _inv_pool = pool.SimpleConnectionPool(
+            minconn=1,
+            maxconn=5,
+            dsn=Config.INVENTORY_DATABASE_URL,
             cursor_factory=RealDictCursor,
             keepalives=1,
             keepalives_idle=30,
@@ -128,11 +141,41 @@ def properties_configured() -> bool:
     return _props_pool is not None
 
 
+# ---------- Inventory DB (optional, separate database) ----------
+
+def get_inv_conn():
+    if _inv_pool is None:
+        raise RuntimeError("Inventory DB not configured (set INVENTORY_DATABASE_URL)")
+
+    conn = _inv_pool.getconn()
+    if _is_conn_alive(conn):
+        return conn
+
+    logger.warning("[db] stale inventory connection detected; replacing")
+    try:
+        _inv_pool.putconn(conn, close=True)
+    except Exception:  # noqa: BLE001
+        pass
+    return _inv_pool.getconn()
+
+
+def put_inv_conn(conn) -> None:
+    if _inv_pool is not None:
+        try:
+            _inv_pool.putconn(conn)
+        except psycopg2.pool.PoolError:
+            pass
+
+
+def inventory_configured() -> bool:
+    return _inv_pool is not None
+
+
 # ---------- Health check ----------
 
 def health_check() -> dict:
     """Return status of both pools (for /api/health endpoint)."""
-    result = {"app": "unknown", "properties": "unknown"}
+    result = {"app": "unknown", "properties": "unknown", "inventory": "unknown"}
 
     # App DB
     try:
@@ -162,5 +205,21 @@ def health_check() -> dict:
                 put_props_conn(conn)
         except Exception as e:
             result["properties"] = f"error: {str(e)[:100]}"
+
+    # Inventory DB (optional, separate database)
+    if not inventory_configured():
+        result["inventory"] = "not configured"
+    else:
+        try:
+            conn = get_inv_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1 AS ok")
+                    cur.fetchone()
+                result["inventory"] = "ok"
+            finally:
+                put_inv_conn(conn)
+        except Exception as e:
+            result["inventory"] = f"error: {str(e)[:100]}"
 
     return result

@@ -6,12 +6,13 @@ count, because they're the only sources with tower/unit columns:
   2. submissions (active CP portal submissions — in app DB,
      status NOT IN ('Price Rejected', 'Rejected', 'Unapproved'))
 
-A third source, collated_data (external scrapers like 99acres), has no
+A third source, the `inventory` table (external listings like 99acres,
+formerly collated_data, now in a separate Inventory DB), has no
 tower/unit columns so it can match at most at society+bhk+floor. It is
 checked and exposed as `collated_match` on the response, but it never
 drives an exact-match block on its own — that would falsely flag the
 CP's specific unit just because some other unit on the same floor was
-seen by a scraper.
+seen by an external source.
 
 Matching fields:
   society (required) + bhk + floor + optionally tower + optionally unit_no
@@ -44,7 +45,8 @@ Submissions with status 'Price Rejected' or 'Rejected' are ignored
 (freed up for other CPs).
 
 If the properties DB isn't configured, only that source is skipped — the
-submissions and collated_data checks (both in the app DB) still run.
+submissions check (app DB) still runs, as does the inventory check when the
+Inventory DB is configured (both fail open/closed independently).
 """
 
 import re
@@ -55,6 +57,9 @@ from db import (
     get_props_conn,
     put_props_conn,
     properties_configured,
+    get_inv_conn,
+    put_inv_conn,
+    inventory_configured,
 )
 
 _BHK_DIGIT_RE = re.compile(r"(\d+)")
@@ -199,29 +204,37 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
 
 
 def _check_collated_data(city, society_name, bhk_n, floor_n):
-    """Query the collated_data table (external-source scraper listings) for a match.
+    """Query the `inventory` table (external listings, formerly collated_data,
+    now in a separate DB) for a match.
 
-    Schema has no tower/unit_no columns, so matching is on city + society + bedrooms
-    + floor only — the same narrowest scope shared with properties/submissions.
+    Schema has no tower/unit_no columns, so matching is on city + society +
+    bedrooms + floor only — the same narrowest scope shared with
+    properties/submissions. `bedrooms` is an INTEGER column here (it was TEXT
+    in collated_data) so we cast it to text before digit-normalizing.
 
-    Returns True if any collated row matches; False otherwise.
+    Returns True if any inventory row matches; False otherwise (also False when
+    the inventory DB isn't configured/reachable — fail closed so dup-check as a
+    whole keeps working).
     """
     import logging
     log = logging.getLogger(__name__)
 
-    conn = get_app_conn()
+    if not inventory_configured():
+        return False
+
+    conn = get_inv_conn()
     try:
         with conn.cursor() as cur:
             # Both sides get digit-only normalization for floor and bedrooms, and
-            # whitespace-collapsed lower-case for society, to absorb scraper-side
+            # whitespace-collapsed lower-case for society, to absorb source-side
             # formatting quirks ("18 ", "F18", "  Antriksh  Heights  ", etc.).
-            # City filter is tolerant of NULL/empty because scraped rows often
+            # City filter is tolerant of NULL/empty because source rows often
             # don't populate city.
             sql = """
-                SELECT 1 FROM collated_data
+                SELECT 1 FROM inventory
                 WHERE REGEXP_REPLACE(LOWER(TRIM(COALESCE(society, ''))), '\\s+', ' ', 'g')
                       = REGEXP_REPLACE(LOWER(TRIM(%s)), '\\s+', ' ', 'g')
-                  AND REGEXP_REPLACE(COALESCE(bedrooms, ''), '[^0-9]', '', 'g') = %s
+                  AND REGEXP_REPLACE(COALESCE(bedrooms::text, ''), '[^0-9]', '', 'g') = %s
                   AND REGEXP_REPLACE(COALESCE(floor, ''),    '[^0-9]', '', 'g')
                       = REGEXP_REPLACE(%s, '[^0-9]', '', 'g')
                   AND (
@@ -237,17 +250,16 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
                 cur.execute(sql, params)
                 hit = cur.fetchone() is not None
                 log.info(
-                    "[dup-check] collated_data query: city=%r society=%r bhk=%r floor=%r -> match=%s",
+                    "[dup-check] inventory query: city=%r society=%r bhk=%r floor=%r -> match=%s",
                     city, society_name, bhk_n, floor_n, hit,
                 )
                 return hit
             except Exception as e:
-                # Likely cause: collated_data table doesn't exist yet.
                 # Fail closed (return False) so we don't break dup-check entirely.
                 log.exception("[dup-check] _check_collated_data failed: %s", e)
                 return False
     finally:
-        put_app_conn(conn)
+        put_inv_conn(conn)
 
 
 def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
@@ -290,8 +302,8 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     if bhk_n is None or floor_n is None:
         return _no_match()
 
-    # Compute collated_data match up-front and surface it on every response.
-    # collated_data has no tower/unit columns, so it can only match at the
+    # Compute inventory match up-front and surface it on every response.
+    # inventory has no tower/unit columns, so it can only match at the
     # society+bhk+floor level. We expose this flag even when the final block
     # decision is "no" — the admin UI uses it to highlight Unapproved
     # submissions that came through the "submit without unit details" path.

@@ -28,7 +28,11 @@ from flask import Blueprint, Response, g, jsonify, request
 from activity_log import log_activity
 from auth import require_staff, require_acting_staff
 from config import Config
-from db import get_app_conn, put_app_conn, get_props_conn, put_props_conn, properties_configured
+from db import (
+    get_app_conn, put_app_conn,
+    get_props_conn, put_props_conn, properties_configured,
+    get_inv_conn, put_inv_conn, inventory_configured,
+)
 from listing_rm import resolve_listing_rm, upsert_society_mapping
 from utils import to_int, to_str
 
@@ -3805,14 +3809,14 @@ def bulk_reassign_listing_rm():
 
 
 # ============================================================
-# External inventory view: collated_data (App DB) + properties (Properties DB)
+# External inventory view: inventory (Inventory DB) + properties (Properties DB)
 # ============================================================
 #
 # Read-only view of inventory rows that are NOT in our submissions table.
 # Merged + paginated in Python (cross-DB, can't UNION at SQL level). Used by
 # the admin "External Data" page.
 #
-# Display labels: collated_data => "D Data"; properties => "F Data".
+# Display labels: inventory => "D Data"; properties => "F Data".
 # ============================================================
 
 EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT = 100
@@ -3860,21 +3864,23 @@ def _ext_inventory_global_facets():
         return _EXT_FACETS_CACHE["data"]
 
     sources_d, bhks_d = [], []
-    ac = get_app_conn()
-    try:
-        with ac.cursor() as cur:
-            cur.execute(
-                "SELECT DISTINCT source FROM collated_data "
-                "WHERE source IS NOT NULL AND TRIM(source) <> ''"
-            )
-            sources_d = [r["source"] for r in cur.fetchall()]
-            cur.execute(
-                "SELECT DISTINCT bedrooms FROM collated_data "
-                "WHERE bedrooms IS NOT NULL AND TRIM(bedrooms) <> ''"
-            )
-            bhks_d = [r["bedrooms"] for r in cur.fetchall()]
-    finally:
-        put_app_conn(ac)
+    if inventory_configured():
+        ac = get_inv_conn()
+        try:
+            with ac.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT source FROM inventory "
+                    "WHERE source IS NOT NULL AND TRIM(source) <> ''"
+                )
+                sources_d = [r["source"] for r in cur.fetchall()]
+                # inventory.bedrooms is INTEGER — cast to text for the facet list.
+                cur.execute(
+                    "SELECT DISTINCT bedrooms::text AS bedrooms FROM inventory "
+                    "WHERE bedrooms IS NOT NULL"
+                )
+                bhks_d = [r["bedrooms"] for r in cur.fetchall()]
+        finally:
+            put_inv_conn(ac)
 
     sources_p, bhks_p = [], []
     if properties_configured():
@@ -3928,7 +3934,7 @@ SORTABLE_COLUMNS = {
 @bp.get("/external-inventory")
 @require_staff
 def list_external_inventory():
-    """Merged read-only view of `collated_data` (App DB) + `properties`
+    """Merged read-only view of `inventory` (Inventory DB) + `properties`
     (Properties DB), normalised to a single column shape.
 
     Query string:
@@ -3997,9 +4003,9 @@ def list_external_inventory():
 
     rows = []
 
-    # ── 1) collated_data (App DB) → "D Data" ──────────────────────
-    if type_filter in (None, "D"):
-        conn = get_app_conn()
+    # ── 1) inventory (Inventory DB) → "D Data" ────────────────────
+    if type_filter in (None, "D") and inventory_configured():
+        conn = get_inv_conn()
         try:
             with conn.cursor() as cur:
                 clauses, params = [], []
@@ -4016,10 +4022,11 @@ def list_external_inventory():
                     )
                     params.append(source)
                 if bhk:
-                    # Normalize whitespace on both sides so "2 BHK" matches
-                    # rows storing "2 BHK", "2BHK", "2  BHK", "2bhk", etc.
+                    # inventory.bedrooms is INTEGER — cast to text. Normalize
+                    # whitespace on both sides so the facet value (e.g. "2")
+                    # matches the stored integer's text form.
                     clauses.append(
-                        "LOWER(REGEXP_REPLACE(COALESCE(bedrooms, ''), '\\s+', '', 'g')) "
+                        "LOWER(REGEXP_REPLACE(COALESCE(bedrooms::text, ''), '\\s+', '', 'g')) "
                         "= LOWER(REGEXP_REPLACE(%s, '\\s+', '', 'g'))"
                     )
                     params.append(bhk)
@@ -4044,9 +4051,9 @@ def list_external_inventory():
                     params.extend([like, like, like])
                 where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
                 cur.execute(f"""
-                    SELECT id, source, city, locality, society, bedrooms,
+                    SELECT id, source, city, locality, society, bedrooms::text AS bedrooms,
                            area_sqft, floor, price, posting_date, listing_link
-                    FROM collated_data
+                    FROM inventory
                     {where}
                 """, params)
                 for r in cur.fetchall():
@@ -4068,7 +4075,7 @@ def list_external_inventory():
                         "listing_link": r.get("listing_link"),
                     })
         finally:
-            put_app_conn(conn)
+            put_inv_conn(conn)
 
     # ── 2) properties (Properties DB) → "F Data" ──────────────────
     if type_filter in (None, "F") and properties_configured():
@@ -4080,14 +4087,14 @@ def list_external_inventory():
                     clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
                     params.append(city)
                 if source:
-                    # Same -Scraping collapsing as collated_data above.
+                    # Same -Scraping collapsing as inventory above.
                     clauses.append(
                         "LOWER(TRIM(REGEXP_REPLACE(COALESCE(source, ''), '-[Ss]craping$', ''))) "
                         "= LOWER(TRIM(REGEXP_REPLACE(%s, '-[Ss]craping$', '')))"
                     )
                     params.append(source)
                 if bhk:
-                    # Same whitespace-collapsing as collated_data above.
+                    # Same whitespace-collapsing as inventory above.
                     clauses.append(
                         "LOWER(REGEXP_REPLACE(COALESCE(configuration, ''), '\\s+', '', 'g')) "
                         "= LOWER(REGEXP_REPLACE(%s, '\\s+', '', 'g'))"
@@ -4148,7 +4155,7 @@ def list_external_inventory():
     # Server-side sort by chosen column.
     #
     # Special handling:
-    #  - DATES are mixed: collated_data.posting_date is a DATE (isoformat
+    #  - DATES are mixed: inventory.posting_date is a DATE (isoformat
     #    "YYYY-MM-DD"), properties.schedule_submitted_at is a TIMESTAMPTZ
     #    (isoformat "YYYY-MM-DDTHH:MM:SS+00:00"). Compare just the first 10
     #    characters so a same-day bare-date and timestamp sort together

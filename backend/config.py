@@ -9,6 +9,11 @@ load_dotenv()
 class Config:
     DATABASE_URL = os.getenv("DATABASE_URL")
     PROPERTIES_DATABASE_URL = os.getenv("PROPERTIES_DATABASE_URL") or None
+    # Separate DB that holds the `inventory` table (external listings, formerly
+    # collated_data). Optional — when unset, inventory-backed features degrade
+    # gracefully (dup-check inventory match returns no-match, the External "D
+    # Data" view shows nothing, and the inventory sync endpoints return 503).
+    INVENTORY_DATABASE_URL = os.getenv("INVENTORY_DATABASE_URL") or None
     JWT_SECRET = os.getenv("JWT_SECRET")
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
     ENV = os.getenv("FLASK_ENV", "development")
