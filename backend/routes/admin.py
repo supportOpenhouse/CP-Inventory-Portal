@@ -4051,16 +4051,22 @@ def list_external_inventory():
                     params.extend([like, like, like])
                 where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
                 cur.execute(f"""
-                    SELECT id, source, city, locality, society, bedrooms::text AS bedrooms,
+                    SELECT oh_id, id, source, city, locality, society, bedrooms::text AS bedrooms,
                            area_sqft, floor, price, posting_date, listing_link
                     FROM inventory
                     {where}
                 """, params)
                 for r in cur.fetchall():
                     pd = r.get("posting_date")
+                    # Use the business id `oh_id` as the row's display id; fall
+                    # back to the serial `id` only if oh_id is missing (nullable).
+                    oh_id = r.get("oh_id")
+                    row_id = oh_id if oh_id not in (None, "") else (
+                        str(r["id"]) if r.get("id") is not None else None
+                    )
                     rows.append({
                         "type":     "D",
-                        "id":       str(r["id"]) if r.get("id") is not None else None,
+                        "id":       row_id,
                         "source":   r.get("source"),
                         "society":  r.get("society"),
                         "city":     r.get("city"),
