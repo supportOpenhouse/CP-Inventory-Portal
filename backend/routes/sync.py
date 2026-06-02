@@ -75,17 +75,24 @@ def _coerce(row, field):
 
 
 def _coerce_int(v):
-    """Coerce a raw value to int by stripping non-digits ('2 BHK' -> 2).
-    Returns None when there's nothing numeric. Used for inventory.bedrooms,
-    which is INTEGER (collated_data.bedrooms was TEXT)."""
+    """Coerce a raw value to its INTEGER bedroom count, FLOORED to the first
+    whole number: '2 BHK' -> 2, '2.5 BHK' -> 2, '3.5' -> 3, 2.5 -> 2.
+    Returns None when there's nothing numeric. Used for inventory.bedrooms
+    (INTEGER) — keeps half-BHKs (2.5/3.5) as their integer part so they match
+    the floored BHK checks elsewhere. The original .5 is preserved only in the
+    TEXT sources (submissions/properties) and the frontend, not here."""
+    import re
     if v is None:
         return None
     if isinstance(v, bool):
         return None
     if isinstance(v, int):
         return v
-    digits = "".join(c for c in str(v) if c.isdigit())
-    return int(digits) if digits else None
+    if isinstance(v, float):
+        return int(v)  # truncates toward zero: 2.5 -> 2
+    # Take the FIRST run of digits (the integer part), ignoring any '.5' tail.
+    m = re.search(r"\d+", str(v))
+    return int(m.group(0)) if m else None
 
 
 @bp.post("/collated-data")

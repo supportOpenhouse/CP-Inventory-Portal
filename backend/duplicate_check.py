@@ -168,7 +168,8 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
 
             conditions = [
                 "society_id = %s",
-                "REGEXP_REPLACE(COALESCE(bhk, ''), '[^0-9]', '', 'g') = %s",
+                # BHK floored to its integer part: '2.5 BHK' -> '2', '3.5' -> '3'.
+                "SUBSTRING(COALESCE(bhk, '') FROM '[0-9]+') = %s",
                 "LOWER(TRIM(COALESCE(floor, ''))) = %s",
                 f"status IN ({status_placeholders})",
             ]
@@ -234,7 +235,7 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
                 SELECT 1 FROM inventory
                 WHERE REGEXP_REPLACE(LOWER(TRIM(COALESCE(society, ''))), '\\s+', ' ', 'g')
                       = REGEXP_REPLACE(LOWER(TRIM(%s)), '\\s+', ' ', 'g')
-                  AND REGEXP_REPLACE(COALESCE(bedrooms::text, ''), '[^0-9]', '', 'g') = %s
+                  AND SUBSTRING(COALESCE(bedrooms::text, '') FROM '[0-9]+') = %s
                   AND REGEXP_REPLACE(COALESCE(floor, ''),    '[^0-9]', '', 'g')
                       = REGEXP_REPLACE(%s, '[^0-9]', '', 'g')
                   AND (
@@ -314,7 +315,8 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     base_where = (
         "LOWER(TRIM(city))         = LOWER(TRIM(%s)) "
         "AND LOWER(TRIM(society_name)) = LOWER(TRIM(%s)) "
-        "AND REGEXP_REPLACE(COALESCE(configuration, ''), '[^0-9]', '', 'g') = %s "
+        # BHK floored to its integer part: '2.5 BHK' -> '2', '3.5' -> '3'.
+        "AND SUBSTRING(COALESCE(configuration, '') FROM '[0-9]+') = %s "
         "AND LOWER(TRIM(COALESCE(floor::text, ''))) = %s "
         "AND COALESCE(is_dead, FALSE) = FALSE"
     )

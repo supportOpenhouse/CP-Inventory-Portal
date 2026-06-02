@@ -278,7 +278,9 @@ def _apply_filters(base_sql: str, params: list):
         params.extend([rm_id, rm_id])
 
     if bhk:
-        base_sql += " AND s.bhk = %s"
+        # BHK floored to its integer part on both sides: '2.5 BHK' -> '2',
+        # so filtering "2 BHK" also returns 2.5-BHK rows (and vice-versa).
+        base_sql += " AND SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+') = SUBSTRING(%s FROM '[0-9]+')"
         params.append(bhk)
 
     if date_from:
@@ -768,9 +770,9 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
                           = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
                       AND LOWER(TRIM(ap.city)) = LOWER(TRIM(c.name))
-                      -- BHK normalized to digits only ('3 BHK', '3BHK', '3' all become '3')
-                      AND REGEXP_REPLACE(COALESCE(ap.bhk, ''), '[^0-9.]', '', 'g')
-                          = REGEXP_REPLACE(COALESCE(s.bhk, ''), '[^0-9.]', '', 'g')
+                      -- BHK floored to its integer part ('2.5 BHK' -> '2', '3 BHK' -> '3')
+                      AND SUBSTRING(COALESCE(ap.bhk, '') FROM '[0-9]+')
+                          = SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+')
                     ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
                     LIMIT 1
                 ) acq ON TRUE
@@ -912,7 +914,8 @@ def _stage_counts():
                 )
                 params.extend([rm_id, rm_id])
             if bhk:
-                base_sql += " AND s.bhk = %s"
+                # BHK floored to its integer part on both sides (see _apply_filters).
+                base_sql += " AND SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+') = SUBSTRING(%s FROM '[0-9]+')"
                 params.append(bhk)
             if date_from:
                 base_sql += " AND s.submitted_at >= %s"
@@ -1015,9 +1018,9 @@ def get_submission(sid: int):
                     WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
                           = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
                       AND LOWER(TRIM(ap.city)) = LOWER(TRIM(c.name))
-                      -- BHK normalized to digits only ('3 BHK', '3BHK', '3' all become '3')
-                      AND REGEXP_REPLACE(COALESCE(ap.bhk, ''), '[^0-9.]', '', 'g')
-                          = REGEXP_REPLACE(COALESCE(s.bhk, ''), '[^0-9.]', '', 'g')
+                      -- BHK floored to its integer part ('2.5 BHK' -> '2', '3 BHK' -> '3')
+                      AND SUBSTRING(COALESCE(ap.bhk, '') FROM '[0-9]+')
+                          = SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+')
                     ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
                     LIMIT 1
                 ) acq ON TRUE
@@ -4022,12 +4025,12 @@ def list_external_inventory():
                     )
                     params.append(source)
                 if bhk:
-                    # inventory.bedrooms is INTEGER — cast to text. Normalize
-                    # whitespace on both sides so the facet value (e.g. "2")
-                    # matches the stored integer's text form.
+                    # BHK floored to its integer part: '2.5 BHK' -> '2'. The
+                    # inventory.bedrooms INTEGER column already holds the floored
+                    # value, so this matches it directly.
                     clauses.append(
-                        "LOWER(REGEXP_REPLACE(COALESCE(bedrooms::text, ''), '\\s+', '', 'g')) "
-                        "= LOWER(REGEXP_REPLACE(%s, '\\s+', '', 'g'))"
+                        "SUBSTRING(COALESCE(bedrooms::text, '') FROM '[0-9]+') "
+                        "= SUBSTRING(%s FROM '[0-9]+')"
                     )
                     params.append(bhk)
                 if floor:
@@ -4100,10 +4103,10 @@ def list_external_inventory():
                     )
                     params.append(source)
                 if bhk:
-                    # Same whitespace-collapsing as inventory above.
+                    # Same BHK flooring as inventory above: '2.5 BHK' -> '2'.
                     clauses.append(
-                        "LOWER(REGEXP_REPLACE(COALESCE(configuration, ''), '\\s+', '', 'g')) "
-                        "= LOWER(REGEXP_REPLACE(%s, '\\s+', '', 'g'))"
+                        "SUBSTRING(COALESCE(configuration, '') FROM '[0-9]+') "
+                        "= SUBSTRING(%s FROM '[0-9]+')"
                     )
                     params.append(bhk)
                 if floor:
