@@ -686,6 +686,113 @@ def _sync_unit_details_from_properties() -> int:
         return 0
 
 
+# Confident-match tolerance: a priced area within this many sqft of the
+# listing's own area counts as a match; beyond it, we surface "area off".
+_OH_AREA_TOLERANCE_SQFT = 50
+
+
+def _oh_norm_society(name):
+    """Normalize a society name for matching: keep alphanumerics, lowercase.
+
+    Mirrors the SQL `LOWER(REGEXP_REPLACE(society, '[^a-zA-Z0-9]', '', 'g'))`
+    so the Python and DB sides agree (and matches the legacy acquisition-price
+    behavior so admins see the same societies match as before)."""
+    return re.sub(r"[^a-zA-Z0-9]", "", str(name or "")).lower()
+
+
+def _attach_oh_pricing(rows):
+    """Attach Openhouse pricing fields to each submission dict in place.
+
+    Reads the `oh_pricing` table from the **Inventory DB** (a separate database
+    from the app DB, so this can't be a SQL JOIN). Matching is on society +
+    area only: among a society's priced rows (acq_price present), pick the one
+    whose area_sqft is closest to the listing's sqft.
+
+    Adds to each row:
+      oh_price       — matched row's acq_price in rupees, or None
+      oh_area        — matched/nearest row's area_sqft, or None
+      oh_area_off_by — abs(area diff) in sqft to the nearest priced row, or None
+      oh_state       — one of:
+          'match'    confident: a priced area within _OH_AREA_TOLERANCE_SQFT
+          'area_off' a society price exists but nearest area is further off
+          'no_area'  the listing has no sqft, so it can't be area-matched
+          'no_match' no priced row exists for this society
+          None       pricing data unavailable (Inventory DB unset/unreachable)
+                     — the frontend renders nothing in this case.
+    """
+    if not rows:
+        return rows
+
+    for r in rows:
+        r["oh_price"] = None
+        r["oh_area"] = None
+        r["oh_area_off_by"] = None
+        r["oh_state"] = None
+
+    if not inventory_configured():
+        return rows
+
+    # Distinct normalized societies present in this batch -> the indices of the
+    # rows that carry each one (so one query covers the whole page).
+    norm_to_idxs = {}
+    for i, r in enumerate(rows):
+        n = _oh_norm_society(r.get("society_name"))
+        if n:
+            norm_to_idxs.setdefault(n, []).append(i)
+    if not norm_to_idxs:
+        return rows
+
+    conn = get_inv_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT LOWER(REGEXP_REPLACE(society, '[^a-zA-Z0-9]', '', 'g')) AS sn,
+                       area_sqft, acq_price
+                FROM oh_pricing
+                WHERE acq_price IS NOT NULL
+                  AND area_sqft IS NOT NULL
+                  AND LOWER(REGEXP_REPLACE(society, '[^a-zA-Z0-9]', '', 'g')) = ANY(%s)
+                """,
+                (list(norm_to_idxs.keys()),),
+            )
+            price_rows = cur.fetchall()
+    except Exception:
+        # Fail soft: leave oh_state=None so the UI shows nothing rather than a
+        # misleading "Check Price" for every card when the lookup breaks.
+        log.exception("[oh-pricing] lookup failed; OH price omitted for this batch")
+        return rows
+    finally:
+        put_inv_conn(conn)
+
+    by_society = {}
+    for pr in price_rows:
+        by_society.setdefault(pr["sn"], []).append(pr)
+
+    for n, idxs in norm_to_idxs.items():
+        candidates = by_society.get(n)
+        for i in idxs:
+            r = rows[i]
+            if not candidates:
+                r["oh_state"] = "no_match"
+                continue
+            listing_area = r.get("sqft")
+            if not listing_area:
+                r["oh_state"] = "no_area"
+                continue
+            best = min(candidates, key=lambda pr: abs(pr["area_sqft"] - listing_area))
+            delta = abs(best["area_sqft"] - listing_area)
+            r["oh_area"] = best["area_sqft"]
+            r["oh_area_off_by"] = delta
+            if delta <= _OH_AREA_TOLERANCE_SQFT:
+                r["oh_state"] = "match"
+                r["oh_price"] = best["acq_price"]
+            else:
+                r["oh_state"] = "area_off"
+
+    return rows
+
+
 def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int = 0):
     """Run the filtered admin-board query.
 
@@ -723,7 +830,6 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     cp.cp_code, cp.name AS cp_name,
                     rm.name AS assigned_rm_name,
                     listing_rm.name AS listing_rm_name,
-                    acq.acq_price_lakhs, acq.acq_sqft,
                     tmr.submitted_stage_at, tmr.visit_completed_stage_at,
                     tmr.moved_from_status,
                     co.counter_offers_sent, co.cp_counter_offers
@@ -745,7 +851,6 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     cp.company AS cp_company,
                     rm.name AS assigned_rm_name,
                     listing_rm.name AS listing_rm_name,
-                    acq.acq_price_lakhs, acq.acq_sqft,
                     tmr.submitted_stage_at, tmr.visit_completed_stage_at,
                     tmr.moved_from_status,
                     co.counter_offers_sent, co.cp_counter_offers
@@ -762,20 +867,6 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
                 LEFT JOIN rms listing_rm ON s.listing_rm_id = listing_rm.id
-                LEFT JOIN LATERAL (
-                    -- Match: same society (case/whitespace-insensitive), same city, same bhk
-                    -- (strict). Tie-break by closest sqft to the submission. Returns 1 row.
-                    SELECT ap.acq_price_lakhs, ap.sqft AS acq_sqft
-                    FROM acquisition_prices ap
-                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
-                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
-                      AND LOWER(TRIM(ap.city)) = LOWER(TRIM(c.name))
-                      -- BHK floored to its integer part ('2.5 BHK' -> '2', '3 BHK' -> '3')
-                      AND SUBSTRING(COALESCE(ap.bhk, '') FROM '[0-9]+')
-                          = SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+')
-                    ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
-                    LIMIT 1
-                ) acq ON TRUE
                 LEFT JOIN LATERAL (
                     -- Reminder-timer start timestamps, derived from submission_events.
                     -- - submitted_stage_at: last time status entered 'Submitted'
@@ -855,9 +946,13 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                 params.append(limit_per_stage)
 
             cur.execute(sql, params)
-            return cur.fetchall()
+            rows = cur.fetchall()
     finally:
         put_app_conn(conn)
+
+    # Merge Openhouse prices from the separate Inventory DB (oh_pricing). Done
+    # after releasing the app conn so we don't hold it during the cross-DB read.
+    return _attach_oh_pricing(rows)
 
 
 def _stage_counts():
@@ -1003,7 +1098,6 @@ def get_submission(sid: int):
                        cp_rm.name AS cp_rm_name,
                        rm.name AS assigned_rm_name,
                        listing_rm.name AS listing_rm_name,
-                       acq.acq_price_lakhs, acq.acq_sqft,
                        tmr.submitted_stage_at, tmr.visit_completed_stage_at,
                        co.counter_offers_sent, co.cp_counter_offers
                 FROM submissions s
@@ -1012,18 +1106,6 @@ def get_submission(sid: int):
                 LEFT JOIN rms cp_rm ON cp.rm_id = cp_rm.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
                 LEFT JOIN rms listing_rm ON s.listing_rm_id = listing_rm.id
-                LEFT JOIN LATERAL (
-                    SELECT ap.acq_price_lakhs, ap.sqft AS acq_sqft
-                    FROM acquisition_prices ap
-                    WHERE LOWER(REGEXP_REPLACE(ap.society_name, '[^a-zA-Z0-9]', '', 'g'))
-                          = LOWER(REGEXP_REPLACE(COALESCE(s.society_name, ''), '[^a-zA-Z0-9]', '', 'g'))
-                      AND LOWER(TRIM(ap.city)) = LOWER(TRIM(c.name))
-                      -- BHK floored to its integer part ('2.5 BHK' -> '2', '3 BHK' -> '3')
-                      AND SUBSTRING(COALESCE(ap.bhk, '') FROM '[0-9]+')
-                          = SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+')
-                    ORDER BY ABS(COALESCE(ap.sqft, 0) - COALESCE(s.sqft, 0)) ASC
-                    LIMIT 1
-                ) acq ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT
                         (SELECT MAX(e.created_at) FROM submission_events e
@@ -1073,6 +1155,10 @@ def get_submission(sid: int):
             events = cur.fetchall()
     finally:
         put_app_conn(conn)
+
+    # Openhouse price from the separate Inventory DB (oh_pricing), merged after
+    # the app conn is released — same approach as the list query.
+    _attach_oh_pricing([submission])
 
     return jsonify({"submission": submission, "events": events}), 200
 

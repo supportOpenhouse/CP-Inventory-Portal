@@ -341,8 +341,6 @@ export const css = `
   .board-card-price-label { font-size: 9.5px; font-weight: 700; color: #999; letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 2px; }
   .board-card-price-value { font-size: 15px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
   .board-card-price-value.asking { color: var(--oh-orange); }
-  .board-card-price-value.acq { color: #16A34A; }
-  .board-card-price-value.acq-suggested { color: #16A34A; opacity: 0.85; }
 
   .board-card-footer { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .board-card-date { font-size: 11px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }

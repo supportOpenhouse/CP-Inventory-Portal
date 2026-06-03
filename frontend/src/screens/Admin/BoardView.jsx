@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
+import { formatPrice, formatOhPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
 import AgingStrip from '../../components/AgingStrip';
 import { timerFor } from '../../timer';
 
@@ -129,28 +129,10 @@ export default function BoardView({
                   onSelect(s.id);
                 }
               };
-              const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
-              // Pull the value out of the helper's display string and pick a
-              // label. The helper returns "Acq ₹X" for an exact-sqft match
-              // and "Acq ~₹X (Y sqft)" for a suggested price (sqft differs).
-              // We render the label separately, so strip the "Acq " prefix
-              // and the "(Y sqft)" suffix off the value and surface them in
-              // the label instead.
-              let acqLabel = null;
-              let acqValue = null;
-              let acqIsSuggested = false;
-              if (acq) {
-                acqIsSuggested = acq.display.includes('~');
-                let v = acq.display.replace(/^Acq\s+/, '');
-                const sqftMatch = v.match(/^(.*?)\s*\((\d+)\s*sqft\)\s*$/);
-                if (sqftMatch) {
-                  v = sqftMatch[1];
-                  acqLabel = `Suggested · ${sqftMatch[2]} sqft`;
-                } else {
-                  acqLabel = acqIsSuggested ? 'Suggested' : 'Openhouse acq';
-                }
-                acqValue = v;
-              }
+              // Openhouse price chip: green formatted price on a confident
+              // match, brown "Check Price" + a reason sub-text otherwise. null
+              // when pricing data is unavailable (renders nothing).
+              const oh = formatOhPrice(s);
 
               // Counter offer — shown on the card next to the asking price
               // whenever one has been sent. Colour mirrors the detail panel:
@@ -322,7 +304,7 @@ export default function BoardView({
 
                   <div className="board-card-divider" />
 
-                  <div className={`board-card-prices${acq || counterStatus ? '' : ' solo'}`}>
+                  <div className={`board-card-prices${oh || counterStatus ? '' : ' solo'}`}>
                     <div>
                       <div className="board-card-price-label">Asking</div>
                       <div className="board-card-price-value asking">{formatPrice(s.asking_price)}</div>
@@ -341,12 +323,17 @@ export default function BoardView({
                         </div>
                       </div>
                     )}
-                    {acq && (
-                      <div title={acq.tooltip}>
-                        <div className="board-card-price-label">{acqLabel}</div>
-                        <div className={`board-card-price-value ${acqIsSuggested ? 'acq-suggested' : 'acq'}`}>
-                          {acqValue}
+                    {oh && (
+                      <div title={oh.tooltip}>
+                        <div className="board-card-price-label">OH</div>
+                        <div className="board-card-price-value" style={{ color: oh.color }}>
+                          {oh.display}
                         </div>
+                        {oh.sub && (
+                          <div style={{ fontSize: 9.5, fontWeight: 600, color: oh.color, marginTop: 3 }}>
+                            {oh.sub}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

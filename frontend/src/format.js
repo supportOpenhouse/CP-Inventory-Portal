@@ -161,33 +161,63 @@ export function stageLabel(key) {
   const s = STAGES.find((st) => st.key === key);
   return (s && s.label) || key;
 }
+// Colors for the OH price chip: green when we have a confident match, brown
+// for any "Check Price" state so it reads as "needs a human look".
+export const OH_MATCH_COLOR = '#16a34a';
+export const OH_CHECK_COLOR = '#b45309';
+
 /**
- * Format the Openhouse acquisition price for display next to a submission.
- * Returns { display, tooltip } where display is "Acq ₹145L" (exact match) or
- * "Acq ~₹145L (1500 sqft)" (suggested). Returns null if no acq price.
+ * Format the Openhouse price for display next to a submission, from the
+ * backend's oh_pricing match (see _attach_oh_pricing in admin.py).
  *
- * Match is "exact" when submission's sqft equals the matched acq row's sqft.
- * Any difference (or missing submission sqft) renders as "~" prefix + sqft hint.
+ * `s` is the submission row; it reads s.oh_state / s.oh_price / s.oh_area /
+ * s.oh_area_off_by. Matching is society + nearest-area only (no BHK/city).
+ *
+ * Returns null when oh_state is null/absent (pricing data unavailable — render
+ * nothing, the old no-match behavior). Otherwise returns:
+ *   { state, isMatch, display, color, sub, tooltip }
+ * where on a match `display` is the formatted price (e.g. "₹1.04 Cr") and on a
+ * non-match `display` is "Check Price" with a short `sub` reason chip.
  */
-export function formatAcqPrice(acq_price_lakhs, acq_sqft, submission_sqft) {
-  if (acq_price_lakhs == null) return null;
-  const priceStr = formatPrice(acq_price_lakhs * 100000);
-  const isExact =
-    submission_sqft && acq_sqft &&
-    Number(submission_sqft) === Number(acq_sqft);
-  if (isExact) {
+export function formatOhPrice(s) {
+  const state = s && s.oh_state;
+  if (!state) return null;
+
+  if (state === 'match') {
+    const off = Number(s.oh_area_off_by) || 0;
+    const areaNote = s.oh_area
+      ? ` ${s.oh_area} sqft${off > 0 ? ` (${off} sqft off)` : ' (exact)'}`
+      : '';
     return {
-      display: `Acq ${priceStr}`,
-      tooltip: 'Openhouse acquisition price',
+      state,
+      isMatch: true,
+      display: formatPrice(s.oh_price),   // oh_price is full rupees
+      color: OH_MATCH_COLOR,
+      sub: null,
+      tooltip: `Matched${areaNote}`,
     };
   }
-  // Suggested price — sqft differs OR submission has no sqft
-  const sqftHint = acq_sqft ? ` (${acq_sqft} sqft)` : '';
-  const tooltip = submission_sqft && acq_sqft
-    ? `Suggested price for ${acq_sqft} sqft (your unit: ${submission_sqft} sqft)`
-    : `Suggested price${acq_sqft ? ` for ${acq_sqft} sqft` : ''}`;
+
+  // Non-match → "Check Price" + reason chip + tooltip.
+  let sub, tooltip;
+  if (state === 'area_off') {
+    const off = Number(s.oh_area_off_by) || 0;
+    sub = 'area off';
+    tooltip = `Nearest priced area is ${off} sqft off (>50) — open card to verify`;
+  } else if (state === 'no_area') {
+    sub = 'no area';
+    tooltip = "Listing has no area, so it can't be area-matched";
+  } else {
+    // 'no_match' (and any unknown non-null state)
+    sub = 'no match';
+    tooltip = 'No OH price for this society';
+  }
   return {
-    display: `Acq ~${priceStr}${sqftHint}`,
+    state,
+    isMatch: false,
+    display: 'Check Price',
+    color: OH_CHECK_COLOR,
+    sub,
     tooltip,
   };
 }

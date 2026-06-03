@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../api';
 import {
-  formatDateTime, formatDateOnly, formatTime12, formatPrice, formatAcqPrice,
+  formatDateTime, formatDateOnly, formatTime12, formatPrice, formatOhPrice,
   STAGES, AUTO_ONLY_STAGES, REJECTED_REASONS, todayInIST,
 } from '../../format';
 import { getUser } from '../../auth';
@@ -518,21 +518,17 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                     <div className="admin-panel-val" style={{ color: '#FF6B2B', fontWeight: 700 }}>{formatPrice(s.asking_price)}</div>
                   </div>
                   {(() => {
-                    const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
-                    if (!acq) return null;
-                    const isSuggested = acq.display.includes('~');
+                    const oh = formatOhPrice(s);
+                    if (!oh) return null;
                     return (
-                      <div title={acq.tooltip}>
-                        <div className="admin-panel-label">
-                          Acq{isSuggested ? ' (suggested)' : ''}
+                      <div title={oh.tooltip}>
+                        <div className="admin-panel-label">OH Price</div>
+                        <div className="admin-panel-val" style={{ color: oh.color, fontWeight: 700 }}>
+                          {oh.display}
                         </div>
-                        <div className="admin-panel-val" style={{ color: '#16a34a', fontWeight: 700 }}>
-                          {isSuggested ? '~' : ''}{formatPrice(s.acq_price_lakhs * 100000)}
-                        </div>
-                        {isSuggested && s.acq_sqft && (
-                          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-                            for {s.acq_sqft} sqft
-                            {s.sqft ? ` · your unit: ${s.sqft} sqft` : ''}
+                        {oh.sub && (
+                          <div style={{ fontSize: 11, color: oh.color, marginTop: 2 }}>
+                            {oh.sub}
                           </div>
                         )}
                       </div>

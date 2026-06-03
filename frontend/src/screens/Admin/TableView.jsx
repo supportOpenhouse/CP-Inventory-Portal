@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { formatPrice, formatAcqPrice, formatDateOnly, formatTime12, stageLabel, stageMeta, timeAgo } from '../../format';
+import { formatPrice, formatOhPrice, formatDateOnly, formatTime12, stageLabel, stageMeta, timeAgo } from '../../format';
 
 /**
  * Bottom-of-table infinite-scroll sentinel. Two modes:
@@ -184,7 +184,7 @@ export default function TableView({
             <TH sortKey="unit">Unit</TH>
             <TH sortKey="config">Config</TH>
             <TH sortKey="asking">Asking</TH>
-            <th style={{ whiteSpace: 'nowrap' }} title="Openhouse acquisition price">Acq</th>
+            <th style={{ whiteSpace: 'nowrap' }} title="Openhouse price (society + area match)">OH Price</th>
             <TH sortKey="cp">CP</TH>
             <TH sortKey="status">Status</TH>
             <TH sortKey="submitted">Submitted</TH>
@@ -278,13 +278,15 @@ export default function TableView({
                 <td>{[s.bhk, s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={{ fontWeight: 600, color: '#FF6B2B' }}>{formatPrice(s.asking_price)}</td>
                 {(() => {
-                  const acq = formatAcqPrice(s.acq_price_lakhs, s.acq_sqft, s.sqft);
+                  const oh = formatOhPrice(s);
                   return (
                     <td
-                      style={{ fontWeight: 600, color: '#16a34a', whiteSpace: 'nowrap' }}
-                      title={acq ? acq.tooltip : 'Openhouse acquisition price'}
+                      style={{ fontWeight: 600, color: oh ? oh.color : '#16a34a', whiteSpace: 'nowrap' }}
+                      title={oh ? oh.tooltip : 'Openhouse price (society + area match)'}
                     >
-                      {acq ? acq.display : '—'}
+                      {oh
+                        ? (oh.sub ? `${oh.display} · ${oh.sub}` : oh.display)
+                        : '—'}
                     </td>
                   );
                 })()}
