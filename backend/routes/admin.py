@@ -3275,21 +3275,29 @@ def create_submission_on_behalf():
     has_submissions_match = bool(dup.get("submissions_match"))
     force_create = bool(data.get("force_create"))
 
-    # Status logic mirrors the CP-side flow in routes/submissions.py:
-    #   - Perfect match → Rejected (status_reason='Duplicacy')
-    #   - Unit-less     → Unapproved (always; no tower/unit means admin must verify)
-    #   - Otherwise     → Submitted, unless force_create is set on a blocked dup
+    # Status logic mirrors the CP-side flow in routes/submissions.py (applies to
+    # every acting role — admin / manager / rm):
+    #   - Perfect match  → Rejected (status_reason='Duplicacy')
+    #   - Unit-less      → Unapproved (always; no tower/unit means admin must verify)
+    #   - Collated match → Unapproved (inventory saw the same society+bhk+floor;
+    #                      admin reviews even when full tower/unit was given)
+    #   - Otherwise      → Submitted, unless force_create is set on a blocked dup
     if is_perfect_match:
         initial_status = "Rejected"
         initial_status_reason = "Duplicacy"
     elif is_unit_less:
         initial_status = "Unapproved"
         initial_status_reason = None
+    elif has_collated_match:
+        initial_status = "Unapproved"
+        initial_status_reason = None
     else:
         initial_status = "Unapproved" if (dup.get("block") and force_create) else "Submitted"
         initial_status_reason = None
 
-    collated_match = has_collated_match and initial_status == "Unapproved"
+    # Persist the collated flag whenever it's true so admin sees the highlight
+    # (mirrors submissions.py — NOT gated on status).
+    collated_match = has_collated_match
     submissions_match = has_submissions_match and initial_status == "Unapproved"
 
     staff_name = _resolve_staff_display_name()
