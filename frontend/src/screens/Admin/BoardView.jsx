@@ -325,7 +325,7 @@ export default function BoardView({
                     )}
                     {oh && (
                       <div title={oh.tooltip}>
-                        <div className="board-card-price-label">OH</div>
+                        <div className="board-card-price-label">OH Price</div>
                         <div className="board-card-price-value" style={{ color: oh.color }}>
                           {oh.display}
                         </div>
