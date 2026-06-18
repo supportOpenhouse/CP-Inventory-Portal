@@ -7,6 +7,23 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-06-18] — Fix: viewers couldn't see the Unapproved board column
+
+### Fixed
+- **Viewer role missed the Unapproved column on the kanban board.**
+  `isViewer` was computed at the top of
+  [`Admin/index.jsx`](frontend/src/screens/Admin/index.jsx) and used by
+  the counts panel filter, but was never passed down to `BoardView`.
+  `BoardView`'s own visible-stages filter only consulted
+  `isStaff || isAdmin`, and since the Unapproved stage is marked
+  `adminOnly: true` in `STAGES`, viewers got the other six columns but
+  Unapproved rows had no column to render in — silently invisible
+  despite the backend happily returning them. The board now matches the
+  counts panel pattern (`isStaff || isViewer || !s.adminOnly`) and
+  `isViewer` is threaded into the `BoardView` props. Pure frontend fix —
+  `_scoped_city_filter` had always been returning Unapproved rows to
+  viewers; only the rendering was gating them.
+
 ## [2026-05-23] — Real status: granular stage preserved alongside the 7 board stages
 
 ### Added

@@ -615,7 +615,7 @@ export default function Admin() {
           bulkMode={bulkMode}
           selectedIds={selectedIds}
           onToggleSelect={toggleBulkSelect}
-          isAdmin={isAdmin} isStaff={isStaff}
+          isAdmin={isAdmin} isStaff={isStaff} isViewer={isViewer}
           statusFilter={statusFilter}
           hasMoreByStage={hasMoreByStage}
           loadingByStage={loadingByStage}
