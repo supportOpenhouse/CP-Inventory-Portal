@@ -371,7 +371,6 @@ export default function Dashboard({ onAdd }) {
                 <div style={{ padding: '0 18px 16px' }}>
                   <MediaVisitActions
                     submission={s}
-                    compact
                     hideUploadMedia={bothMedia}
                     onUploadMedia={() => setMediaSubmission(s)}
                     onBookSlot={() => setBookSubmission(s)}

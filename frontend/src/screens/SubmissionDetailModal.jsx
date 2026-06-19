@@ -78,7 +78,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#fff', width: '100%', maxWidth: 560, maxHeight: '92vh',
+          background: '#fff', width: '100%', maxWidth: 560, maxHeight: '60vh',
           borderRadius: '16px 16px 0 0', overflow: 'auto', display: 'flex', flexDirection: 'column',
         }}
       >

@@ -12,13 +12,12 @@
  *   onUploadMedia    — () => void (opens the share-media modal)
  *   onBookSlot       — () => void (opens the book-visit modal)
  *   showHeading      — render the "Add photos/videos…" heading above the buttons
- *   compact          — smaller buttons (used on the dashboard card)
  *   hideUploadMedia  — suppress the Upload Media button (e.g. once both a photo
  *                      and a video have already been uploaded)
  */
 export default function MediaVisitActions({
   submission, onUploadMedia, onBookSlot,
-  showHeading = false, compact = false, hideUploadMedia = false,
+  showHeading = false, hideUploadMedia = false,
 }) {
   const status = submission?.status;
   const canBook = status === 'Submitted';
@@ -32,9 +31,7 @@ export default function MediaVisitActions({
     ? 'Add photos/videos and book visit slot'
     : (showMedia ? 'Add photos/videos' : 'Book a visit slot');
 
-  const btnStyle = compact
-    ? { flex: 1, padding: '6px 10px', fontSize: 12.5 }
-    : { flex: 1 };
+  const btnStyle = { flex: 1 };
 
   return (
     <div>

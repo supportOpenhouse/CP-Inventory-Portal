@@ -13,7 +13,7 @@ import { uploadToCloudinary, validateFile, validateVideo } from '../cloudinary';
  *        (how many already exist, for enforcing the per-listing limits).
  */
 export const PHOTO_LIMIT = 15;
-export const VIDEO_LIMIT = 3;
+export const VIDEO_LIMIT = 1;
 
 export default function ShareMediaModal({
   open, submissionId, onClose, onShared, photoCount = 0, videoCount = 0,
@@ -101,7 +101,7 @@ export default function ShareMediaModal({
           Add photos or videos for this unit. You can pick multiple files.
           <br />
           <span style={{ fontSize: 12 }}>
-            Photos {photoCount}/{PHOTO_LIMIT} · Videos {videoCount}/{VIDEO_LIMIT}
+            Photos {photoCount}/{PHOTO_LIMIT} · Video {videoCount}/{VIDEO_LIMIT}
           </span>
         </div>
 
