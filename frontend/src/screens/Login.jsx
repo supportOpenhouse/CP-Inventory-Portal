@@ -5,8 +5,14 @@ import OtpInput from '../components/OtpInput';
 
 const RESEND_COOLDOWN_SEC = 30;
 
+// Optional LOCAL DEV bypass — see src/local_bypass.js (gitignored). import.meta.glob
+// matches that file only when it's present (dev box); in production it's absent,
+// the glob returns {}, LOCAL_OTP_BYPASS stays false, and the full OTP flow runs.
+const _localBypassMods = import.meta.glob('../local_bypass.js', { eager: true });
+const LOCAL_OTP_BYPASS = Object.values(_localBypassMods)[0]?.LOCAL_OTP_BYPASS === true;
+
 export default function Login() {
-  const { sendOtp, verifyOtp, loading } = useAuth();
+  const { sendOtp, verifyOtp, login, loading } = useAuth();
   const [step, setStep] = useState('phone'); // 'phone' | 'otp'
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -41,6 +47,18 @@ export default function Login() {
 
     if (cleaned.length < 10) {
       setError('Enter at least 10 digits');
+      return;
+    }
+
+    // LOCAL DEV ONLY (gitignored bypass present): skip OTP, log in with phone.
+    if (LOCAL_OTP_BYPASS) {
+      const res = await login(cleaned);
+      if (res.kind === 'authenticated') return; // AuthProvider switches screens
+      if (res.kind === 'not_registered') {
+        setRmContacts(res.rmContacts);
+        return;
+      }
+      setError(res.message || 'Login failed');
       return;
     }
 
@@ -144,10 +162,12 @@ export default function Login() {
               disabled={loading}
               style={{ marginTop: 16 }}
             >
-              {loading ? <><span className="spinner" /> Sending OTP…</> : 'Send OTP'}
+              {loading
+                ? <><span className="spinner" /> {LOCAL_OTP_BYPASS ? 'Logging in…' : 'Sending OTP…'}</>
+                : (LOCAL_OTP_BYPASS ? 'Log in' : 'Send OTP')}
             </button>
             <div style={{ fontSize: 12, color: 'var(--oh-gray)', marginTop: 10, textAlign: 'center' }}>
-              We'll text you a 6-digit code
+              {LOCAL_OTP_BYPASS ? 'Local mode — no OTP required' : "We'll text you a 6-digit code"}
             </div>
           </div>
 

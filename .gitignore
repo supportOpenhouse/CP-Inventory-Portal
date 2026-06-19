@@ -16,6 +16,11 @@ ENV/
 .env.local
 .env.*.local
 
+# Local dev-only OTP bypass (never deployed). The app degrades to "no bypass"
+# when these files are absent, so production stays OTP-only.
+backend/local_bypass.py
+frontend/src/local_bypass.js
+
 # Import artifacts
 backend/import_drop_report.csv
 

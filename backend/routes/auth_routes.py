@@ -18,6 +18,14 @@ from db import get_app_conn, put_app_conn
 from services_otp import send_otp, verify_otp
 from utils import normalize_phone
 
+# Optional LOCAL DEV bypass. The module is gitignored and only present on dev
+# machines; in production the import fails and `_local_bypass` stays None, so
+# phone-only login is blocked and OTP is strictly enforced. See local_bypass.py.
+try:
+    from local_bypass import phone_login_bypass_enabled as _local_bypass
+except Exception:
+    _local_bypass = None
+
 bp = Blueprint("auth_routes", __name__, url_prefix="/api")
 
 
@@ -338,12 +346,13 @@ def verify_otp_route():
 
 @bp.post("/auth/phone-login")
 def phone_login():
-    """Phone-only login (no OTP). Only allowed when OTP is disabled globally
-    (OTP_ENABLED=false); blocked otherwise to force the OTP flow. Mirrors the
+    """Phone-only login (no OTP). Allowed when OTP is disabled globally
+    (OTP_ENABLED=false), or when the gitignored local-dev bypass is present
+    (see local_bypass.py); blocked otherwise to force the OTP flow. Mirrors the
     OTP verify flow's user resolution so EVERY role works: RM / manager / viewer
     via the rms table, CP via channel_partners.
     """
-    if Config.OTP_ENABLED:
+    if Config.OTP_ENABLED and not (_local_bypass and _local_bypass()):
         return jsonify({
             "error": "Phone-only login is disabled. Use /auth/send-otp then /auth/verify-otp."
         }), 410
