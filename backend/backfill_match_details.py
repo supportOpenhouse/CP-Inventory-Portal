@@ -1,10 +1,13 @@
 """One-time backfill of submissions.match_details for historical rows.
 
-Re-runs the dup-check for existing **Unapproved** (non-deleted) submissions and
-stores the matched records in the new `match_details` JSONB column, so old rows
-get the same "click the badge → see the matches" data that new submissions now
-capture at submit time. Scoped to Unapproved because that's where the Collated /
-Submissions match badges render in the admin UI.
+Re-runs the dup-check for existing **Unapproved + Rejected** (non-deleted)
+submissions and stores the matched records in the `match_details` JSONB column,
+so old rows get the same "click the badge → see the matches" data that new
+submissions capture at submit time.
+
+Skips rows already scanned (match_scanned_at set), so re-runs only process new
+or never-scanned rows — safe and cheap to run repeatedly. Each processed row is
+stamped with match_scanned_at = NOW().
 
 Run once after applying migrations/2026-06-18-match-details.sql:
 
@@ -38,13 +41,14 @@ def main() -> None:
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            # Only backfill Unapproved rows — that's where the Collated /
-            # Submissions match badges render in the admin UI.
+            # Backfill Unapproved + Rejected leads. Skip rows already scanned
+            # (match_scanned_at set) so re-runs only process new/unscanned rows.
             cur.execute("""
                 SELECT id, cp_id, society_id, bhk, tower, unit_no, floor
                 FROM submissions
                 WHERE deleted_at IS NULL
-                  AND status = 'Unapproved'
+                  AND status IN ('Unapproved', 'Rejected', 'Price Rejected')
+                  AND match_scanned_at IS NULL
                 ORDER BY id
             """)
             rows = cur.fetchall()
@@ -77,7 +81,7 @@ def main() -> None:
         try:
             with uconn.cursor() as cur:
                 cur.execute(
-                    "UPDATE submissions SET match_details = %s::jsonb WHERE id = %s",
+                    "UPDATE submissions SET match_details = %s::jsonb, match_scanned_at = NOW() WHERE id = %s",
                     (json.dumps(md), r["id"]),
                 )
                 uconn.commit()

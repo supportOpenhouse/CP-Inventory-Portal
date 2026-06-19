@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     real_status      VARCHAR(40),                              -- DEPRECATED, superseded by status_reason; no longer read/written. Kept temporarily for audit. See migrations/2026-05-25-status-reason-and-rename-rejected.sql
     collated_match   BOOLEAN     DEFAULT FALSE NOT NULL,  -- partial match from the external `inventory` table (separate DB); admin UI highlights this in Unapproved queue
     match_details    JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- the actual matched records behind the badges (source/id/society/tower/unit/floor/bhk/area); see migrations/2026-06-18-match-details.sql
+    match_scanned_at TIMESTAMPTZ,                                -- when backfill_match_details.py last scanned this row; lets re-runs skip it. See migrations/2026-06-19-match-scanned-at.sql
     videos           JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- CP-shared videos as {public_id, url} (Cloudinary); photos reuse the `photos` array. See migrations/2026-06-18-cp-media-and-visit-request.sql
     requested_visit_date DATE,                                  -- CP-requested visit slot (request only; does not change stage)
     requested_visit_slot TEXT,                                  -- 'morning' | 'afternoon' | 'evening'
