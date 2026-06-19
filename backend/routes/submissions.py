@@ -816,6 +816,54 @@ def share_media(sid: int):
         put_app_conn(conn)
 
 
+@bp.delete("/submissions/<int:sid>/media/video")
+@require_auth
+def delete_video(sid: int):
+    """CP removes one of their uploaded videos by Cloudinary public_id.
+
+    body: { public_id: "<public_id>" }
+    ponytail: only drops the DB reference, not the Cloudinary asset. Add a
+    Cloudinary destroy() call here if orphaned uploads become a storage problem.
+    """
+    data = request.get_json(silent=True) or {}
+    public_id = str(data.get("public_id") or "").strip()
+    if not public_id:
+        return jsonify({"error": "public_id required"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            row, err = _lock_own_submission(cur, sid)
+            if err:
+                body, status = err
+                return jsonify(body), status
+
+            videos = row.get("videos") or []
+            kept = [v for v in videos
+                    if not (isinstance(v, dict) and v.get("public_id") == public_id)]
+            if len(kept) == len(videos):
+                return jsonify({"error": "Video not found"}), 404
+            cur.execute(
+                "UPDATE submissions SET videos = %s::jsonb WHERE id = %s",
+                (json.dumps(kept), sid),
+            )
+            # Reuse the 'media_shared' event kind to avoid a new CHECK value.
+            cur.execute(
+                "INSERT INTO submission_events (submission_id, actor_cp_id, kind, text) "
+                "VALUES (%s, %s, 'media_shared', %s)",
+                (sid, g.user.get("cp_id"), "CP deleted a video"),
+            )
+            log_activity(
+                cur, action="cp_media_deleted", category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"deleted_video": public_id},
+            )
+            conn.commit()
+            return jsonify({"ok": True, "videos": kept}), 200
+    finally:
+        put_app_conn(conn)
+
+
 @bp.post("/submissions/<int:sid>/book-visit")
 @require_auth
 def book_visit(sid: int):

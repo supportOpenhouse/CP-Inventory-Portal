@@ -37,6 +37,13 @@ export default function SubmissionDetailModal({ submission, onClose }) {
       .catch(() => {});
   };
 
+  const handleDeleteVideo = (publicId) => {
+    if (!publicId || !window.confirm('Delete this video?')) return;
+    api.deleteVideo(s.id, publicId)
+      .then((res) => { if (Array.isArray(res?.videos)) setVideos(res.videos); reloadEvents(); })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     let alive = true;
     setLoadingEvents(true);
@@ -294,10 +301,26 @@ export default function SubmissionDetailModal({ submission, onClose }) {
                     </a>
                   ))}
                   {videos.map((v, i) => (
-                    <video
-                      key={v.public_id || i} src={v.url} controls preload="metadata"
-                      style={{ width: 120, height: 72, borderRadius: 8, background: '#000', objectFit: 'cover' }}
-                    />
+                    <div key={v.public_id || i} style={{ position: 'relative' }}>
+                      <video
+                        src={v.url} controls preload="metadata"
+                        style={{ width: 120, height: 72, borderRadius: 8, background: '#000', objectFit: 'cover', display: 'block' }}
+                      />
+                      {v.public_id && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteVideo(v.public_id)}
+                          aria-label="Delete video"
+                          style={{
+                            position: 'absolute', top: 4, right: 4, width: 22, height: 22,
+                            borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0,
+                            background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 15, lineHeight: '22px',
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               ) : (

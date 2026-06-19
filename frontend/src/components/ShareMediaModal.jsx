@@ -98,7 +98,7 @@ export default function ShareMediaModal({
           Share media
         </div>
         <div style={{ fontSize: 13, color: 'var(--oh-gray)', marginBottom: 16, lineHeight: 1.5 }}>
-          Add photos or videos for this unit. You can pick multiple files.
+          Add photos or video for this unit. You can pick multiple files.
           <br />
           <span style={{ fontSize: 12 }}>
             Photos {photoCount}/{PHOTO_LIMIT} · Video {videoCount}/{VIDEO_LIMIT}
@@ -130,7 +130,7 @@ export default function ShareMediaModal({
             disabled={busy || videoCount >= VIDEO_LIMIT}
             onClick={() => videoInputRef.current?.click()}
           >
-            Videos
+            Video
           </button>
         </div>
 

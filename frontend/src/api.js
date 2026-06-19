@@ -116,6 +116,9 @@ export const api = {
   // client-side). payload: { photos: [public_id], videos: [{public_id, url}] }
   shareMedia: (submissionId, payload) =>
     request(`/submissions/${submissionId}/media`, { method: 'POST', body: payload }),
+  // CP deletes one of their uploaded videos by Cloudinary public_id.
+  deleteVideo: (submissionId, publicId) =>
+    request(`/submissions/${submissionId}/media/video`, { method: 'DELETE', body: { public_id: publicId } }),
   // RMs in the submission's city — for the "Book visit" RM dropdown.
   getRmOptions: (submissionId) =>
     request(`/submissions/${submissionId}/rm-options`),
