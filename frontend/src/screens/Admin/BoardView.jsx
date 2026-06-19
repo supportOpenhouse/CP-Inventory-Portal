@@ -51,17 +51,13 @@ export default function BoardView({
   loadingByStage = {},
   onLoadMore,
 }) {
-<<<<<<< Updated upstream
-  // Staff (admin + manager + RM) and viewers see all stages including
-  // Unapproved. Matches the counts panel filter at the top of Admin/index.jsx
-  // so the board columns line up with the stage counts shown above.
-=======
   // Match-details modal: null = closed; an array = the matched records to show
   // (set when a Perfect / Collated / Submissions badge is clicked).
   const [matchModalItems, setMatchModalItems] = useState(null);
 
-  // Staff (admin + manager + RM) see all stages including Unapproved.
->>>>>>> Stashed changes
+  // Staff (admin + manager + RM) and viewers see all stages including
+  // Unapproved. Matches the counts panel filter at the top of Admin/index.jsx
+  // so the board columns line up with the stage counts shown above.
   // When a status filter is active, collapse to just that stage's column:
   // the reload only fetches that stage, and rendering the other (empty)
   // columns would re-fire their load-more sentinels — which fetch each
