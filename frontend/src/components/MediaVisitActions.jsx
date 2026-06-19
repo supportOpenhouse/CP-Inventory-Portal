@@ -4,7 +4,8 @@
  * gating stays consistent.
  *
  *   - Upload Media: any stage except rejected (Rejected / Price Rejected).
- *   - Book Visit Slot: only 'Submitted' (booking pushes to 'Visit Requested').
+ *   - Book Visit Slot: 'Submitted' or 'Visit Requested' (the latter re-books the
+ *     slot with the same form; booking from 'Submitted' pushes to 'Visit Requested').
  *   - When Book isn't shown, Upload Media fills the row (wider).
  *
  * Props:
@@ -21,7 +22,7 @@ export default function MediaVisitActions({
   showHeading = false, compact = false, hideUploadMedia = false,
 }) {
   const status = submission?.status;
-  const canBook = status === 'Submitted';
+  const canBook = status === 'Submitted' || status === 'Visit Requested';
   const canMedia = status !== 'Rejected' && status !== 'Price Rejected';
   const showMedia = canMedia && !hideUploadMedia;
   if (!showMedia && !canBook) return null;

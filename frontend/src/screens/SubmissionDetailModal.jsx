@@ -148,7 +148,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
           {/* Actions. No media yet → Upload Media + Book Visit sit side by side
               here. Once media exists → Upload moves to the gallery card below
               and only Book Visit (Submitted) stays up top. */}
-          {notRejected && (!hasMedia || s.status === 'Submitted') && (
+          {notRejected && (!hasMedia || s.status === 'Submitted' || s.status === 'Visit Requested') && (
             <div style={{
               border: '1px solid var(--oh-border)', borderRadius: 12,
               padding: 14, marginBottom: 16, background: '#FAFAFA',

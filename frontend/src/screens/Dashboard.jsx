@@ -305,7 +305,7 @@ export default function Dashboard({ onAdd }) {
           // (it lives at the bottom of the popup instead).
           const bothMedia = (Array.isArray(s.photos) && s.photos.length > 0)
             && (Array.isArray(s.videos) && s.videos.length > 0);
-          const showCardActions = !isRejected && (s.status === 'Submitted' || !bothMedia);
+          const showCardActions = !isRejected && (s.status === 'Submitted' || s.status === 'Visit Requested' || !bothMedia);
           return (
             <div className="unit-card" key={s.id} style={isRejected ? { opacity: 0.6 } : undefined}>
               <div
