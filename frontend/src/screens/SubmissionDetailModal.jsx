@@ -63,6 +63,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
   }
 
   const notRejected = s.status !== 'Rejected' && s.status !== 'Price Rejected';
+  const hasMedia = photos.length > 0 || videos.length > 0;
 
   return (
     <>
@@ -144,9 +145,10 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             </div>
           )}
 
-          {/* Book Visit Slot at the top (Submitted only). Upload Media + the
-              media gallery live in the "Uploaded media" card at the bottom. */}
-          {s.status === 'Submitted' && (
+          {/* Actions. No media yet → Upload Media + Book Visit sit side by side
+              here. Once media exists → Upload moves to the gallery card below
+              and only Book Visit (Submitted) stays up top. */}
+          {notRejected && (!hasMedia || s.status === 'Submitted') && (
             <div style={{
               border: '1px solid var(--oh-border)', borderRadius: 12,
               padding: 14, marginBottom: 16, background: '#FAFAFA',
@@ -154,7 +156,8 @@ export default function SubmissionDetailModal({ submission, onClose }) {
               <MediaVisitActions
                 submission={s}
                 showHeading
-                hideUploadMedia
+                hideUploadMedia={hasMedia}
+                onUploadMedia={() => setMediaOpen(true)}
                 onBookSlot={() => setVisitOpen(true)}
               />
             </div>
@@ -303,12 +306,14 @@ export default function SubmissionDetailModal({ submission, onClose }) {
                 </div>
               )}
 
-              <button
-                type="button" className="primary-btn" style={{ width: '100%' }}
-                onClick={() => setMediaOpen(true)}
-              >
-                Upload Media
-              </button>
+              {hasMedia && (
+                <button
+                  type="button" className="primary-btn" style={{ width: '100%' }}
+                  onClick={() => setMediaOpen(true)}
+                >
+                  Upload Media
+                </button>
+              )}
             </div>
           )}
         </div>
