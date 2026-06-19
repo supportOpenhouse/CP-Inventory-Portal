@@ -345,7 +345,8 @@ export default function Dashboard({ onAdd }) {
                       <span>₹{Math.round(s.asking_price / s.sqft).toLocaleString('en-IN')}/sqft</span>
                     ) : null}
                   </div>
-                  <AgingStrip submission={s} placement="inline" />
+                  {/* Reminder timer/aging strip temporarily disabled */}
+                  {/* <AgingStrip submission={s} placement="inline" /> */}
                 </div>
               </div>
 

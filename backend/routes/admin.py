@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Visit Requested", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
 
 # Stages that are set automatically by other flows (visit scheduling, visit
 # completion cron, counter-offer endpoint). The /status endpoint refuses
@@ -2007,9 +2007,10 @@ def schedule_visit(sid: int):
     if not forms_uid:
         return jsonify({"error": "Forms app did not return a UID."}), 502
 
-    # Persist on our side + auto-promote status from 'Submitted' to 'Visit Scheduled'
+    # Persist on our side + auto-promote status to 'Visit Scheduled' from either
+    # 'Submitted' or 'Visit Requested' (the CP-booked stage).
     old_status = sub.get("status")
-    promote_status = old_status == "Submitted"
+    promote_status = old_status in ("Submitted", "Visit Requested")
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:

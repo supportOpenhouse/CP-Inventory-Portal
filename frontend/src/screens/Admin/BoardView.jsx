@@ -167,10 +167,13 @@ export default function BoardView({
               // another overlay (perfect-match red / partial purple/yellow /
               // withdrawn) is already painting the card — otherwise the
               // borders fight and the result looks like a bug.
-              const timer = !cardOverlayStyle ? timerFor(s) : null;
-              const agingCardClass = !timer
-                ? ''
-                : (timer.overdue ? 'is-aging-overdue' : 'is-aging-soon');
+              // Reminder timers (schedule-visit / seller-meeting / overdue)
+              // are temporarily disabled in the UI — code kept for easy re-enable.
+              // const timer = !cardOverlayStyle ? timerFor(s) : null;
+              // const agingCardClass = !timer
+              //   ? ''
+              //   : (timer.overdue ? 'is-aging-overdue' : 'is-aging-soon');
+              const agingCardClass = '';
 
               return (
                 <div
@@ -276,7 +279,8 @@ export default function BoardView({
                     )}
                   </div>
 
-                  {s.scheduled_date && (
+                  {/* Schedule badge only on the Visit Scheduled stage. */}
+                  {s.status === 'Visit Scheduled' && s.scheduled_date && (
                     <div className="board-card-schedule">
                       📅 {formatDateOnly(s.scheduled_date)}
                       {s.scheduled_time ? ` · ${formatTime12(s.scheduled_time)}` : ''}
@@ -367,7 +371,8 @@ export default function BoardView({
                     )}
                   </div>
 
-                  <AgingStrip submission={s} placement="card-bottom" />
+                  {/* Reminder timer/aging strip temporarily disabled */}
+                  {/* <AgingStrip submission={s} placement="card-bottom" /> */}
                 </div>
               );
             })}

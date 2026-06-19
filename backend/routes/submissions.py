@@ -16,7 +16,7 @@ from utils import to_int, to_str
 
 bp = Blueprint("submissions", __name__, url_prefix="/api")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Visit Requested", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
 
 
 @bp.get("/submissions/stats")
@@ -816,7 +816,8 @@ def share_media(sid: int):
 def book_visit(sid: int):
     """CP requests a visit slot. REQUEST ONLY — does not change the stage.
 
-    body: { date: 'YYYY-MM-DD', slot: 'morning'|'afternoon'|'evening', rm_id: int }
+    body: { date: 'YYYY-MM-DD', slot: 'morning'|'afternoon'|'evening' }
+    rm_id is optional (the CP no longer picks an RM — staff assign it later).
     """
     data = request.get_json(silent=True) or {}
     date_str = (data.get("date") or "").strip()
@@ -830,10 +831,17 @@ def book_visit(sid: int):
         return jsonify({"error": "date must be YYYY-MM-DD"}), 400
     if req_date < datetime.now(_IST).date():
         return jsonify({"error": "Visit date cannot be in the past"}), 400
-    try:
-        rm_id = int(data.get("rm_id"))
-    except (TypeError, ValueError):
-        return jsonify({"error": "rm_id is required"}), 400
+
+    # rm_id is optional now. Accept it if sent (legacy/other callers) but don't
+    # require it — the CP UI no longer offers an RM picker.
+    rm_id = data.get("rm_id")
+    if rm_id in (None, ""):
+        rm_id = None
+    else:
+        try:
+            rm_id = int(rm_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "rm_id must be an integer"}), 400
 
     conn = get_app_conn()
     try:
@@ -843,34 +851,45 @@ def book_visit(sid: int):
                 body, status = err
                 return jsonify(body), status
 
-            # Validate the RM is active and in the submission's city. Use a
-            # savepoint so a missing/unreachable rms table doesn't abort the txn.
+            # If an rm_id was supplied, validate it's active and in the
+            # submission's city. Savepoint so a missing rms table doesn't abort.
             rm_name = None
-            rms_checked = False
-            cur.execute("SAVEPOINT rmcheck")
-            try:
-                cur.execute(
-                    "SELECT name FROM rms WHERE id = %s AND city_id = %s "
-                    "AND COALESCE(is_active, TRUE) = TRUE",
-                    (rm_id, row.get("city_id")),
-                )
-                rm_row = cur.fetchone()
-                rms_checked = True
-                rm_name = rm_row["name"] if rm_row else None
-                cur.execute("RELEASE SAVEPOINT rmcheck")
-            except Exception:
-                cur.execute("ROLLBACK TO SAVEPOINT rmcheck")
-            if rms_checked and rm_name is None:
-                return jsonify({"error": "Selected RM is not available for this city"}), 400
+            if rm_id is not None:
+                rms_checked = False
+                cur.execute("SAVEPOINT rmcheck")
+                try:
+                    cur.execute(
+                        "SELECT name FROM rms WHERE id = %s AND city_id = %s "
+                        "AND COALESCE(is_active, TRUE) = TRUE",
+                        (rm_id, row.get("city_id")),
+                    )
+                    rm_row = cur.fetchone()
+                    rms_checked = True
+                    rm_name = rm_row["name"] if rm_row else None
+                    cur.execute("RELEASE SAVEPOINT rmcheck")
+                except Exception:
+                    cur.execute("ROLLBACK TO SAVEPOINT rmcheck")
+                if rms_checked and rm_name is None:
+                    return jsonify({"error": "Selected RM is not available for this city"}), 400
 
+            old_status = row.get("status")
             cur.execute(
                 "UPDATE submissions SET requested_visit_date = %s, requested_visit_slot = %s, "
-                "requested_rm_id = %s, visit_requested_at = NOW() WHERE id = %s",
+                "requested_rm_id = %s, visit_requested_at = NOW(), "
+                "status = 'Visit Requested', status_reason = NULL WHERE id = %s",
                 (req_date, slot, rm_id, sid),
             )
             text = f"CP requested a visit on {date_str} ({slot})"
             if rm_name:
                 text += f" with {rm_name}"
+            # status_change drives the stage move + timeline; a second descriptive
+            # event keeps the date/slot detail visible in the activity feed.
+            cur.execute(
+                "INSERT INTO submission_events "
+                "(submission_id, actor_cp_id, kind, from_status, to_status, text) "
+                "VALUES (%s, %s, 'status_change', %s, 'Visit Requested', %s)",
+                (sid, g.user.get("cp_id"), old_status, "Moved to Visit Requested on visit booking"),
+            )
             cur.execute(
                 "INSERT INTO submission_events (submission_id, actor_cp_id, kind, text) "
                 "VALUES (%s, %s, 'visit_requested', %s)",

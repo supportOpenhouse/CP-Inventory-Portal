@@ -123,6 +123,7 @@ export function validatePhone(raw) {
 export const STAGES = [
   { key: 'Unapproved',         color: '#B8860B', bg: '#FFF8E1', adminOnly: true },
   { key: 'Submitted',          color: '#6366F1', bg: '#EEF2FF' },
+  { key: 'Visit Requested',    color: '#8b5cf6', bg: '#F5F3FF' },   // CP booked a slot; awaiting admin scheduling
   { key: 'Visit Scheduled',    color: '#D946EF', bg: '#FDF4FF' },
   { key: 'Visit Completed',    color: '#10B981', bg: '#D1FAE5' },   // green = success
   { key: 'Offer',              label: 'Offer Given', color: '#FF6B2B', bg: '#FFF3ED' },

@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { api, ApiError } from '../api';
 import { todayInIST } from '../format';
 
 /**
- * CP "Book visit slot" popup — pick a date (no past dates), a time-of-day slot,
- * and an RM (RMs of the listing's city). Submitting records a visit REQUEST
- * (it does not change the listing's stage).
+ * CP "Book visit slot" popup — pick a date (no past dates) and a time-of-day
+ * slot. Submitting records a visit REQUEST (it does not change the listing's
+ * stage). The RM is assigned by staff later, not chosen by the CP.
  *
  * Props: open, submissionId, onClose, onBooked (fires after a successful request)
  */
@@ -19,21 +19,8 @@ const SLOTS = [
 export default function BookVisitModal({ open, submissionId, onClose, onBooked }) {
   const [date, setDate] = useState('');
   const [slot, setSlot] = useState('');
-  const [rmId, setRmId] = useState('');
-  const [rms, setRms] = useState([]);
-  const [loadingRms, setLoadingRms] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    setLoadingRms(true);
-    setError('');
-    api.getRmOptions(submissionId)
-      .then((d) => setRms(d.rms || []))
-      .catch(() => setRms([]))
-      .finally(() => setLoadingRms(false));
-  }, [open, submissionId]);
 
   if (!open) return null;
 
@@ -41,10 +28,9 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
     setError('');
     if (!date) { setError('Choose a date'); return; }
     if (!slot) { setError('Choose a time slot'); return; }
-    if (!rmId) { setError('Choose an RM'); return; }
     setBusy(true);
     try {
-      await api.bookVisit(submissionId, { date, slot, rm_id: Number(rmId) });
+      await api.bookVisit(submissionId, { date, slot });
       onBooked?.();
       onClose?.();
     } catch (e) {
@@ -98,22 +84,6 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
             </button>
           ))}
         </div>
-
-        <div className="input-label" style={{ marginTop: 14 }}>Relationship Manager</div>
-        <select
-          className="input-field" value={rmId}
-          onChange={(e) => setRmId(e.target.value)} disabled={loadingRms}
-        >
-          <option value="">{loadingRms ? 'Loading…' : 'Select an RM'}</option>
-          {rms.map((rm) => (
-            <option key={rm.id} value={rm.id}>{rm.name}</option>
-          ))}
-        </select>
-        {!loadingRms && rms.length === 0 && (
-          <div style={{ fontSize: 12, color: 'var(--oh-gray)', marginTop: 6 }}>
-            No RMs found for this city.
-          </div>
-        )}
 
         {error && <div className="error-text" style={{ marginTop: 12 }}>{error}</div>}
 
