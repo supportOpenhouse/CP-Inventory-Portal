@@ -468,12 +468,14 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 )}
               </div>
 
-              {/* Schedule Visit — admin clicks this on a 'Submitted' row.
-                  Successful scheduling auto-promotes status to 'Visit Scheduled'
-                  (handled server-side). For rows already in 'Visit Scheduled'
-                  the section shows the existing schedule pill so admins can
-                  see/reschedule. Viewers see only the info pill. */}
-              {(s.status === 'Submitted' || s.status === 'Visit Scheduled')
+              {/* Schedule Visit — admin clicks this on a 'Submitted' or
+                  'Visit Requested' row (the CP-requested slot still needs the
+                  official Forms schedule). Successful scheduling auto-promotes
+                  status to 'Visit Scheduled' (handled server-side). For rows
+                  already in 'Visit Scheduled' the section shows the existing
+                  schedule pill so admins can see/reschedule. Viewers see only
+                  the info pill. */}
+              {(s.status === 'Submitted' || s.status === 'Visit Requested' || s.status === 'Visit Scheduled')
                 && (s.forms_uid || isStaff) && (
                 <ScheduleVisitSection
                   submission={s}
