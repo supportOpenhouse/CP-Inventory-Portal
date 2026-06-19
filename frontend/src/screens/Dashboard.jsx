@@ -8,6 +8,9 @@ import { UnitCardSkeleton } from '../components/Skeleton';
 import SubmissionDetailModal from './SubmissionDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import AgingStrip from '../components/AgingStrip';
+import ShareMediaModal from '../components/ShareMediaModal';
+import BookVisitModal from '../components/BookVisitModal';
+import MediaVisitActions from '../components/MediaVisitActions';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
 // Note: 'Price Rejected' / 'Rejected' are intentionally NOT in the filter row
@@ -68,6 +71,8 @@ export default function Dashboard({ onAdd }) {
   const [counterBusy, setCounterBusy] = useState({});
   // Submission opened in the full-detail modal (null = modal closed)
   const [expandedSubmission, setExpandedSubmission] = useState(null);
+  const [mediaSubmission, setMediaSubmission] = useState(null);  // card "Upload Media"
+  const [bookSubmission, setBookSubmission] = useState(null);    // card "Book Visit Slot"
   // Confirmation dialogs for destructive actions
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [pendingRejectId, setPendingRejectId] = useState(null);  // submission id awaiting reject confirmation
@@ -354,6 +359,17 @@ export default function Dashboard({ onAdd }) {
                 </div>
               </div>
 
+              {/* Upload Media / Book Visit Slot — on the card itself */}
+              {!isRejected && (
+                <div style={{ marginTop: 12 }}>
+                  <MediaVisitActions
+                    submission={s}
+                    onUploadMedia={() => setMediaSubmission(s)}
+                    onBookSlot={() => setBookSubmission(s)}
+                  />
+                </div>
+              )}
+
               {hasPendingCounter && (
                 <div
                   style={{
@@ -473,6 +489,23 @@ export default function Dashboard({ onAdd }) {
         <SubmissionDetailModal
           submission={expandedSubmission}
           onClose={() => setExpandedSubmission(null)}
+        />
+      )}
+
+      {mediaSubmission && (
+        <ShareMediaModal
+          open
+          submissionId={mediaSubmission.id}
+          onClose={() => setMediaSubmission(null)}
+          onShared={loadSubmissions}
+        />
+      )}
+      {bookSubmission && (
+        <BookVisitModal
+          open
+          submissionId={bookSubmission.id}
+          onClose={() => setBookSubmission(null)}
+          onBooked={loadSubmissions}
         />
       )}
 

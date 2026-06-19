@@ -5,6 +5,7 @@ import { thumbnailUrl } from '../cloudinary';
 import { formatDateTime, formatPrice } from '../format';
 import ShareMediaModal from '../components/ShareMediaModal';
 import BookVisitModal from '../components/BookVisitModal';
+import MediaVisitActions from '../components/MediaVisitActions';
 
 /**
  * Full-screen modal showing all details of a CP's submission:
@@ -134,33 +135,19 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             </div>
           )}
 
-          {/* CP self-service actions — only on a Submitted listing */}
-          {s.status === 'Submitted' && (
+          {/* CP self-service actions — Upload Media on any non-rejected stage,
+              Book Visit Slot only while Submitted. */}
+          {(s.status !== 'Rejected' && s.status !== 'Price Rejected') && (
             <div style={{
               border: '1px solid var(--oh-border)', borderRadius: 12,
               padding: 14, marginBottom: 16, background: '#FAFAFA',
             }}>
-              <div style={{
-                fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
-                textTransform: 'uppercase', color: 'var(--oh-gray)', marginBottom: 10,
-              }}>
-                Add photos/videos and book visit slot
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  type="button" className="primary-btn" style={{ flex: 1 }}
-                  onClick={() => setMediaOpen(true)}
-                >
-                  Share Media
-                </button>
-                <button
-                  type="button" className="primary-btn"
-                  style={{ flex: 1, background: '#10B981', borderColor: '#10B981' }}
-                  onClick={() => setVisitOpen(true)}
-                >
-                  Book Visit Slot
-                </button>
-              </div>
+              <MediaVisitActions
+                submission={s}
+                showHeading
+                onUploadMedia={() => setMediaOpen(true)}
+                onBookSlot={() => setVisitOpen(true)}
+              />
             </div>
           )}
 

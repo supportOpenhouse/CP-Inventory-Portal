@@ -781,8 +781,8 @@ def share_media(sid: int):
             if err:
                 body, status = err
                 return jsonify(body), status
-            if row["status"] != "Submitted":
-                return jsonify({"error": "Media can only be shared on a Submitted listing"}), 409
+            if row["status"] in ("Rejected", "Price Rejected"):
+                return jsonify({"error": "Media can't be shared on a rejected listing"}), 409
 
             photos = (row.get("photos") or []) + new_photos
             videos = (row.get("videos") or []) + new_videos
