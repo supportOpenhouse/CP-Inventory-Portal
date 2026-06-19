@@ -112,6 +112,16 @@ export const api = {
   // Timeline for a CP's own submission (detail modal)
   listMySubmissionEvents: (submissionId) =>
     request(`/submissions/${submissionId}/events`),
+  // CP shares media on a Submitted listing (Cloudinary refs already uploaded
+  // client-side). payload: { photos: [public_id], videos: [{public_id, url}] }
+  shareMedia: (submissionId, payload) =>
+    request(`/submissions/${submissionId}/media`, { method: 'POST', body: payload }),
+  // RMs in the submission's city — for the "Book visit" RM dropdown.
+  getRmOptions: (submissionId) =>
+    request(`/submissions/${submissionId}/rm-options`),
+  // CP requests a visit slot. payload: { date, slot, rm_id }
+  bookVisit: (submissionId, payload) =>
+    request(`/submissions/${submissionId}/book-visit`, { method: 'POST', body: payload }),
 
   // Admin (staff only)
   adminListSubmissions: (filters = {}) =>

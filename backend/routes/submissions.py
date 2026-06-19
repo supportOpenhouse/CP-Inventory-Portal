@@ -1,6 +1,7 @@
 """Submissions CRUD + standalone duplicate check."""
 
 import json
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, g, jsonify, request
 
@@ -68,7 +69,8 @@ def list_my_submissions():
                 SELECT s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
                        s.sqft, s.bhk, s.occupancy_status,
                        s.asking_price,
-                       s.status, s.photos, s.submitted_at,
+                       s.status, s.photos, s.videos, s.submitted_at,
+                       s.requested_visit_date, s.requested_visit_slot, s.requested_rm_id,
                        s.counter_offer_price, s.counter_offer_status, s.counter_offer_at,
                        s.counter_offer_response_text,
                        s.broker_counter_price, s.broker_counter_at, s.broker_counter_comment,
@@ -246,6 +248,7 @@ def create_submission():
                     asking_price, seller_name, seller_phone, photos,
                     status, status_reason, collated_match, submissions_match,
                     unit_less, perfect_match_at_submit,
+                    match_details,
                     listing_rm_id
                 ) VALUES (
                     %s, %s, %s, %s, %s,
@@ -254,6 +257,7 @@ def create_submission():
                     %s, %s, %s, %s::jsonb,
                     %s, %s, %s, %s,
                     %s, %s,
+                    %s::jsonb,
                     %s
                 )
                 RETURNING id
@@ -279,6 +283,7 @@ def create_submission():
                 submissions_match,
                 is_unit_less,
                 is_perfect_match,
+                json.dumps(dup.get("match_details") or []),
                 listing_rm_id,
             ))
             new_id = cur.fetchone()["id"]
@@ -686,3 +691,203 @@ def list_my_submission_events(sid: int):
         put_app_conn(conn)
 
     return jsonify({"events": events}), 200
+
+
+# ------------------------------------------------------------------
+# CP self-service on a Submitted listing: share media + request a visit
+# ------------------------------------------------------------------
+
+_VISIT_SLOTS = ("morning", "afternoon", "evening")
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _lock_own_submission(cur, sid):
+    """Lock + fetch a submission, asserting the caller is its CP.
+    Returns (row, None) on success or (None, (json_body, status))."""
+    cur.execute(
+        "SELECT id, public_id, cp_id, city_id, status, photos, videos "
+        "FROM submissions WHERE id = %s FOR UPDATE",
+        (sid,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None, ({"error": "Submission not found"}, 404)
+    if row["cp_id"] != g.user.get("cp_id"):
+        return None, ({"error": "Not your submission"}, 403)
+    return row, None
+
+
+@bp.get("/submissions/<int:sid>/rm-options")
+@require_auth
+def submission_rm_options(sid: int):
+    """RMs in the submission's city — populates the CP 'Book visit' RM dropdown."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT cp_id, city_id FROM submissions WHERE id = %s", (sid,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "Submission not found"}), 404
+            if row["cp_id"] != g.user.get("cp_id"):
+                return jsonify({"error": "Not your submission"}), 403
+
+            rms = []
+            city_id = row.get("city_id")
+            if city_id is not None:
+                try:
+                    cur.execute(
+                        """
+                        SELECT id, name FROM rms
+                        WHERE city_id = %s AND COALESCE(is_active, TRUE) = TRUE
+                        ORDER BY name ASC, id ASC
+                        """,
+                        (city_id,),
+                    )
+                    rms = cur.fetchall()
+                except Exception:
+                    conn.rollback()  # rms table missing/unreachable — return empty
+                    rms = []
+    finally:
+        put_app_conn(conn)
+    return jsonify({"rms": rms}), 200
+
+
+@bp.post("/submissions/<int:sid>/media")
+@require_auth
+def share_media(sid: int):
+    """CP shares photos/videos on a Submitted listing (uploaded to Cloudinary
+    client-side; we just persist the references).
+
+    body: { photos: ["<public_id>", ...], videos: [{public_id, url}, ...] }
+    """
+    data = request.get_json(silent=True) or {}
+    raw_photos = data.get("photos") or []
+    raw_videos = data.get("videos") or []
+    if not isinstance(raw_photos, list) or not isinstance(raw_videos, list):
+        return jsonify({"error": "photos and videos must be lists"}), 400
+
+    new_photos = [str(p) for p in raw_photos if p][:20]
+    new_videos = []
+    for v in raw_videos[:20]:
+        if isinstance(v, dict) and v.get("public_id"):
+            new_videos.append({"public_id": str(v["public_id"]), "url": str(v.get("url") or "")})
+    if not new_photos and not new_videos:
+        return jsonify({"error": "No media provided"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            row, err = _lock_own_submission(cur, sid)
+            if err:
+                body, status = err
+                return jsonify(body), status
+            if row["status"] != "Submitted":
+                return jsonify({"error": "Media can only be shared on a Submitted listing"}), 409
+
+            photos = (row.get("photos") or []) + new_photos
+            videos = (row.get("videos") or []) + new_videos
+            cur.execute(
+                "UPDATE submissions SET photos = %s::jsonb, videos = %s::jsonb WHERE id = %s",
+                (json.dumps(photos), json.dumps(videos), sid),
+            )
+            parts = []
+            if new_photos:
+                parts.append(f"{len(new_photos)} photo(s)")
+            if new_videos:
+                parts.append(f"{len(new_videos)} video(s)")
+            cur.execute(
+                "INSERT INTO submission_events (submission_id, actor_cp_id, kind, text) "
+                "VALUES (%s, %s, 'media_shared', %s)",
+                (sid, g.user.get("cp_id"), "CP shared " + " and ".join(parts)),
+            )
+            log_activity(
+                cur, action="cp_media_shared", category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"photos": new_photos, "videos": new_videos},
+            )
+            conn.commit()
+            return jsonify({"ok": True, "photos": photos, "videos": videos}), 200
+    finally:
+        put_app_conn(conn)
+
+
+@bp.post("/submissions/<int:sid>/book-visit")
+@require_auth
+def book_visit(sid: int):
+    """CP requests a visit slot. REQUEST ONLY — does not change the stage.
+
+    body: { date: 'YYYY-MM-DD', slot: 'morning'|'afternoon'|'evening', rm_id: int }
+    """
+    data = request.get_json(silent=True) or {}
+    date_str = (data.get("date") or "").strip()
+    slot = (data.get("slot") or "").strip().lower()
+
+    if slot not in _VISIT_SLOTS:
+        return jsonify({"error": "slot must be morning, afternoon, or evening"}), 400
+    try:
+        req_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+    if req_date < datetime.now(_IST).date():
+        return jsonify({"error": "Visit date cannot be in the past"}), 400
+    try:
+        rm_id = int(data.get("rm_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "rm_id is required"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            row, err = _lock_own_submission(cur, sid)
+            if err:
+                body, status = err
+                return jsonify(body), status
+
+            # Validate the RM is active and in the submission's city. Use a
+            # savepoint so a missing/unreachable rms table doesn't abort the txn.
+            rm_name = None
+            rms_checked = False
+            cur.execute("SAVEPOINT rmcheck")
+            try:
+                cur.execute(
+                    "SELECT name FROM rms WHERE id = %s AND city_id = %s "
+                    "AND COALESCE(is_active, TRUE) = TRUE",
+                    (rm_id, row.get("city_id")),
+                )
+                rm_row = cur.fetchone()
+                rms_checked = True
+                rm_name = rm_row["name"] if rm_row else None
+                cur.execute("RELEASE SAVEPOINT rmcheck")
+            except Exception:
+                cur.execute("ROLLBACK TO SAVEPOINT rmcheck")
+            if rms_checked and rm_name is None:
+                return jsonify({"error": "Selected RM is not available for this city"}), 400
+
+            cur.execute(
+                "UPDATE submissions SET requested_visit_date = %s, requested_visit_slot = %s, "
+                "requested_rm_id = %s, visit_requested_at = NOW() WHERE id = %s",
+                (req_date, slot, rm_id, sid),
+            )
+            text = f"CP requested a visit on {date_str} ({slot})"
+            if rm_name:
+                text += f" with {rm_name}"
+            cur.execute(
+                "INSERT INTO submission_events (submission_id, actor_cp_id, kind, text) "
+                "VALUES (%s, %s, 'visit_requested', %s)",
+                (sid, g.user.get("cp_id"), text),
+            )
+            log_activity(
+                cur, action="cp_visit_requested", category="submission",
+                entity_uid=row.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"date": date_str, "slot": slot, "rm_id": rm_id, "rm_name": rm_name},
+            )
+            conn.commit()
+            return jsonify({
+                "ok": True,
+                "requested_visit_date": date_str,
+                "requested_visit_slot": slot,
+                "requested_rm_id": rm_id,
+                "rm_name": rm_name,
+            }), 200
+    finally:
+        put_app_conn(conn)

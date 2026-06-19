@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { thumbnailUrl } from '../cloudinary';
 import { formatDateTime, formatPrice } from '../format';
+import ShareMediaModal from '../components/ShareMediaModal';
+import BookVisitModal from '../components/BookVisitModal';
 
 /**
  * Full-screen modal showing all details of a CP's submission:
@@ -16,9 +18,18 @@ export default function SubmissionDetailModal({ submission, onClose }) {
   const s = submission;
   const [events, setEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [visitOpen, setVisitOpen] = useState(false);
+
+  const reloadEvents = () => {
+    api.listMySubmissionEvents(s.id)
+      .then((data) => setEvents(data.events || []))
+      .catch(() => {});
+  };
 
   useEffect(() => {
     let alive = true;
+    setLoadingEvents(true);
     api.listMySubmissionEvents(s.id)
       .then((data) => { if (alive) setEvents(data.events || []); })
       .catch(() => { if (alive) setEvents([]); })
@@ -44,6 +55,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
   const thumbId = Array.isArray(s.photos) && s.photos.length > 0 ? s.photos[0] : null;
 
   return (
+    <>
     <div
       onClick={onClose}
       style={{
@@ -119,6 +131,36 @@ export default function SubmissionDetailModal({ submission, onClose }) {
                   Your note: "{s.counter_offer_response_text}"
                 </div>
               )}
+            </div>
+          )}
+
+          {/* CP self-service actions — only on a Submitted listing */}
+          {s.status === 'Submitted' && (
+            <div style={{
+              border: '1px solid var(--oh-border)', borderRadius: 12,
+              padding: 14, marginBottom: 16, background: '#FAFAFA',
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+                textTransform: 'uppercase', color: 'var(--oh-gray)', marginBottom: 10,
+              }}>
+                Add photos/videos and book visit slot
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button" className="primary-btn" style={{ flex: 1 }}
+                  onClick={() => setMediaOpen(true)}
+                >
+                  Share Media
+                </button>
+                <button
+                  type="button" className="primary-btn"
+                  style={{ flex: 1, background: '#10B981', borderColor: '#10B981' }}
+                  onClick={() => setVisitOpen(true)}
+                >
+                  Book Visit Slot
+                </button>
+              </div>
             </div>
           )}
 
@@ -243,6 +285,20 @@ export default function SubmissionDetailModal({ submission, onClose }) {
         </div>
       </div>
     </div>
+
+    <ShareMediaModal
+      open={mediaOpen}
+      submissionId={s.id}
+      onClose={() => setMediaOpen(false)}
+      onShared={reloadEvents}
+    />
+    <BookVisitModal
+      open={visitOpen}
+      submissionId={s.id}
+      onClose={() => setVisitOpen(false)}
+      onBooked={reloadEvents}
+    />
+    </>
   );
 }
 

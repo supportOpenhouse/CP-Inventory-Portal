@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { formatPrice, formatOhPrice, formatDateOnly, formatTime12, stageLabel, stageMeta, timeAgo } from '../../format';
+import MatchDetailsModal from '../../components/MatchDetailsModal';
 
 /**
  * Bottom-of-table infinite-scroll sentinel. Two modes:
@@ -103,6 +104,8 @@ export default function TableView({
 }) {
   // { key, dir }  dir = 'asc' | 'desc'. Default: newest submissions first.
   const [sort, setSort] = useState({ key: 'submitted', dir: 'desc' });
+  // Match-details modal: null = closed; an array = matched records to show.
+  const [matchModalItems, setMatchModalItems] = useState(null);
 
   const toggleSort = (key) => {
     setSort((s) => {
@@ -164,6 +167,7 @@ export default function TableView({
   };
 
   return (
+    <>
     <div className="admin-table-wrap">
       <table className="admin-table">
         <thead>
@@ -243,7 +247,9 @@ export default function TableView({
                       display: 'inline-block', marginLeft: 6, padding: '1px 6px',
                       fontSize: 9, fontWeight: 700, color: '#991b1b',
                       background: '#fee2e2', borderRadius: 3, letterSpacing: 0.3,
-                    }} title="Detected as duplicate of an existing listing at submit time">
+                      cursor: 'pointer',
+                    }} title="Perfect match — click to see the matched record(s)"
+                      onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}>
                       PERFECT
                     </span>
                   )}
@@ -325,7 +331,8 @@ export default function TableView({
                   </span>
                   {isCollatedPartial && (
                     <span
-                      title="Partial match from collated_data — society + BHK + floor matched an external-scraper listing; tower/unit couldn't be verified"
+                      title="Partial match from external inventory — click to see the matched listing(s)"
+                      onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       style={{
                         marginLeft: 6,
                         padding: '2px 8px',
@@ -336,6 +343,7 @@ export default function TableView({
                         color: '#92400E',
                         border: '1px solid #FCD34D',
                         whiteSpace: 'nowrap',
+                        cursor: 'pointer',
                       }}
                     >
                       Collated match
@@ -343,7 +351,8 @@ export default function TableView({
                   )}
                   {isSubmissionsPartial && (
                     <span
-                      title="Partial match from submissions table — society + BHK + floor matched another CP's submission; tower/unit couldn't be verified"
+                      title="Partial match from another CP's submission — click to see the matched record(s)"
+                      onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       style={{
                         marginLeft: 6,
                         padding: '2px 8px',
@@ -354,6 +363,7 @@ export default function TableView({
                         color: '#5B21B6',
                         border: '1px solid #C4B5FD',
                         whiteSpace: 'nowrap',
+                        cursor: 'pointer',
                       }}
                     >
                       Submissions match
@@ -388,5 +398,13 @@ export default function TableView({
         );
       })()}
     </div>
+    <MatchDetailsModal
+      open={matchModalItems !== null}
+      items={matchModalItems || []}
+      onClose={() => setMatchModalItems(null)}
+      onOpenSubmission={onSelect}
+      title="Matched records"
+    />
+    </>
   );
 }

@@ -12,8 +12,13 @@ const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
 export const MAX_PHOTOS = 5;
-export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB (images)
 export const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Video uploads (CP "Share media" → Video). The unsigned preset must allow
+// video (resource type Auto/Video) or Cloudinary returns 400.
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB
+export const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
 
 export class UploadError extends Error {
   constructor(message, code) {
@@ -32,13 +37,24 @@ export function validateFile(file) {
   return null;
 }
 
+export function validateVideo(file) {
+  if (!ALLOWED_VIDEO_TYPES.includes(file.type)) {
+    return `Only MP4, MOV, or WebM video allowed. Got ${file.type || 'unknown'}.`;
+  }
+  if (file.size > MAX_VIDEO_BYTES) {
+    return `Video too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 100 MB.`;
+  }
+  return null;
+}
+
 /**
  * Upload a file to Cloudinary using the unsigned preset.
  * @param {File} file
  * @param {(pct: number) => void} onProgress — called with 0..100
+ * @param {'image'|'video'} resourceType — Cloudinary upload endpoint (default 'image')
  * @returns {Promise<{ publicId: string, secureUrl: string }>}
  */
-export function uploadToCloudinary(file, onProgress) {
+export function uploadToCloudinary(file, onProgress, resourceType = 'image') {
   return new Promise((resolve, reject) => {
     if (!CLOUD_NAME || !UPLOAD_PRESET) {
       reject(new UploadError('Cloudinary not configured. Check env vars.', 'not_configured'));
@@ -46,7 +62,7 @@ export function uploadToCloudinary(file, onProgress) {
     }
 
     const xhr = new XMLHttpRequest();
-    const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+    const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
     const form = new FormData();
     form.append('file', file);
     form.append('upload_preset', UPLOAD_PRESET);

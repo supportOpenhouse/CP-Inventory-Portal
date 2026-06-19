@@ -338,7 +338,11 @@ def verify_otp_route():
 
 @bp.post("/auth/phone-login")
 def phone_login():
-    """Legacy endpoint. When OTP_ENABLED=true, this is blocked to force new flow."""
+    """Phone-only login (no OTP). Only allowed when OTP is disabled globally
+    (OTP_ENABLED=false); blocked otherwise to force the OTP flow. Mirrors the
+    OTP verify flow's user resolution so EVERY role works: RM / manager / viewer
+    via the rms table, CP via channel_partners.
+    """
     if Config.OTP_ENABLED:
         return jsonify({
             "error": "Phone-only login is disabled. Use /auth/send-otp then /auth/verify-otp."
@@ -352,23 +356,42 @@ def phone_login():
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # Try rms first (RM/manager/viewer), then channel_partners (CP) —
+            # same precedence as verify-otp so every role can log in locally.
+            rm = _fetch_active_rm(cur, phone)
+            if rm:
+                try:
+                    cur.execute(
+                        "UPDATE rms SET last_login = NOW() WHERE id = %s",
+                        (rm["id"],),
+                    )
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                token = _generate_rm_token(rm)
+                return jsonify({
+                    "success": True,
+                    "token": token,
+                    "user": _rm_user_response(rm),
+                }), 200
+
             cp = _fetch_active_cp(cur, phone)
-            if not cp:
-                return jsonify(_not_registered_response(cur)), 200
-            cur.execute(
-                "UPDATE channel_partners SET last_login = NOW() WHERE id = %s",
-                (cp["id"],),
-            )
-            conn.commit()
+            if cp:
+                cur.execute(
+                    "UPDATE channel_partners SET last_login = NOW() WHERE id = %s",
+                    (cp["id"],),
+                )
+                conn.commit()
+                token = generate_token(cp)
+                return jsonify({
+                    "success": True,
+                    "token": token,
+                    "user": _user_response(cp),
+                }), 200
+
+            return jsonify(_not_registered_response(cur)), 200
     finally:
         put_app_conn(conn)
-
-    token = generate_token(cp)
-    return jsonify({
-        "success": True,
-        "token": token,
-        "user": _user_response(cp),
-    }), 200
 
 
 # ------------------------------------------------------------------

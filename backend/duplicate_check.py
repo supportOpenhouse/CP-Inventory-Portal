@@ -140,6 +140,7 @@ def _no_match():
         "details": {},
         "collated_match": False,
         "submissions_match": False,
+        "match_details": [],
     }
 
 
@@ -149,13 +150,20 @@ def _no_match():
 _ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Offer", "Closure", "Visit Scheduled", "Visit Completed")
 
 
-def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
-    """Query the app DB submissions table for a matching active submission.
+def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no,
+                       exclude_submission_id=None):
+    """Query the app DB submissions table for matching active submissions.
 
     Mirrors the properties-table matching logic: matches require society +
     bhk (digit-normalized) + floor, plus optionally tower/unit when given.
 
-    Returns True if any active, non-rejected submission matches; False otherwise.
+    Returns a LIST of matched submission rows (dicts with the columns needed to
+    build match_details) — empty list if none / on error. Callers derive the
+    boolean flag from `bool(rows)`.
+
+    `exclude_submission_id` skips a specific row — used by the backfill so a live
+    submission doesn't match itself (at submit time the row doesn't exist yet, so
+    this is only relevant when re-running over historical data).
     """
     import logging
     log = logging.getLogger(__name__)
@@ -189,17 +197,23 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
                     "= UPPER(TRIM(REGEXP_REPLACE(%s, '^0+', '')))"
                 )
                 params.append(unit_no)
+            if exclude_submission_id is not None:
+                conditions.append("id <> %s")
+                params.append(exclude_submission_id)
 
-            sql = f"SELECT 1 FROM submissions WHERE {' AND '.join(conditions)} LIMIT 1"
+            sql = (
+                "SELECT id, public_id, society_name, tower, unit_no, floor, bhk, sqft "
+                f"FROM submissions WHERE {' AND '.join(conditions)} LIMIT 25"
+            )
 
             try:
                 cur.execute(sql, params)
-                return cur.fetchone() is not None
+                return cur.fetchall()
             except Exception as e:
                 # Don't crash the whole dup-check if submissions query fails —
                 # fall back to properties-only behavior.
                 log.exception("[dup-check] _check_submissions failed: %s", e)
-                return False
+                return []
     finally:
         put_app_conn(conn)
 
@@ -213,15 +227,16 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
     properties/submissions. `bedrooms` is an INTEGER column here (it was TEXT
     in collated_data) so we cast it to text before digit-normalizing.
 
-    Returns True if any inventory row matches; False otherwise (also False when
-    the inventory DB isn't configured/reachable — fail closed so dup-check as a
-    whole keeps working).
+    Returns a LIST of matched inventory rows (dicts) — empty when nothing
+    matches, the inventory DB isn't configured, or the query errors (fail closed
+    so dup-check as a whole keeps working). Callers derive the boolean flag from
+    `bool(rows)`.
     """
     import logging
     log = logging.getLogger(__name__)
 
     if not inventory_configured():
-        return False
+        return []
 
     conn = get_inv_conn()
     try:
@@ -232,7 +247,8 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
             # City filter is tolerant of NULL/empty because source rows often
             # don't populate city.
             sql = """
-                SELECT 1 FROM inventory
+                SELECT oh_id, society, tower, unit_no, floor, bedrooms, area_sqft
+                FROM inventory
                 WHERE REGEXP_REPLACE(LOWER(TRIM(COALESCE(society, ''))), '\\s+', ' ', 'g')
                       = REGEXP_REPLACE(LOWER(TRIM(%s)), '\\s+', ' ', 'g')
                   AND SUBSTRING(COALESCE(bedrooms::text, '') FROM '[0-9]+') = %s
@@ -243,36 +259,105 @@ def _check_collated_data(city, society_name, bhk_n, floor_n):
                      OR TRIM(city) = ''
                      OR LOWER(TRIM(city)) = LOWER(TRIM(%s))
                   )
-                LIMIT 1
+                LIMIT 25
             """
             params = [society_name, bhk_n, floor_n, city]
 
             try:
                 cur.execute(sql, params)
-                hit = cur.fetchone() is not None
+                rows = cur.fetchall()
                 log.info(
-                    "[dup-check] inventory query: city=%r society=%r bhk=%r floor=%r -> match=%s",
-                    city, society_name, bhk_n, floor_n, hit,
+                    "[dup-check] inventory query: city=%r society=%r bhk=%r floor=%r -> %d match(es)",
+                    city, society_name, bhk_n, floor_n, len(rows),
                 )
-                return hit
+                return rows
             except Exception as e:
-                # Fail closed (return False) so we don't break dup-check entirely.
+                # Fail closed (return []) so we don't break dup-check entirely.
                 log.exception("[dup-check] _check_collated_data failed: %s", e)
-                return False
+                return []
     finally:
         put_inv_conn(conn)
 
 
+# --- match_details helpers --------------------------------------------------
+
+def _num(v):
+    """Coerce a numeric-ish value (Decimal/int/str) to a JSON-safe number, or
+    None. Whole floats become ints so areas read '1030', not '1030.0'."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f.is_integer() else f
+
+
+def _match_item(source: str, match: str, row: dict) -> dict:
+    """Normalize a matched row from any of the three tables into the common
+    match_details shape: source, match (exact/partial), id, society, tower,
+    unit_no, floor, bhk, area. Handles each table's column-name differences."""
+    if source == "inventory":
+        _id, soc, bhk, area = row.get("oh_id"), row.get("society"), row.get("bedrooms"), row.get("area_sqft")
+        tower = row.get("tower")
+    elif source == "submissions":
+        _id, soc, bhk, area = row.get("public_id"), row.get("society_name"), row.get("bhk"), row.get("sqft")
+        tower = row.get("tower")
+    else:  # properties
+        _id, soc, bhk, area = row.get("uid"), row.get("society_name"), row.get("configuration"), row.get("area_sqft")
+        tower = row.get("tower_no")
+
+    def _s(v):
+        return None if v is None else str(v)
+
+    # ref_id: the numeric submissions.id of a matched *submission*, so the admin
+    # UI can open that submission's side panel on click. Only submissions have a
+    # viewable side panel (inventory/properties are external listings).
+    ref_id = row.get("id") if source == "submissions" else None
+
+    return {
+        "source": source,
+        "match": match,
+        "id": _s(_id),
+        "ref_id": ref_id,
+        "society": _s(soc),
+        "tower": _s(tower),
+        "unit_no": _s(row.get("unit_no")),
+        "floor": _s(row.get("floor")),
+        "bhk": _s(bhk),
+        "area": _num(area),
+    }
+
+
+def _dedup_matches(items: list) -> list:
+    """Drop duplicate matched records (same source + id), preserving order."""
+    seen, out = set(), []
+    for it in items:
+        key = (it.get("source"), it.get("id"))
+        if it.get("id") is not None and key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
+    return out
+
+
 def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
-                    floor=None, city_hint=None, cp_id=None):
+                    floor=None, city_hint=None, cp_id=None,
+                    exclude_submission_id=None):
     """
     Returns:
         {
           "match_level": "exact" | "partial" | "none",
           "block": bool,               # True => hard-block (Contact RM/Edit), False => soft warning
           "message": str,
-          "details": { "society": str, "city": str }
+          "details": { "society": str, "city": str },
+          "collated_match": bool,
+          "submissions_match": bool,
+          "match_details": [ {source, match, id, society, tower, unit_no, floor, bhk, area}, ... ],
         }
+
+    `exclude_submission_id` is forwarded to the submissions check so a row
+    doesn't match itself (used by the historical backfill).
     """
     # 1. Resolve society
     conn = get_app_conn()
@@ -308,7 +393,8 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     # society+bhk+floor level. We expose this flag even when the final block
     # decision is "no" — the admin UI uses it to highlight Unapproved
     # submissions that came through the "submit without unit details" path.
-    collated_match_flag = _check_collated_data(city, society_name, bhk_n, floor_n)
+    inventory_rows = _check_collated_data(city, society_name, bhk_n, floor_n)
+    collated_match_flag = bool(inventory_rows)
 
     # Shared base WHERE clause — society + bhk (digit-normalized) + floor
     # `floor::text` defensive cast in case the properties column is INT.
@@ -324,7 +410,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
 
     hard_block_details = {"society": society_name, "city": city}
 
-    def _partial(submissions_hit: bool):
+    def _partial(submissions_hit: bool, matches: list):
         """Build a partial-match response: signal surfaced, no hard block.
 
         Returned when society+bhk+floor matches somewhere but we can't
@@ -332,7 +418,8 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
         because the CP didn't supply both tower and unit, or because the
         inventory only has a coarser match. Caller decides what to do; the
         downstream status logic treats only match_level=='exact' as a
-        perfect-match auto-reject.
+        perfect-match auto-reject. `matches` is the list of matched records
+        persisted as submissions.match_details.
         """
         rm_info = _fetch_rm(city, cp_id=cp_id)
         return {
@@ -346,14 +433,16 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             "details": {**hard_block_details, **rm_info},
             "collated_match": collated_match_flag,
             "submissions_match": submissions_hit,
+            "match_details": _dedup_matches(matches),
         }
 
-    def _exact(submissions_match: bool):
+    def _exact(submissions_match: bool, matches: list):
         """Build an exact-match response: a full 5-field hit, hard block.
 
         This is the only result that drives 'Rejected' (status_reason='Duplicacy') downstream.
         `submissions_match` records whether the hit came from the submissions
-        table (True) or the properties table (False).
+        table (True) or the properties table (False). `matches` is the list of
+        matched records persisted as submissions.match_details.
         """
         rm_info = _fetch_rm(city, cp_id=cp_id)
         unit_label = f"{society_name}, Tower {tower}, Unit {unit_no}"
@@ -368,6 +457,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             "details": {**hard_block_details, **rm_info},
             "collated_match": collated_match_flag,
             "submissions_match": submissions_match,
+            "match_details": _dedup_matches(matches),
         }
 
     # ---------- EXACT BLOCK: requires CP to supply BOTH tower AND unit ----------
@@ -379,6 +469,7 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     # optional properties DB is configured, submissions always (app DB) —
     # so CP-to-CP matching works even with no properties DB.
     if tower and unit_no:
+        prop_exact_rows = []
         if properties_configured():
             pconn = get_props_conn()
             try:
@@ -392,18 +483,29 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                     ]
                     params = [*base_params, tower, unit_no]
                     cur.execute(
-                        f"SELECT uid FROM properties WHERE {' AND '.join(conditions)} LIMIT 1",
+                        "SELECT uid, society_name, tower_no, unit_no, floor, configuration, area_sqft "
+                        f"FROM properties WHERE {' AND '.join(conditions)} LIMIT 25",
                         params,
                     )
-                    properties_exact_hit = cur.fetchone() is not None
+                    prop_exact_rows = cur.fetchall()
             finally:
                 put_props_conn(pconn)
 
-            if properties_exact_hit:
-                return _exact(submissions_match=False)
+        sub_exact_rows = _check_submissions(
+            society_id, bhk_n, floor_n, tower, unit_no, exclude_submission_id,
+        )
 
-        if _check_submissions(society_id, bhk_n, floor_n, tower, unit_no):
-            return _exact(submissions_match=True)
+        if prop_exact_rows or sub_exact_rows:
+            matches = (
+                [_match_item("properties", "exact", r) for r in prop_exact_rows]
+                + [_match_item("submissions", "exact", r) for r in sub_exact_rows]
+            )
+            # Preserve prior flag semantics: submissions_match is True only when
+            # the exact hit came from submissions and NOT properties.
+            return _exact(
+                submissions_match=bool(sub_exact_rows) and not bool(prop_exact_rows),
+                matches=matches,
+            )
         # Fall through: tower+unit given but no full match — may still be partial.
 
     # ---------- PARTIAL: society+bhk+floor matches anywhere ----------
@@ -411,23 +513,32 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
     # did but the full 5-field match missed. If anything matches at the
     # society+bhk+floor scope (properties / active submissions / collated),
     # report it as a partial signal — informational only.
-    properties_hit = False
+    prop_partial_rows = []
     if properties_configured():
         pconn = get_props_conn()
         try:
             with pconn.cursor() as cur:
                 cur.execute(
-                    f"SELECT 1 FROM properties WHERE {base_where} LIMIT 1",
+                    "SELECT uid, society_name, tower_no, unit_no, floor, configuration, area_sqft "
+                    f"FROM properties WHERE {base_where} LIMIT 25",
                     base_params,
                 )
-                properties_hit = cur.fetchone() is not None
+                prop_partial_rows = cur.fetchall()
         finally:
             put_props_conn(pconn)
 
-    submissions_hit = _check_submissions(society_id, bhk_n, floor_n, None, None)
+    sub_partial_rows = _check_submissions(
+        society_id, bhk_n, floor_n, None, None, exclude_submission_id,
+    )
+    submissions_hit = bool(sub_partial_rows)
 
-    if properties_hit or submissions_hit or collated_match_flag:
-        return _partial(submissions_hit)
+    if prop_partial_rows or submissions_hit or collated_match_flag:
+        matches = (
+            [_match_item("inventory", "partial", r) for r in inventory_rows]
+            + [_match_item("submissions", "partial", r) for r in sub_partial_rows]
+            + [_match_item("properties", "partial", r) for r in prop_partial_rows]
+        )
+        return _partial(submissions_hit, matches)
 
     result = _no_match()
     result["collated_match"] = collated_match_flag

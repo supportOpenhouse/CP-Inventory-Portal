@@ -16,10 +16,10 @@ import AgingStrip from '../components/AgingStrip';
 //   'Submitted' bucket = Submitted + Visit Scheduled + Visit Completed
 //   'Offer'     bucket = Offer + Closure
 const FILTER_BOXES = [
-  { key: 'All',             label: 'All',            color: '#6366F1' },
-  { key: 'Unapproved',      label: 'Pending Review', color: '#B8860B' },
-  { key: 'Submitted',       label: 'Submitted',      color: '#6366F1' },
-  { key: 'Offer',           label: 'Offers',         color: '#FF6B2B' },
+  { key: 'All',      label: 'ALL',      color: '#6366F1' },
+  { key: 'Visited',  label: 'VISITED',  color: '#10B981' },
+  { key: 'Offer',    label: 'OFFER',    color: '#FF6B2B' },
+  { key: 'Closure',  label: 'CLOSURE',  color: '#16A34A' },
 ];
 
 function badgeClass(s) {
@@ -113,19 +113,16 @@ export default function Dashboard({ onAdd }) {
   }, [user.city]);
 
   // Synthetic status used for filtering/counting only (actual DB status unchanged).
-  // Buckets:
-  //   - 'Submitted' bucket also contains Visit Scheduled / Visit Completed (CP
-  //     just wants to know "this is moving through the pipeline"), plus any row
-  //     with a pending counter offer.
-  //   - 'Offer' bucket also contains Closure (Closure is downstream of Offer
-  //     from the CP's point of view — the deal is being closed).
-  //   - perfect_match_at_submit rows have status='Rejected' directly (since the
-  //     May 2026 migration), so no special remap is needed — they naturally
-  //     land outside the Pending Review tile.
+  // Tabs: ALL / VISITED / OFFER / CLOSURE.
+  //   - VISITED  = Visit Completed only.
+  //   - OFFER    = Offer.
+  //   - CLOSURE  = Closure.
+  //   - Everything else (Submitted, Unapproved, Visit Scheduled, Rejected, …)
+  //     has no dedicated tab and is only visible under ALL.
   const syntheticStatus = (s) => {
-    if (s.counter_offer_status === 'pending') return 'Submitted';
-    if (s.status === 'Visit Scheduled' || s.status === 'Visit Completed') return 'Submitted';
-    if (s.status === 'Closure') return 'Offer';
+    if (s.status === 'Visit Completed') return 'Visited';
+    if (s.status === 'Offer') return 'Offer';
+    if (s.status === 'Closure') return 'Closure';
     return s.status;
   };
 
@@ -293,8 +290,10 @@ export default function Dashboard({ onAdd }) {
           const thumbId = Array.isArray(s.photos) && s.photos.length > 0 ? s.photos[0] : null;
           const hasPendingCounter = s.counter_offer_status === 'pending' && s.counter_offer_price;
           const busy = counterBusy[s.id];
+          // Dim rejected listings so they visually recede in the CP list.
+          const isRejected = s.status === 'Rejected' || s.status === 'Price Rejected' || s.perfect_match_at_submit;
           return (
-            <div className="unit-card" key={s.id}>
+            <div className="unit-card" key={s.id} style={isRejected ? { opacity: 0.6 } : undefined}>
               <div
                 className="unit-card-body"
                 style={{ display: 'flex', gap: 14, cursor: 'pointer' }}

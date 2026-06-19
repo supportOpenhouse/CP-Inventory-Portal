@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { formatPrice, formatOhPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
 import AgingStrip from '../../components/AgingStrip';
+import MatchDetailsModal from '../../components/MatchDetailsModal';
 import { timerFor } from '../../timer';
 
 /**
@@ -50,9 +51,17 @@ export default function BoardView({
   loadingByStage = {},
   onLoadMore,
 }) {
+<<<<<<< Updated upstream
   // Staff (admin + manager + RM) and viewers see all stages including
   // Unapproved. Matches the counts panel filter at the top of Admin/index.jsx
   // so the board columns line up with the stage counts shown above.
+=======
+  // Match-details modal: null = closed; an array = the matched records to show
+  // (set when a Perfect / Collated / Submissions badge is clicked).
+  const [matchModalItems, setMatchModalItems] = useState(null);
+
+  // Staff (admin + manager + RM) see all stages including Unapproved.
+>>>>>>> Stashed changes
   // When a status filter is active, collapse to just that stage's column:
   // the reload only fetches that stage, and rendering the other (empty)
   // columns would re-fire their load-more sentinels — which fetch each
@@ -79,6 +88,7 @@ export default function BoardView({
   }
 
   return (
+    <>
     <div className="admin-board">
       {visibleStages.map((stage) => {
         const colSubs = submissions.filter((s) => s.status === stage.key);
@@ -225,7 +235,9 @@ export default function BoardView({
                     {isPerfectMatch && (
                       <span
                         className="board-chip board-chip-perfect"
-                        title="Perfect match — tower + unit exactly matched an existing record at submit time"
+                        style={{ cursor: 'pointer' }}
+                        title="Perfect match — click to see the matched record(s)"
+                        onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       >
                         Perfect match
                       </span>
@@ -233,7 +245,9 @@ export default function BoardView({
                     {isCollatedPartial && (
                       <span
                         className="board-chip board-chip-collated"
-                        title="Partial match from collated_data — society + BHK + floor matched an external-scraper listing; tower/unit couldn't be verified"
+                        style={{ cursor: 'pointer' }}
+                        title="Partial match from external inventory — click to see the matched listing(s)"
+                        onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       >
                         Collated match
                       </span>
@@ -241,7 +255,9 @@ export default function BoardView({
                     {isSubmissionsPartial && (
                       <span
                         className="board-chip board-chip-submissions"
-                        title="Partial match from submissions table — society + BHK + floor matched another CP's submission; tower/unit couldn't be verified"
+                        style={{ cursor: 'pointer' }}
+                        title="Partial match from another CP's submission — click to see the matched record(s)"
+                        onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       >
                         Submissions match
                       </span>
@@ -374,5 +390,13 @@ export default function BoardView({
         );
       })}
     </div>
+    <MatchDetailsModal
+      open={matchModalItems !== null}
+      items={matchModalItems || []}
+      onClose={() => setMatchModalItems(null)}
+      onOpenSubmission={onSelect}
+      title="Matched records"
+    />
+    </>
   );
 }

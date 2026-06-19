@@ -50,7 +50,7 @@ frontend/src/CpCardPreview.jsx
 
 
 .claude/
-
+graphify-out/
 # Obsidian vault — fully local, never pushed
 notes/
 graphify-out/

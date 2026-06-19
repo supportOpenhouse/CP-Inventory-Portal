@@ -28,6 +28,31 @@ _props_pool: Optional[pool.SimpleConnectionPool] = None
 _inv_pool: Optional[pool.SimpleConnectionPool] = None
 
 
+def _make_optional_pool(label: str, dsn: str):
+    """Build a pool for an OPTIONAL secondary DB. Returns None (instead of
+    raising) if the DB can't be reached at startup, so a misconfigured or
+    down optional DB doesn't take the whole app offline. The error message is
+    logged (it contains the host, not credentials) so the cause is visible.
+    """
+    try:
+        return pool.SimpleConnectionPool(
+            minconn=1,
+            maxconn=5,
+            dsn=dsn,
+            cursor_factory=RealDictCursor,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[db] %s DB is configured but unreachable at startup — that feature "
+            "is disabled until it's fixed. (%s)", label, e,
+        )
+        return None
+
+
 def init_pools() -> None:
     """Initialize the pools. Called once at app startup."""
     global _app_pool, _props_pool, _inv_pool
@@ -44,29 +69,16 @@ def init_pools() -> None:
         keepalives_count=5,
     )
 
+    # Properties + Inventory are OPTIONAL secondary databases. If one is
+    # configured but unreachable at startup (bad/expired host, network down on a
+    # dev box), DON'T crash the whole app — log a warning and leave its pool as
+    # None so the dependent features degrade gracefully (the *_configured()
+    # checks return False). Only the required App DB above is allowed to hard-fail.
     if Config.PROPERTIES_DATABASE_URL:
-        _props_pool = pool.SimpleConnectionPool(
-            minconn=1,
-            maxconn=5,
-            dsn=Config.PROPERTIES_DATABASE_URL,
-            cursor_factory=RealDictCursor,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5,
-        )
+        _props_pool = _make_optional_pool("Properties", Config.PROPERTIES_DATABASE_URL)
 
     if Config.INVENTORY_DATABASE_URL:
-        _inv_pool = pool.SimpleConnectionPool(
-            minconn=1,
-            maxconn=5,
-            dsn=Config.INVENTORY_DATABASE_URL,
-            cursor_factory=RealDictCursor,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5,
-        )
+        _inv_pool = _make_optional_pool("Inventory", Config.INVENTORY_DATABASE_URL)
 
 
 def _is_conn_alive(conn) -> bool:

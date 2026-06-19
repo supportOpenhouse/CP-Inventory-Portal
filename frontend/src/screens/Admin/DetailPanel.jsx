@@ -838,6 +838,24 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   <div style={{ fontSize: 13, color: '#999' }}>No photos.</div>
                 )}
 
+                {/* Videos (CP-shared) */}
+                {Array.isArray(s.videos) && s.videos.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="admin-panel-label">Videos ({s.videos.length})</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                      {s.videos.map((v, i) => (
+                        <video
+                          key={v.public_id || i}
+                          src={v.url}
+                          controls
+                          preload="metadata"
+                          style={{ width: 140, height: 90, borderRadius: 8, background: '#000', objectFit: 'cover' }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Drive links */}
                 {s.drive_links && (
                   <div style={{ marginTop: 12 }}>
@@ -919,6 +937,28 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                           <em>{ev.text || 'Unit submitted'}</em>
                         ) : (
                           ev.kind !== 'status_change' && ev.text ? <span>{ev.text}</span> : null
+                        )}
+                        {/* CP-shared media: show thumbnails inline in the activity. */}
+                        {ev.kind === 'media_shared' && ((Array.isArray(s.photos) && s.photos.length > 0) || (Array.isArray(s.videos) && s.videos.length > 0)) && (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                            {(s.photos || []).slice(0, 6).map((pid) => (
+                              <img
+                                key={pid} src={thumbnailUrl(pid, 56)} alt=""
+                                onClick={() => setLightboxId(pid)}
+                                style={{ width: 48, height: 48, borderRadius: 6, objectFit: 'cover', cursor: 'pointer' }}
+                              />
+                            ))}
+                            {(s.videos || []).slice(0, 4).map((v, i) => (
+                              <a
+                                key={v.public_id || i} href={v.url} target="_blank" rel="noopener noreferrer"
+                                title="Open video"
+                                style={{
+                                  width: 48, height: 48, borderRadius: 6, background: '#111', color: '#fff',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, textDecoration: 'none',
+                                }}
+                              >▶</a>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </div>

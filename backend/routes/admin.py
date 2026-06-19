@@ -821,7 +821,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     s.counter_offer_price, s.counter_offer_status,
                     s.broker_counter_price,
                     s.status, s.status_reason, s.submitted_at,
-                    s.weak_match, s.collated_match, s.submissions_match,
+                    s.weak_match, s.collated_match, s.submissions_match, s.match_details,
                     s.deleted_at, s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
                     s.submitted_by_name,
@@ -840,7 +840,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     s.sqft, s.bhk, s.occupancy_status,
                     s.asking_price,
                     s.seller_name, s.seller_phone,
-                    s.status, s.status_reason, s.submitted_at, s.photos, s.weak_match, s.collated_match, s.submissions_match,
+                    s.status, s.status_reason, s.submitted_at, s.photos, s.weak_match, s.collated_match, s.submissions_match, s.match_details,
                     s.deleted_at, s.drive_links, s.assigned_rm_id, s.listing_rm_id,
                     s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
@@ -3334,6 +3334,7 @@ def create_submission_on_behalf():
                     asking_price, seller_name, seller_phone, photos,
                     status, status_reason, collated_match, submissions_match,
                     unit_less, perfect_match_at_submit,
+                    match_details,
                     submitted_by_name,
                     listing_rm_id
                 ) VALUES (
@@ -3343,6 +3344,7 @@ def create_submission_on_behalf():
                     %s, %s, %s, %s::jsonb,
                     %s, %s, %s, %s,
                     %s, %s,
+                    %s::jsonb,
                     %s,
                     %s
                 )
@@ -3369,6 +3371,7 @@ def create_submission_on_behalf():
                 submissions_match,
                 is_unit_less,
                 is_perfect_match,
+                json.dumps(dup.get("match_details") or []),
                 staff_name,
                 listing_rm_id,
             ))

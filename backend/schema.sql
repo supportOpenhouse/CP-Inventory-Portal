@@ -83,6 +83,12 @@ CREATE TABLE IF NOT EXISTS submissions (
     status_reason    VARCHAR(40),                              -- sub-category for the current status; for status='Rejected' it is one of: Cancelled Post Token, Dead - Legal, Dead - Not Interested, Dead - Sold, Duplicacy, Hold, OH Rejected, Seller Rejected. Staff-only display.
     real_status      VARCHAR(40),                              -- DEPRECATED, superseded by status_reason; no longer read/written. Kept temporarily for audit. See migrations/2026-05-25-status-reason-and-rename-rejected.sql
     collated_match   BOOLEAN     DEFAULT FALSE NOT NULL,  -- partial match from the external `inventory` table (separate DB); admin UI highlights this in Unapproved queue
+    match_details    JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- the actual matched records behind the badges (source/id/society/tower/unit/floor/bhk/area); see migrations/2026-06-18-match-details.sql
+    videos           JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- CP-shared videos as {public_id, url} (Cloudinary); photos reuse the `photos` array. See migrations/2026-06-18-cp-media-and-visit-request.sql
+    requested_visit_date DATE,                                  -- CP-requested visit slot (request only; does not change stage)
+    requested_visit_slot TEXT,                                  -- 'morning' | 'afternoon' | 'evening'
+    requested_rm_id      INTEGER,                               -- RM the CP requested for the visit (rms.id; same-city)
+    visit_requested_at   TIMESTAMPTZ,
     submitted_at     TIMESTAMPTZ DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
