@@ -301,6 +301,11 @@ export default function Dashboard({ onAdd }) {
           const busy = counterBusy[s.id];
           // Dim rejected listings so they visually recede in the CP list.
           const isRejected = s.status === 'Rejected' || s.status === 'Price Rejected' || s.perfect_match_at_submit;
+          // Once both a photo AND a video exist, drop "Upload Media" from the card
+          // (it lives at the bottom of the popup instead).
+          const bothMedia = (Array.isArray(s.photos) && s.photos.length > 0)
+            && (Array.isArray(s.videos) && s.videos.length > 0);
+          const showCardActions = !isRejected && (s.status === 'Submitted' || !bothMedia);
           return (
             <div className="unit-card" key={s.id} style={isRejected ? { opacity: 0.6 } : undefined}>
               <div
@@ -359,11 +364,13 @@ export default function Dashboard({ onAdd }) {
                 </div>
               </div>
 
-              {/* Upload Media / Book Visit Slot — on the card itself */}
-              {!isRejected && (
+              {/* Upload Media / Book Visit Slot — on the card itself (compact) */}
+              {showCardActions && (
                 <div style={{ marginTop: 12 }}>
                   <MediaVisitActions
                     submission={s}
+                    compact
+                    hideUploadMedia={bothMedia}
                     onUploadMedia={() => setMediaSubmission(s)}
                     onBookSlot={() => setBookSubmission(s)}
                   />

@@ -8,18 +8,33 @@
  *   - When Book isn't shown, Upload Media fills the row (wider).
  *
  * Props:
- *   submission     — the row (uses .status)
- *   onUploadMedia  — () => void (opens the share-media modal)
- *   onBookSlot     — () => void (opens the book-visit modal)
- *   showHeading    — render the "Add photos/videos…" heading above the buttons
+ *   submission       — the row (uses .status)
+ *   onUploadMedia    — () => void (opens the share-media modal)
+ *   onBookSlot       — () => void (opens the book-visit modal)
+ *   showHeading      — render the "Add photos/videos…" heading above the buttons
+ *   compact          — smaller buttons (used on the dashboard card)
+ *   hideUploadMedia  — suppress the Upload Media button (e.g. once both a photo
+ *                      and a video have already been uploaded)
  */
-export default function MediaVisitActions({ submission, onUploadMedia, onBookSlot, showHeading = false }) {
+export default function MediaVisitActions({
+  submission, onUploadMedia, onBookSlot,
+  showHeading = false, compact = false, hideUploadMedia = false,
+}) {
   const status = submission?.status;
   const canBook = status === 'Submitted';
   const canMedia = status !== 'Rejected' && status !== 'Price Rejected';
-  if (!canMedia && !canBook) return null;
+  const showMedia = canMedia && !hideUploadMedia;
+  if (!showMedia && !canBook) return null;
 
   const stop = (fn) => (e) => { e.stopPropagation(); fn?.(); };
+
+  const heading = showMedia && canBook
+    ? 'Add photos/videos and book visit slot'
+    : (showMedia ? 'Add photos/videos' : 'Book a visit slot');
+
+  const btnStyle = compact
+    ? { flex: 1, padding: '6px 10px', fontSize: 12.5 }
+    : { flex: 1 };
 
   return (
     <div>
@@ -28,13 +43,13 @@ export default function MediaVisitActions({ submission, onUploadMedia, onBookSlo
           fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
           textTransform: 'uppercase', color: 'var(--oh-gray)', marginBottom: 10,
         }}>
-          {canBook ? 'Add photos/videos and book visit slot' : 'Add photos/videos'}
+          {heading}
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
-        {canMedia && (
+        {showMedia && (
           <button
-            type="button" className="primary-btn" style={{ flex: 1 }}
+            type="button" className="primary-btn" style={btnStyle}
             onClick={stop(onUploadMedia)}
           >
             Upload Media
@@ -43,7 +58,7 @@ export default function MediaVisitActions({ submission, onUploadMedia, onBookSlo
         {canBook && (
           <button
             type="button" className="primary-btn"
-            style={{ flex: 1, background: '#10B981', borderColor: '#10B981' }}
+            style={{ ...btnStyle, background: '#10B981', borderColor: '#10B981' }}
             onClick={stop(onBookSlot)}
           >
             Book Visit Slot

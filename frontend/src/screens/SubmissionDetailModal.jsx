@@ -54,6 +54,11 @@ export default function SubmissionDetailModal({ submission, onClose }) {
   }
 
   const thumbId = Array.isArray(s.photos) && s.photos.length > 0 ? s.photos[0] : null;
+  // Once both a photo AND a video exist, Upload Media moves to the bottom of
+  // this popup (and off the dashboard card).
+  const bothMedia = (Array.isArray(s.photos) && s.photos.length > 0)
+    && (Array.isArray(s.videos) && s.videos.length > 0);
+  const notRejected = s.status !== 'Rejected' && s.status !== 'Price Rejected';
 
   return (
     <>
@@ -135,9 +140,10 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             </div>
           )}
 
-          {/* CP self-service actions — Upload Media on any non-rejected stage,
-              Book Visit Slot only while Submitted. */}
-          {(s.status !== 'Rejected' && s.status !== 'Price Rejected') && (
+          {/* CP self-service actions at the top. Once both photo+video exist,
+              Upload Media drops to the bottom of the popup, so the top only
+              keeps Book Visit Slot (Submitted) — hidden entirely otherwise. */}
+          {notRejected && (s.status === 'Submitted' || !bothMedia) && (
             <div style={{
               border: '1px solid var(--oh-border)', borderRadius: 12,
               padding: 14, marginBottom: 16, background: '#FAFAFA',
@@ -145,6 +151,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
               <MediaVisitActions
                 submission={s}
                 showHeading
+                hideUploadMedia={bothMedia}
                 onUploadMedia={() => setMediaOpen(true)}
                 onBookSlot={() => setVisitOpen(true)}
               />
@@ -268,6 +275,17 @@ export default function SubmissionDetailModal({ submission, onClose }) {
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Both photo+video already uploaded → Upload Media lives at the bottom. */}
+          {bothMedia && notRejected && (
+            <button
+              type="button" className="primary-btn"
+              style={{ width: '100%', marginTop: 8 }}
+              onClick={() => setMediaOpen(true)}
+            >
+              Upload Media
+            </button>
           )}
         </div>
       </div>
