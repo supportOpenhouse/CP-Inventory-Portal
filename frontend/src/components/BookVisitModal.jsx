@@ -11,9 +11,9 @@ import { todayInIST } from '../format';
  * Props: open, submissionId, onClose, onBooked (fires after a successful request)
  */
 const SLOTS = [
-  { key: 'morning', label: 'Morning' },
-  { key: 'afternoon', label: 'Afternoon' },
-  { key: 'evening', label: 'Evening' },
+  { key: 'morning', label: 'Morning', time: '10 AM - 1 PM' },
+  { key: 'afternoon', label: 'Afternoon', time: '1 PM - 4 PM' },
+  { key: 'evening', label: 'Evening', time: '4 PM - 7 PM' },
 ];
 
 export default function BookVisitModal({ open, submissionId, onClose, onBooked }) {
@@ -73,14 +73,18 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
               key={sl.key} type="button"
               onClick={() => setSlot(sl.key)}
               style={{
-                flex: 1, padding: '10px 8px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+                flex: 1, padding: '8px 6px', borderRadius: 10, fontSize: 13, fontWeight: 600,
                 cursor: 'pointer', fontFamily: 'inherit',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2,
                 border: `1.5px solid ${slot === sl.key ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
                 background: slot === sl.key ? 'var(--oh-orange)' : '#fff',
                 color: slot === sl.key ? '#fff' : 'var(--oh-charcoal)',
               }}
             >
-              {sl.label}
+              <span>{sl.label}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 500, opacity: 0.85, whiteSpace: 'nowrap' }}>
+                {sl.time}
+              </span>
             </button>
           ))}
         </div>

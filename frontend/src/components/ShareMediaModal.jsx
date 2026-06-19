@@ -100,14 +100,14 @@ export default function ShareMediaModal({ open, submissionId, onClose, onShared 
             type="button" className="primary-btn" style={{ flex: 1 }}
             disabled={busy} onClick={() => photoInputRef.current?.click()}
           >
-            Photo
+            Photos
           </button>
           <button
             type="button" className="primary-btn"
             style={{ flex: 1, background: '#10B981', borderColor: '#10B981' }}
             disabled={busy} onClick={() => videoInputRef.current?.click()}
           >
-            Video
+            Videos
           </button>
         </div>
 

@@ -32,6 +32,7 @@ function badgeClass(s) {
   if (status === 'Offer' || status === 'Closure' || status === 'Accepted') return 'badge badge-offer';
   if (status === 'Visit Completed' || status === 'Visit Scheduled') return 'badge badge-closed';
   if (status === 'Price Rejected' || status === 'Rejected') return 'badge badge-rejected';
+  if (status === 'Visit Requested') return 'badge';  // violet style via badgeStyle
   return 'badge badge-submitted';
 }
 
@@ -41,6 +42,9 @@ function badgeStyle(s) {
   }
   if (s.status === 'Unapproved') {
     return { background: '#FFF8E1', color: '#B8860B', border: '1px solid #E8C86A' };
+  }
+  if (s.status === 'Visit Requested') {
+    return { background: '#F5F3FF', color: '#8b5cf6', border: '1px solid #C4B5FD' };
   }
   return undefined;
 }
