@@ -364,9 +364,10 @@ export default function Dashboard({ onAdd }) {
                 </div>
               </div>
 
-              {/* Upload Media / Book Visit Slot — on the card itself (compact) */}
+              {/* Upload Media / Book Visit Slot — inset to match the card body
+                  (the card itself has no padding) so it reads as part of the card. */}
               {showCardActions && (
-                <div style={{ marginTop: 12 }}>
+                <div style={{ padding: '0 18px 16px' }}>
                   <MediaVisitActions
                     submission={s}
                     compact
