@@ -321,13 +321,14 @@ export default function Dashboard({ onAdd }) {
                   }
                 }}
               >
-                {thumbId && (
+                {/* Photo thumbnail hidden on the front card view */}
+                {/* {thumbId && (
                   <img
                     src={thumbnailUrl(thumbId, 80)}
                     alt=""
                     style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
                   />
-                )}
+                )} */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="unit-card-header">
                     <div>
