@@ -786,6 +786,11 @@ def share_media(sid: int):
 
             photos = (row.get("photos") or []) + new_photos
             videos = (row.get("videos") or []) + new_videos
+            # Per-listing caps (mirror the frontend limits).
+            if len(photos) > 15:
+                return jsonify({"error": "Max 15 photos per listing"}), 400
+            if len(videos) > 3:
+                return jsonify({"error": "Max 3 videos per listing"}), 400
             cur.execute(
                 "UPDATE submissions SET photos = %s::jsonb, videos = %s::jsonb WHERE id = %s",
                 (json.dumps(photos), json.dumps(videos), sid),

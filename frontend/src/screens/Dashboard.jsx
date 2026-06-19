@@ -505,6 +505,8 @@ export default function Dashboard({ onAdd }) {
         <ShareMediaModal
           open
           submissionId={mediaSubmission.id}
+          photoCount={Array.isArray(mediaSubmission.photos) ? mediaSubmission.photos.length : 0}
+          videoCount={Array.isArray(mediaSubmission.videos) ? mediaSubmission.videos.length : 0}
           onClose={() => setMediaSubmission(null)}
           onShared={loadSubmissions}
         />

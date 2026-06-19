@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
-import { thumbnailUrl } from '../cloudinary';
+import { thumbnailUrl, cloudinaryUrl } from '../cloudinary';
 import { formatDateTime, formatPrice } from '../format';
 import ShareMediaModal from '../components/ShareMediaModal';
 import BookVisitModal from '../components/BookVisitModal';
@@ -21,6 +21,15 @@ export default function SubmissionDetailModal({ submission, onClose }) {
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [visitOpen, setVisitOpen] = useState(false);
+  // Local copies so the "Uploaded media" gallery + limits update right after an
+  // upload, without refetching the whole submission.
+  const [photos, setPhotos] = useState(Array.isArray(s.photos) ? s.photos : []);
+  const [videos, setVideos] = useState(Array.isArray(s.videos) ? s.videos : []);
+
+  useEffect(() => {
+    setPhotos(Array.isArray(s.photos) ? s.photos : []);
+    setVideos(Array.isArray(s.videos) ? s.videos : []);
+  }, [s.id]);
 
   const reloadEvents = () => {
     api.listMySubmissionEvents(s.id)
@@ -53,11 +62,6 @@ export default function SubmissionDetailModal({ submission, onClose }) {
     }
   }
 
-  const thumbId = Array.isArray(s.photos) && s.photos.length > 0 ? s.photos[0] : null;
-  // Once both a photo AND a video exist, Upload Media moves to the bottom of
-  // this popup (and off the dashboard card).
-  const bothMedia = (Array.isArray(s.photos) && s.photos.length > 0)
-    && (Array.isArray(s.videos) && s.videos.length > 0);
   const notRejected = s.status !== 'Rejected' && s.status !== 'Price Rejected';
 
   return (
@@ -140,10 +144,9 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             </div>
           )}
 
-          {/* CP self-service actions at the top. Once both photo+video exist,
-              Upload Media drops to the bottom of the popup, so the top only
-              keeps Book Visit Slot (Submitted) — hidden entirely otherwise. */}
-          {notRejected && (s.status === 'Submitted' || !bothMedia) && (
+          {/* Book Visit Slot at the top (Submitted only). Upload Media + the
+              media gallery live in the "Uploaded media" card at the bottom. */}
+          {s.status === 'Submitted' && (
             <div style={{
               border: '1px solid var(--oh-border)', borderRadius: 12,
               padding: 14, marginBottom: 16, background: '#FAFAFA',
@@ -151,23 +154,10 @@ export default function SubmissionDetailModal({ submission, onClose }) {
               <MediaVisitActions
                 submission={s}
                 showHeading
-                hideUploadMedia={bothMedia}
-                onUploadMedia={() => setMediaOpen(true)}
+                hideUploadMedia
                 onBookSlot={() => setVisitOpen(true)}
               />
             </div>
-          )}
-
-          {/* Photo */}
-          {thumbId && (
-            <img
-              src={thumbnailUrl(thumbId, 560)}
-              alt=""
-              style={{
-                width: '100%', maxHeight: 200, objectFit: 'cover',
-                borderRadius: 10, marginBottom: 16,
-              }}
-            />
           )}
 
           {/* Unit info */}
@@ -277,15 +267,49 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             </div>
           )}
 
-          {/* Both photo+video already uploaded → Upload Media lives at the bottom. */}
-          {bothMedia && notRejected && (
-            <button
-              type="button" className="primary-btn"
-              style={{ width: '100%', marginTop: 8 }}
-              onClick={() => setMediaOpen(true)}
-            >
-              Upload Media
-            </button>
+          {/* Uploaded media — all photos + videos for this listing, at the bottom. */}
+          {notRejected && (
+            <div style={{
+              border: '1px solid var(--oh-border)', borderRadius: 12,
+              padding: 14, marginTop: 8,
+            }}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+                textTransform: 'uppercase', color: 'var(--oh-gray)', marginBottom: 10,
+              }}>
+                Uploaded media
+              </div>
+
+              {(photos.length > 0 || videos.length > 0) ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {photos.map((pid) => (
+                    <a key={pid} href={cloudinaryUrl(pid)} target="_blank" rel="noopener noreferrer">
+                      <img
+                        src={thumbnailUrl(pid, 80)} alt=""
+                        style={{ width: 72, height: 72, borderRadius: 8, objectFit: 'cover', display: 'block' }}
+                      />
+                    </a>
+                  ))}
+                  {videos.map((v, i) => (
+                    <video
+                      key={v.public_id || i} src={v.url} controls preload="metadata"
+                      style={{ width: 120, height: 72, borderRadius: 8, background: '#000', objectFit: 'cover' }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--oh-gray)', marginBottom: 12 }}>
+                  No media uploaded yet.
+                </div>
+              )}
+
+              <button
+                type="button" className="primary-btn" style={{ width: '100%' }}
+                onClick={() => setMediaOpen(true)}
+              >
+                Upload Media
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -294,8 +318,14 @@ export default function SubmissionDetailModal({ submission, onClose }) {
     <ShareMediaModal
       open={mediaOpen}
       submissionId={s.id}
+      photoCount={photos.length}
+      videoCount={videos.length}
       onClose={() => setMediaOpen(false)}
-      onShared={reloadEvents}
+      onShared={(res) => {
+        if (res && Array.isArray(res.photos)) setPhotos(res.photos);
+        if (res && Array.isArray(res.videos)) setVideos(res.videos);
+        reloadEvents();
+      }}
     />
     <BookVisitModal
       open={visitOpen}

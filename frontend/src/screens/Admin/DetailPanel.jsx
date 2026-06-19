@@ -838,24 +838,6 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   <div style={{ fontSize: 13, color: '#999' }}>No photos.</div>
                 )}
 
-                {/* Videos (CP-shared) */}
-                {Array.isArray(s.videos) && s.videos.length > 0 && (
-                  <div style={{ marginTop: 12 }}>
-                    <div className="admin-panel-label">Videos ({s.videos.length})</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
-                      {s.videos.map((v, i) => (
-                        <video
-                          key={v.public_id || i}
-                          src={v.url}
-                          controls
-                          preload="metadata"
-                          style={{ width: 140, height: 90, borderRadius: 8, background: '#000', objectFit: 'cover' }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Drive links */}
                 {s.drive_links && (
                   <div style={{ marginTop: 12 }}>
@@ -971,9 +953,33 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                   Staff (admin/manager/RM) get a composer to reply
                   free-text inside the 24h customer-service window;
                   viewers see read-only. */}
-              <div className="admin-panel-section" style={{ borderBottom: 'none' }}>
+              <div className="admin-panel-section">
                 <div className="admin-panel-section-title">WhatsApp</div>
                 <WhatsAppThread submissionId={s.id} hideEmpty={false} canSend={isStaff} autoScroll={false} />
+              </div>
+
+              {/* Uploaded media — CP-shared photos + videos, at the bottom. */}
+              <div className="admin-panel-section" style={{ borderBottom: 'none' }}>
+                <div className="admin-panel-section-title">Uploaded media</div>
+                {((Array.isArray(s.photos) && s.photos.length > 0) || (Array.isArray(s.videos) && s.videos.length > 0)) ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {(s.photos || []).map((pid) => (
+                      <img
+                        key={pid} src={thumbnailUrl(pid, 90)} alt=""
+                        onClick={() => setLightboxId(pid)}
+                        style={{ width: 80, height: 80, borderRadius: 8, objectFit: 'cover', cursor: 'pointer' }}
+                      />
+                    ))}
+                    {(s.videos || []).map((v, i) => (
+                      <video
+                        key={v.public_id || i} src={v.url} controls preload="metadata"
+                        style={{ width: 140, height: 90, borderRadius: 8, background: '#000', objectFit: 'cover' }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 13, color: '#999' }}>No media uploaded.</div>
+                )}
               </div>
             </>
           )}

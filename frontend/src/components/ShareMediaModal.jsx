@@ -8,9 +8,16 @@ import { uploadToCloudinary, validateFile, validateVideo } from '../cloudinary';
  * gallery (multiple selection, respective formats only), uploads every file to
  * Cloudinary, then records the references on the submission.
  *
- * Props: open, submissionId, onClose, onShared (fires after a successful share)
+ * Props: open, submissionId, onClose, onShared (fires after a successful share,
+ *        receives the updated { photos, videos } lists), photoCount/videoCount
+ *        (how many already exist, for enforcing the per-listing limits).
  */
-export default function ShareMediaModal({ open, submissionId, onClose, onShared }) {
+export const PHOTO_LIMIT = 15;
+export const VIDEO_LIMIT = 3;
+
+export default function ShareMediaModal({
+  open, submissionId, onClose, onShared, photoCount = 0, videoCount = 0,
+}) {
   const photoInputRef = useRef(null);
   const videoInputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -32,6 +39,16 @@ export default function ShareMediaModal({ open, submissionId, onClose, onShared 
       if (msg) { setError(msg); return; }
     }
 
+    // Enforce per-listing limits (existing + this batch).
+    if (kind === 'video' && videoCount + files.length > VIDEO_LIMIT) {
+      setError(`Max ${VIDEO_LIMIT} videos per listing (you have ${videoCount}).`);
+      return;
+    }
+    if (kind !== 'video' && photoCount + files.length > PHOTO_LIMIT) {
+      setError(`Max ${PHOTO_LIMIT} photos per listing (you have ${photoCount}).`);
+      return;
+    }
+
     setBusy(true);
     try {
       const photos = [];
@@ -46,10 +63,10 @@ export default function ShareMediaModal({ open, submissionId, onClose, onShared 
         if (kind === 'video') videos.push({ public_id: res.publicId, url: res.secureUrl });
         else photos.push(res.publicId);
       }
-      await api.shareMedia(submissionId, { photos, videos });
+      const res = await api.shareMedia(submissionId, { photos, videos });
       setProgress(null);
       setDone(`Shared ${files.length} ${kind === 'video' ? 'video(s)' : 'photo(s)'}.`);
-      onShared?.();
+      onShared?.(res);  // res = { ok, photos, videos } — updated full lists
       onClose?.();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : (e?.message || 'Upload failed'));
@@ -82,6 +99,10 @@ export default function ShareMediaModal({ open, submissionId, onClose, onShared 
         </div>
         <div style={{ fontSize: 13, color: 'var(--oh-gray)', marginBottom: 16, lineHeight: 1.5 }}>
           Add photos or videos for this unit. You can pick multiple files.
+          <br />
+          <span style={{ fontSize: 12 }}>
+            Photos {photoCount}/{PHOTO_LIMIT} · Videos {videoCount}/{VIDEO_LIMIT}
+          </span>
         </div>
 
         <input
@@ -98,14 +119,16 @@ export default function ShareMediaModal({ open, submissionId, onClose, onShared 
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             type="button" className="primary-btn" style={{ flex: 1 }}
-            disabled={busy} onClick={() => photoInputRef.current?.click()}
+            disabled={busy || photoCount >= PHOTO_LIMIT}
+            onClick={() => photoInputRef.current?.click()}
           >
             Photos
           </button>
           <button
             type="button" className="primary-btn"
             style={{ flex: 1, background: '#10B981', borderColor: '#10B981' }}
-            disabled={busy} onClick={() => videoInputRef.current?.click()}
+            disabled={busy || videoCount >= VIDEO_LIMIT}
+            onClick={() => videoInputRef.current?.click()}
           >
             Videos
           </button>
