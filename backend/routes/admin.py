@@ -3119,8 +3119,11 @@ def search_cps():
     Phone matching is digits-only on both sides, so '971' matches '9711382053'.
     Name matching is case-insensitive substring.
     """
-    q = to_str(request.args.get("q") or "").strip()
-    city = to_str(request.args.get("city") or "").strip()
+    # NB: plain .strip() on the raw query strings — NOT to_str(), which returns
+    # None for empty input (so `to_str("").strip()` would crash). This endpoint
+    # is called with no `city` by the "View as CP" picker, hitting that path.
+    q = (request.args.get("q") or "").strip()
+    city = (request.args.get("city") or "").strip()
     limit = max(1, min(50, request.args.get("limit", default=20, type=int) or 20))
 
     if len(q) < 2:
