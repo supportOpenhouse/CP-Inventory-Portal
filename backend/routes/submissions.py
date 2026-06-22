@@ -53,23 +53,13 @@ def my_submissions_stats():
     return jsonify({"stats": stats}), 200
 
 
-@bp.get("/submissions")
-@require_auth
-def list_my_submissions():
-    """Return the logged-in CP's submissions + aggregate stats.
-
-    Includes soft-deleted (withdrawn) submissions so the CP can see their
-    full history. The frontend distinguishes by checking deleted_at /
-    withdraw_reason.
-    """
-    conn = get_app_conn()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
+# Shared SELECT for the CP/broker submission row shape. Used by both the list
+# and the single-detail endpoint so the two never drift. Append a WHERE clause.
+_SUBMISSIONS_SELECT = """
                 SELECT s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
                        s.sqft, s.bhk, s.occupancy_status,
                        s.asking_price,
-                       s.status, s.photos, s.videos, s.submitted_at,
+                       s.status, s.status_reason, s.photos, s.videos, s.submitted_at,
                        s.requested_visit_date, s.requested_visit_slot, s.requested_rm_id,
                        s.counter_offer_price, s.counter_offer_status, s.counter_offer_at,
                        s.counter_offer_response_text,
@@ -98,10 +88,26 @@ def list_my_submissions():
                     FROM submission_events e
                     WHERE e.submission_id = s.id AND e.kind = 'counter_offer'
                 ) co ON TRUE
-                WHERE s.cp_id = %s
-                ORDER BY s.submitted_at DESC
-                LIMIT 100
-            """, (g.user["cp_id"],))
+"""
+
+
+@bp.get("/submissions")
+@require_auth
+def list_my_submissions():
+    """Return the logged-in CP's submissions + aggregate stats.
+
+    Includes soft-deleted (withdrawn) submissions so the CP can see their
+    full history. The frontend distinguishes by checking deleted_at /
+    withdraw_reason.
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                _SUBMISSIONS_SELECT
+                + " WHERE s.cp_id = %s ORDER BY s.submitted_at DESC LIMIT 100",
+                (g.user["cp_id"],),
+            )
             subs = cur.fetchall()
     finally:
         put_app_conn(conn)
@@ -121,6 +127,28 @@ def list_my_submissions():
     # Note: 'closures' (Closed) was removed in May 2026 pipeline simplification.
     # If any legacy frontend still expects this key, it'll be undefined.
     return jsonify({"submissions": subs, "stats": stats}), 200
+
+
+@bp.get("/submissions/<int:sid>")
+@require_auth
+def get_my_submission(sid: int):
+    """Single submission detail for the owning CP/broker — same row shape as the
+    list (incl. status_reason). 404 if the id doesn't exist OR isn't the
+    caller's; we don't distinguish, to avoid leaking other CPs' ids.
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                _SUBMISSIONS_SELECT + " WHERE s.id = %s AND s.cp_id = %s",
+                (sid, g.user["cp_id"]),
+            )
+            row = cur.fetchone()
+    finally:
+        put_app_conn(conn)
+    if not row:
+        return jsonify({"error": "Submission not found"}), 404
+    return jsonify({"submission": row}), 200
 
 
 @bp.post("/submissions")

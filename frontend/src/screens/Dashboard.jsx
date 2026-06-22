@@ -68,6 +68,8 @@ export default function Dashboard({ onAdd }) {
   const [rmPhone, setRmPhone] = useState(null);
   const [rmName, setRmName] = useState(null);
   const [filter, setFilter] = useState('All');
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [counterBusy, setCounterBusy] = useState({});
   // Submission opened in the full-detail modal (null = modal closed)
   const [expandedSubmission, setExpandedSubmission] = useState(null);
@@ -146,9 +148,22 @@ export default function Dashboard({ onAdd }) {
   }, [state.submissions]);
 
   const visibleSubmissions = useMemo(() => {
-    if (filter === 'All') return state.submissions;
-    return state.submissions.filter((s) => syntheticStatus(s) === filter);
-  }, [state.submissions, filter]);
+    // 1) Tab filter (ALL / VISITED / OFFER / CLOSURE) first.
+    const base = filter === 'All'
+      ? state.submissions
+      : state.submissions.filter((s) => syntheticStatus(s) === filter);
+    // 2) Search within that, same check as admin: lowercase + space-split, and
+    //    every token must hit one of the fields (multi-word AND across fields).
+    const tokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return base;
+    return base.filter((s) => {
+      const hay = [
+        s.society_name, s.tower, s.unit_no, s.bhk, s.floor,
+        s.sqft, s.asking_price, s.public_id, s.status,
+      ].filter((v) => v != null).join(' ').toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    });
+  }, [state.submissions, filter, searchQuery]);
 
   const handleCounterResponse = async (submissionId, action) => {
     setCounterBusy((b) => ({ ...b, [submissionId]: action }));
@@ -270,6 +285,40 @@ export default function Dashboard({ onAdd }) {
           );
         })}
       </div>
+
+      {/* Search: a magnifier sitting under the filter chips. Tapping it reveals
+          a text box in normal flow (no overlay), so the list below is pushed
+          down. Closing it clears the query so results reset. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 16px' }}>
+        <button
+          type="button"
+          onClick={() => { setShowSearch((v) => !v); if (showSearch) setSearchQuery(''); }}
+          aria-label="Search listings"
+          title="Search"
+          style={{
+            width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
+            border: `1.5px solid ${showSearch ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
+            background: showSearch ? 'var(--oh-orange)' : '#fff',
+            color: showSearch ? '#fff' : 'var(--oh-charcoal)',
+            fontSize: 16, lineHeight: 1, fontFamily: 'inherit',
+          }}
+        >
+          🔍
+        </button>
+      </div>
+      {showSearch && (
+        <div style={{ padding: '8px 16px 4px' }}>
+          <input
+            type="search"
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search society, tower, unit, ID…"
+            className="input-field"
+            style={{ width: '100%' }}
+          />
+        </div>
+      )}
 
       <div className="section-title">
         {filter === 'All' ? 'Your Inventory' : `${FILTER_BOXES.find(b => b.key === filter)?.label || filter}`}
