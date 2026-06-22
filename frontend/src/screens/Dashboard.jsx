@@ -255,14 +255,14 @@ export default function Dashboard({ onAdd }) {
         </div>
       </div>
 
-      {/* Clickable filter/stat boxes — fixed-width chips centered as a group,
-          so removing a box doesn't stretch the remaining ones. */}
+      {/* Filter chips: ALL / VISITED / OFFER / CLOSURE + a Search toggle.
+          Five equal columns so they fit the mobile width; the Search chip
+          shows a magnifier where the others show a count. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${FILTER_BOXES.length}, 88px)`,
+          gridTemplateColumns: `repeat(${FILTER_BOXES.length + 1}, 1fr)`,
           gap: 8,
-          justifyContent: 'center',
           padding: '12px 16px 8px',
         }}
       >
@@ -313,28 +313,46 @@ export default function Dashboard({ onAdd }) {
             </button>
           );
         })}
-      </div>
 
-      {/* Search: a magnifier sitting under the filter chips. Tapping it reveals
-          a text box in normal flow (no overlay), so the list below is pushed
-          down. Closing it clears the query so results reset. */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 16px' }}>
+        {/* 5th chip = Search toggle. A magnifier sits where the other chips
+            show their count; tapping it reveals the text box below (which
+            pushes the list down and respects the active filter). */}
         <button
+          key="search"
           type="button"
           onClick={() => { setShowSearch((v) => !v); if (showSearch) setSearchQuery(''); }}
           aria-label="Search listings"
-          title="Search"
           style={{
-            width: 36, height: 36, borderRadius: '50%', cursor: 'pointer',
-            border: `1.5px solid ${showSearch ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
-            background: showSearch ? 'var(--oh-orange)' : '#fff',
+            padding: '10px 6px',
+            borderRadius: 10,
+            border: `1.5px solid ${showSearch ? '#0EA5E9' : 'var(--oh-border)'}`,
+            background: showSearch ? '#0EA5E9' : '#fff',
             color: showSearch ? '#fff' : 'var(--oh-charcoal)',
-            fontSize: 16, lineHeight: 1, fontFamily: 'inherit',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 64,
+            transition: 'all 0.15s',
           }}
         >
-          🔍
+          <div style={{ fontSize: 18, lineHeight: 1, marginBottom: 4 }}>🔍</div>
+          <div style={{
+            fontSize: 10,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.3px',
+            textAlign: 'center',
+            lineHeight: 1.2,
+            opacity: showSearch ? 0.95 : 0.7,
+          }}>
+            Search
+          </div>
         </button>
       </div>
+
       {showSearch && (
         <div style={{ padding: '8px 16px 4px' }}>
           <input
