@@ -94,6 +94,14 @@ class Config:
     # Timeout for the outbound POST to the Forms app, in seconds.
     FORMS_APP_TIMEOUT_SECONDS = int(os.getenv("FORMS_APP_TIMEOUT_SECONDS", "10"))
 
+    # -------- Cloudinary (media upload proxy) --------
+    # Uploads are proxied through the backend (POST /api/media/upload) so the
+    # unsigned preset name stays server-side instead of shipping in the JS
+    # bundle. Unsigned upload needs only the cloud name + preset — no secret.
+    # If either is unset, the upload endpoint returns 503.
+    CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME") or None
+    CLOUDINARY_UPLOAD_PRESET = os.getenv("CLOUDINARY_UPLOAD_PRESET") or None
+
     @classmethod
     def validate(cls) -> None:
         missing = []

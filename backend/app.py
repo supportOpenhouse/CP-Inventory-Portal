@@ -18,6 +18,7 @@ from routes.admin import bp as admin_bp
 from routes.auth_routes import bp as auth_bp
 from routes.cron import bp as cron_bp
 from routes.health import bp as health_bp
+from routes.media import bp as media_bp
 from routes.meta import bp as meta_bp
 from routes.societies import bp as societies_bp
 from routes.submissions import bp as submissions_bp
@@ -35,12 +36,17 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
     app.config.from_object(Config)
+    # Cap request bodies a hair above the 100 MB video limit (multipart
+    # overhead) so the media-upload proxy accepts max-size videos but oversize
+    # bodies are rejected with a clean 413.
+    app.config["MAX_CONTENT_LENGTH"] = 110 * 1024 * 1024
 
     CORS(app, origins=[Config.FRONTEND_ORIGIN], supports_credentials=False)
 
     init_pools()
 
     app.register_blueprint(health_bp)
+    app.register_blueprint(media_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(meta_bp)
     app.register_blueprint(societies_bp)

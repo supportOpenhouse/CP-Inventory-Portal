@@ -1,15 +1,20 @@
 /**
- * Cloudinary direct-browser upload helper.
- * Uploads a single File to the configured unsigned preset.
- * Reports progress via callback. Returns the uploaded asset's public_id + secure_url.
+ * Cloudinary helper.
  *
- * Env vars (must be set in frontend/.env and Vercel):
- *   VITE_CLOUDINARY_CLOUD_NAME     — e.g. "openhouse"
- *   VITE_CLOUDINARY_UPLOAD_PRESET  — e.g. "cp_unit_photos"
+ * Uploads go through our OWN backend (POST /api/media/upload) so the Cloudinary
+ * api_secret never reaches the browser and only authenticated users can upload.
+ * Read/transform URLs are still built client-side from the cloud name, which is
+ * public by design (it already appears in every delivered image URL).
+ *
+ * Env vars (frontend/.env + Vercel):
+ *   VITE_CLOUDINARY_CLOUD_NAME — read/transform URLs only (no secret)
+ *   VITE_API_BASE_URL          — backend base, used for the upload POST
  */
 
+import { getToken } from './auth';
+
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api';
 
 export const MAX_PHOTOS = 5;
 export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB (images)
@@ -48,26 +53,25 @@ export function validateVideo(file) {
 }
 
 /**
- * Upload a file to Cloudinary using the unsigned preset.
+ * Upload a file to Cloudinary VIA our backend proxy. The browser POSTs the
+ * file to /api/media/upload (auth required); the backend signs and forwards it
+ * to Cloudinary. Progress reflects the browser→backend leg (the meaningful
+ * "is my file leaving" bar). XHR is used instead of fetch for progress events.
  * @param {File} file
  * @param {(pct: number) => void} onProgress — called with 0..100
- * @param {'image'|'video'} resourceType — Cloudinary upload endpoint (default 'image')
+ * @param {'image'|'video'} resourceType — default 'image'
  * @returns {Promise<{ publicId: string, secureUrl: string }>}
  */
 export function uploadToCloudinary(file, onProgress, resourceType = 'image') {
   return new Promise((resolve, reject) => {
-    if (!CLOUD_NAME || !UPLOAD_PRESET) {
-      reject(new UploadError('Cloudinary not configured. Check env vars.', 'not_configured'));
-      return;
-    }
-
     const xhr = new XMLHttpRequest();
-    const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
     const form = new FormData();
     form.append('file', file);
-    form.append('upload_preset', UPLOAD_PRESET);
+    form.append('resource_type', resourceType);
 
-    xhr.open('POST', url, true);
+    xhr.open('POST', `${API_BASE}/media/upload`, true);
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
@@ -79,9 +83,9 @@ export function uploadToCloudinary(file, onProgress, resourceType = 'image') {
       try {
         const res = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve({ publicId: res.public_id, secureUrl: res.secure_url });
+          resolve({ publicId: res.publicId, secureUrl: res.secureUrl });
         } else {
-          reject(new UploadError(res.error?.message || `Upload failed (${xhr.status})`, 'http_error'));
+          reject(new UploadError(res.error || `Upload failed (${xhr.status})`, 'http_error'));
         }
       } catch {
         reject(new UploadError('Upload failed (invalid response)', 'parse_error'));
