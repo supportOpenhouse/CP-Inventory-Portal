@@ -62,7 +62,8 @@ def _build_email(submission: dict, cp: dict, rm_name: str) -> tuple[str, str]:
 
     config_line = []
     if submission.get("bhk"):
-        config_line.append(submission["bhk"])
+        # bhk is numeric (Decimal); float()+':g' drops a trailing ".0".
+        config_line.append(f"{float(submission['bhk']):g} BHK")
     if submission.get("sqft"):
         config_line.append(f"{submission['sqft']} sqft")
     if submission.get("occupancy_status"):

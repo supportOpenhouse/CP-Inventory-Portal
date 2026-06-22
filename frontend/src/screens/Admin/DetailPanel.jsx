@@ -17,7 +17,7 @@ const EDITABLE_FIELDS = [
   { key: 'unit_no',              label: 'Unit No',          type: 'text'   },
   { key: 'floor',                label: 'Floor',            type: 'text'   },
   { key: 'sqft',                 label: 'Area (sqft)',      type: 'number' },
-  { key: 'bhk',                  label: 'BHK',              type: 'text'   },
+  { key: 'bhk',                  label: 'BHK',              type: 'number' },
   { key: 'occupancy_status',     label: 'Occupancy',        type: 'text'   },
   { key: 'asking_price',         label: 'Asking price (₹)', type: 'number' },
   { key: 'seller_name',          label: 'Seller name',      type: 'text'   },

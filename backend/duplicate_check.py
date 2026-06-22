@@ -177,7 +177,7 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no,
             conditions = [
                 "society_id = %s",
                 # BHK floored to its integer part: '2.5 BHK' -> '2', '3.5' -> '3'.
-                "SUBSTRING(COALESCE(bhk, '') FROM '[0-9]+') = %s",
+                "SUBSTRING(COALESCE(bhk::text, '') FROM '[0-9]+') = %s",
                 "LOWER(TRIM(COALESCE(floor, ''))) = %s",
                 f"status IN ({status_placeholders})",
             ]

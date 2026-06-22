@@ -280,7 +280,7 @@ def _apply_filters(base_sql: str, params: list):
     if bhk:
         # BHK floored to its integer part on both sides: '2.5 BHK' -> '2',
         # so filtering "2 BHK" also returns 2.5-BHK rows (and vice-versa).
-        base_sql += " AND SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+') = SUBSTRING(%s FROM '[0-9]+')"
+        base_sql += " AND SUBSTRING(COALESCE(s.bhk::text, '') FROM '[0-9]+') = SUBSTRING(%s FROM '[0-9]+')"
         params.append(bhk)
 
     if date_from:
@@ -1010,7 +1010,7 @@ def _stage_counts():
                 params.extend([rm_id, rm_id])
             if bhk:
                 # BHK floored to its integer part on both sides (see _apply_filters).
-                base_sql += " AND SUBSTRING(COALESCE(s.bhk, '') FROM '[0-9]+') = SUBSTRING(%s FROM '[0-9]+')"
+                base_sql += " AND SUBSTRING(COALESCE(s.bhk::text, '') FROM '[0-9]+') = SUBSTRING(%s FROM '[0-9]+')"
                 params.append(bhk)
             if date_from:
                 base_sql += " AND s.submitted_at >= %s"
