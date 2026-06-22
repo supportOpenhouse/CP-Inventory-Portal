@@ -29,6 +29,16 @@ export function formatPrice(val) {
   return '₹' + n.toLocaleString('en-IN');
 }
 
+/** BHK config for display. Drops a trailing ".0" ("2.0" -> "2") while keeping
+ *  real decimals ("3.5" -> "3.5"). With suffix (default) -> "2 BHK"; without
+ *  -> "2". Returns '—' when empty/non-numeric. Tolerates leftover "2 BHK"
+ *  strings via parseFloat. */
+export function formatBhk(val, suffix = true) {
+  const n = parseFloat(val);
+  if (Number.isNaN(n)) return '—';
+  return suffix ? `${n} BHK` : String(n);
+}
+
 /** Format while typing: "9500000" -> "95,00,000" (no ₹ prefix) */
 export function formatIndianNumber(val) {
   if (val == null || val === '') return '';

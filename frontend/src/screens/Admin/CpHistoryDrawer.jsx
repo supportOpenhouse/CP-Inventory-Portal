@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { api, ApiError } from '../../api';
-import { formatDateTime, formatPrice, stageMeta, STAGES } from '../../format';
+import { formatBhk, formatDateTime, formatPrice, stageMeta, STAGES } from '../../format';
 import { getUser } from '../../auth';
 
 export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
@@ -149,7 +149,7 @@ export default function CpHistoryDrawer({ cpId, onClose, onOpenSubmission }) {
                         )}
                         <div className="cp-history-meta">
                           {[
-                            s.bhk,
+                            s.bhk && formatBhk(s.bhk),
                             s.sqft ? `${s.sqft} sqft` : null,
                             s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : s.unit_no,
                             s.floor ? `Fl ${s.floor}` : null,

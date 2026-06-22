@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
 import { thumbnailUrl, cloudinaryUrl } from '../cloudinary';
-import { formatDateTime, formatPrice } from '../format';
+import { formatBhk, formatDateTime, formatPrice } from '../format';
 import ShareMediaModal from '../components/ShareMediaModal';
 import BookVisitModal from '../components/BookVisitModal';
 import MediaVisitActions from '../components/MediaVisitActions';
@@ -173,7 +173,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
           {/* Unit info */}
           <SectionTitle>Unit Details</SectionTitle>
           <DetailGrid>
-            <Row label="BHK" value={s.bhk} />
+            <Row label="BHK" value={formatBhk(s.bhk, false)} />
             <Row label="Floor" value={s.floor} />
             <Row label="Tower" value={s.tower} />
             <Row label="Unit No" value={s.unit_no} />

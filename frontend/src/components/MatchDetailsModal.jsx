@@ -14,6 +14,8 @@
  *             side panel.
  */
 
+import { formatBhk } from '../format';
+
 const SOURCE_LABELS = {
   inventory: 'External inventory',
   submissions: 'Other CP submissions',
@@ -131,7 +133,7 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
                     )}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--oh-gray)', marginTop: 4 }}>
-                    {unitLabel(it)} · Floor {it.floor || '—'} · {it.bhk ? `${it.bhk} BHK` : '— BHK'}
+                    {unitLabel(it)} · Floor {it.floor || '—'} · {it.bhk ? formatBhk(it.bhk) : '— BHK'}
                     {it.area ? ` · ${it.area} sqft` : ''}
                   </div>
                   {it.id && (

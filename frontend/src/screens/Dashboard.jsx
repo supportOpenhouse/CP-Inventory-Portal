@@ -4,7 +4,7 @@ import { api, ApiError } from '../api';
 import { clearSession } from '../auth';
 import { thumbnailUrl } from '../cloudinary';
 import { useAuth } from '../contexts/AuthContext';
-import { formatPrice, stageLabel } from '../format';
+import { formatBhk, formatPrice, stageLabel } from '../format';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import SubmissionDetailModal from './SubmissionDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -432,7 +432,7 @@ export default function Dashboard({ onAdd }) {
                       <div className="unit-card-config">
                         {[
                           s.tower && `${s.tower}${s.unit_no ? '-' + s.unit_no : ''}`,
-                          s.bhk,
+                          s.bhk && formatBhk(s.bhk),
                           s.sqft && `${s.sqft} sqft`,
                           s.floor && `Floor ${s.floor}`,
                         ].filter(Boolean).join(' · ')}

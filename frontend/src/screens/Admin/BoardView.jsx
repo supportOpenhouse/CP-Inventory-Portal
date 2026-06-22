@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { formatPrice, formatOhPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
+import { formatBhk, formatPrice, formatOhPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
 import AgingStrip from '../../components/AgingStrip';
 import MatchDetailsModal from '../../components/MatchDetailsModal';
 import { timerFor } from '../../timer';
@@ -227,7 +227,7 @@ export default function BoardView({
                         className="board-chip"
                         style={{ background: stage.bg, color: stage.color }}
                       >
-                        {s.bhk}
+                        {formatBhk(s.bhk)}
                       </span>
                     )}
                     {s.sqft ? <span className="board-chip board-chip-sqft">{s.sqft} sqft</span> : null}

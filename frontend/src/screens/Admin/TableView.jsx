@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { formatPrice, formatOhPrice, formatDateOnly, formatTime12, stageLabel, stageMeta, timeAgo } from '../../format';
+import { formatBhk, formatPrice, formatOhPrice, formatDateOnly, formatTime12, stageLabel, stageMeta, timeAgo } from '../../format';
 import MatchDetailsModal from '../../components/MatchDetailsModal';
 
 /**
@@ -281,7 +281,7 @@ export default function TableView({
                   {[s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no || '—'), s.floor && `F${s.floor}`]
                     .filter(Boolean).join(' · ')}
                 </td>
-                <td>{[s.bhk, s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
+                <td>{[s.bhk && formatBhk(s.bhk), s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={{ fontWeight: 600, color: '#FF6B2B' }}>{formatPrice(s.asking_price)}</td>
                 {(() => {
                   const oh = formatOhPrice(s);

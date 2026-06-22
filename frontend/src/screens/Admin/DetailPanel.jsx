@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, ApiError } from '../../api';
 import {
-  formatDateTime, formatDateOnly, formatTime12, formatPrice, formatOhPrice,
+  formatBhk, formatDateTime, formatDateOnly, formatTime12, formatPrice, formatOhPrice,
   STAGES, AUTO_ONLY_STAGES, REJECTED_REASONS, todayInIST,
 } from '../../format';
 import { getUser } from '../../auth';
@@ -504,7 +504,7 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
               <div className="admin-panel-section">
                 <div className="admin-panel-section-title">Unit details</div>
                 <div className="admin-detail-grid">
-                  <Row label="BHK" value={s.bhk} />
+                  <Row label="BHK" value={formatBhk(s.bhk, false)} />
                   <Row label="Area" value={s.sqft ? `${s.sqft} sqft` : null} />
                   <Row label="Floor" value={s.floor} />
                   <Row label="Occupancy" value={s.occupancy_status} />
