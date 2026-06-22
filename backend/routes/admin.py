@@ -26,7 +26,7 @@ import requests
 from flask import Blueprint, Response, g, jsonify, request
 
 from activity_log import log_activity
-from auth import require_staff, require_acting_staff
+from auth import require_staff, require_acting_staff, generate_token
 from config import Config
 from db import (
     get_app_conn, put_app_conn,
@@ -3174,6 +3174,68 @@ def search_cps():
         put_app_conn(conn)
 
     return jsonify({"results": results}), 200
+
+
+@bp.post("/impersonate-cp/<int:cp_id>")
+@require_staff
+@require_acting_staff
+def impersonate_cp(cp_id: int):
+    """Mint a short-lived CP-scoped JWT so an admin can open the CP's own app
+    in a new tab and act as them ("View as CP"). Admin-only (v1) and audited:
+    a cp_impersonation_started row records who started the session, and the
+    token carries `impersonated_by` so every CP-side write during the session
+    is traceable back to the admin (see activity_log.log_activity).
+    """
+    if g.user.get("role") != "admin":
+        return jsonify({"error": "Only admins can view as a CP"}), 403
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.city_id,
+                       cp.role, cp.is_active, COALESCE(cp.is_admin, FALSE) AS is_admin
+                FROM channel_partners cp
+                WHERE cp.id = %s
+            """, (cp_id,))
+            cp = cur.fetchone()
+            if not cp:
+                return jsonify({"error": "CP not found"}), 404
+            if not cp.get("is_active"):
+                return jsonify({"error": "CP is inactive"}), 400
+            if cp.get("is_admin"):
+                return jsonify({"error": "Target is an admin account, not a CP"}), 400
+
+            # Admin display name for the audit log + the CP-side banner.
+            cur.execute("SELECT name FROM channel_partners WHERE id = %s", (g.user.get("cp_id"),))
+            admin_row = cur.fetchone()
+            admin_name = (admin_row or {}).get("name") or g.user.get("cp_code")
+
+            impersonated_by = {
+                "cp_id": g.user.get("cp_id"),
+                "cp_code": g.user.get("cp_code"),
+                "name": admin_name,
+            }
+            token = generate_token(
+                {
+                    "id": cp["id"], "cp_code": cp["cp_code"], "phone": cp["phone"],
+                    "role": "cp", "city_id": cp.get("city_id"), "is_admin": False,
+                },
+                ttl_minutes=60,
+                extra_claims={"impersonated_by": impersonated_by, "impersonation": True},
+            )
+            log_activity(
+                cur, action="cp_impersonation_started", category="security",
+                entity_uid=cp["cp_code"], entity_type="channel_partner", entity_id=cp_id,
+                details={
+                    "impersonated_by_cp_code": g.user.get("cp_code"),
+                    "impersonated_by_name": admin_name,
+                },
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+    return jsonify({"token": token}), 200
 
 
 @bp.post("/submissions/on-behalf")

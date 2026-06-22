@@ -464,4 +464,8 @@ def me():
     if not cp:
         return jsonify({"error": "User not found or inactive"}), 404
 
-    return jsonify({"user": _user_response(cp)}), 200
+    resp = _user_response(cp)
+    # Surface impersonation so the CP-side app can show a "viewing as" banner.
+    if g.user.get("impersonated_by"):
+        resp["impersonated_by"] = g.user["impersonated_by"]
+    return jsonify({"user": resp}), 200

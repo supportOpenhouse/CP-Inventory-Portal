@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { api, ApiError } from '../api';
+import { clearSession } from '../auth';
 import { thumbnailUrl } from '../cloudinary';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPrice, stageLabel } from '../format';
@@ -183,6 +184,34 @@ export default function Dashboard({ onAdd }) {
 
   return (
     <div className="app-shell">
+      {/* Admin "View as CP" banner — only present when this tab is an
+          impersonation session (the /me response carries impersonated_by). */}
+      {user.impersonated_by && (
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 50,
+          background: '#0EA5E9', color: '#fff', padding: '8px 16px',
+          fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', gap: 10, flexWrap: 'wrap', textAlign: 'center',
+        }}>
+          <span>
+            👁 Viewing as {user.name || user.cp_code} · impersonated by{' '}
+            {user.impersonated_by.name || user.impersonated_by.cp_code}
+          </span>
+          <button
+            type="button"
+            onClick={() => { clearSession(); window.location.assign('/'); }}
+            style={{
+              background: 'rgba(255,255,255,0.2)', color: '#fff',
+              border: '1px solid rgba(255,255,255,0.6)', borderRadius: 999,
+              padding: '2px 12px', cursor: 'pointer', fontFamily: 'inherit',
+              fontWeight: 600, fontSize: 12,
+            }}
+          >
+            Exit
+          </button>
+        </div>
+      )}
+
       {/* Header: name + CP code on left; city + logout top-right */}
       <div className="header">
         <div>

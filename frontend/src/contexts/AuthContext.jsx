@@ -8,7 +8,11 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUserState] = useState(() => getUser());
   const [loading, setLoading] = useState(false);
-
+  // True while a token exists but the user isn't loaded yet — lets the app show
+  // a spinner instead of a one-frame Login flash. This is the path an
+  // impersonation tab always takes (getUser() returns null there; /me hydrates
+  // the CP user from the CP token).
+  const [bootstrapping, setBootstrapping] = useState(() => !!getToken() && !getUser());
 
   useEffect(() => {
     const token = getToken();
@@ -21,8 +25,12 @@ export function AuthProvider({ children }) {
         } catch {
           clearSession();
           setUserState(null);
+        } finally {
+          setBootstrapping(false);
         }
       })();
+    } else {
+      setBootstrapping(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -118,7 +126,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, sendOtp, verifyOtp, logout }}>
+    <AuthContext.Provider value={{ user, loading, bootstrapping, login, sendOtp, verifyOtp, logout }}>
       {children}
     </AuthContext.Provider>
   );

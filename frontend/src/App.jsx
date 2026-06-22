@@ -9,8 +9,14 @@ import Admin from './screens/Admin';
 import { css, fonts } from './styles';
 
 function Shell() {
-  const { user } = useAuth();
+  const { user, bootstrapping } = useAuth();
   const [screen, setScreen] = useState('dashboard');
+
+  // A token exists but the user isn't hydrated yet (e.g. an impersonation tab
+  // fetching /me). Hold a blank frame instead of flashing Login.
+  if (bootstrapping) {
+    return <div style={{ minHeight: '100vh', background: '#fff' }} />;
+  }
 
   if (!user) return <Login />;
 

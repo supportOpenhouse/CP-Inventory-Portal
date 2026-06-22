@@ -81,7 +81,14 @@ def log_activity(
     """
     try:
         actor_id, actor_type, actor_phone = _actor_from_g()
-        payload = json.dumps(details or {}, default=str)
+        # During an admin "view as CP" session the primary actor stays the CP,
+        # but the token carries `impersonated_by` — stamp it so the write is
+        # traceable to the admin who performed it.
+        details = dict(details or {})
+        user = getattr(g, "user", None) or {}
+        if user.get("impersonated_by") and "impersonated_by" not in details:
+            details["impersonated_by"] = user["impersonated_by"]
+        payload = json.dumps(details, default=str)
         cur.execute(
             """
             INSERT INTO activity_log (

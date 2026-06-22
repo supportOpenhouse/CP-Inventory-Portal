@@ -25,14 +25,20 @@ def expiry_hours_for_role(role: str | None) -> int:
     return JWT_EXPIRY_HOURS if (role or "cp") == "cp" else JWT_EXPIRY_HOURS_STAFF
 
 
-def generate_token(cp: dict) -> str:
+def generate_token(cp: dict, ttl_minutes: int | None = None, extra_claims: dict | None = None) -> str:
     """Given a CP record, issue a JWT. Includes role for routing.
     Auto-logout window is role-based: CP = 1 day, other roles = 7 days.
     `iat` is included so the auth middleware can compare against the
     user's `force_logout_at` (if set) and reject pre-logout tokens.
+
+    `ttl_minutes`, when given, overrides the role-based window (used for
+    short-lived impersonation tokens). `extra_claims` is merged into the
+    payload (e.g. `impersonated_by` for "view as CP").
     """
     now = datetime.now(timezone.utc)
     role = cp.get("role") or "cp"
+    exp = (now + timedelta(minutes=ttl_minutes)) if ttl_minutes \
+        else (now + timedelta(hours=expiry_hours_for_role(role)))
     payload = {
         "cp_id": cp["id"],
         "cp_code": cp["cp_code"],
@@ -41,8 +47,10 @@ def generate_token(cp: dict) -> str:
         "role": role,
         "city_id": cp.get("city_id"),
         "iat": int(now.timestamp()),
-        "exp": now + timedelta(hours=expiry_hours_for_role(role)),
+        "exp": exp,
     }
+    if extra_claims:
+        payload.update(extra_claims)
     return jwt.encode(payload, Config.JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 

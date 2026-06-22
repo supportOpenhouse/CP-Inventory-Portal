@@ -192,6 +192,9 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return request(`/admin/cps?${qs}`);
   },
+  // Admin-only: mint a short-lived CP-scoped token for "View as CP". Returns { token }.
+  adminImpersonateCp: (cpId) =>
+    request(`/admin/impersonate-cp/${cpId}`, { method: 'POST' }),
   // payload mirrors createSubmission body, plus required `target_cp_id`.
   adminCreateSubmissionOnBehalf: (payload) =>
     request('/admin/submissions/on-behalf', {

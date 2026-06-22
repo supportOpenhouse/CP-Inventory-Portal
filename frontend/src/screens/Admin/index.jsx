@@ -9,6 +9,7 @@ import DetailPanel from './DetailPanel';
 import CpHistoryDrawer from './CpHistoryDrawer';
 import BulkScheduleVisitModal from './BulkScheduleVisitModal';
 import AddInventoryOnBehalf from './AddInventoryOnBehalf';
+import ViewAsCpModal from './ViewAsCpModal';
 import BulkReassignRmModal from './BulkReassignRmModal';
 import ExternalInventory from './ExternalInventory';
 import ActivityLog from './ActivityLog';
@@ -75,6 +76,7 @@ export default function Admin() {
   const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
   const [whatsappInboxOpen, setWhatsappInboxOpen] = useState(false);
+  const [viewAsCpOpen, setViewAsCpOpen] = useState(false);
 
   // Reset window scroll whenever the user enters or leaves a full-screen
   // subview (Add Inventory on Behalf, OH Properties, Activity Logs).
@@ -439,6 +441,16 @@ export default function Admin() {
               📂 OH Properties
             </button>
           )}
+          {isAdmin && (
+            <button
+              className="filter-toggle"
+              style={{ borderColor: '#0EA5E9', color: '#0EA5E9' }}
+              onClick={() => setViewAsCpOpen(true)}
+              title="Open a CP's own app in a new tab and act as them"
+            >
+              👁 View as CP
+            </button>
+          )}
           <div className="view-toggle">
             <button
               className={`view-btn ${view === 'board' ? 'active' : ''}`}
@@ -657,6 +669,10 @@ export default function Admin() {
             setSelectedId(sid);
           }}
         />
+      )}
+
+      {viewAsCpOpen && (
+        <ViewAsCpModal onClose={() => setViewAsCpOpen(false)} />
       )}
 
       {bulkScheduleOpen && (
