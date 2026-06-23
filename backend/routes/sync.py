@@ -310,10 +310,6 @@ def sync_channel_partners():
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            # Build city name -> id map once (case-insensitive)
-            cur.execute("SELECT id, LOWER(name) AS lname FROM cities")
-            cp_sync_city_map = {r["lname"]: r["id"] for r in cur.fetchall()}
-
             # Build existing phone set once, so we can dedup in O(1) per row
             cur.execute("SELECT phone FROM channel_partners")
             cp_sync_existing_phones = {
@@ -362,16 +358,6 @@ def sync_channel_partners():
                     })
                     continue
 
-                # City resolution (optional — NULL if unmatched)
-                cp_sync_city_id = None
-                if cp_sync_city_raw:
-                    cp_sync_city_id = cp_sync_city_map.get(cp_sync_city_raw.lower())
-                    if cp_sync_city_id is None:
-                        log.warning(
-                            "[cp-sync] row %d: city %r not found in cities table, inserting with NULL",
-                            cp_sync_idx, cp_sync_city_raw,
-                        )
-
                 # INSERT — use savepoint so per-row failures don't lose the
                 # successful inserts from earlier rows in this batch.
                 cp_sync_savepoint = f"cp_sync_sp_{cp_sync_idx}"
@@ -379,7 +365,7 @@ def sync_channel_partners():
                     cur.execute(f"SAVEPOINT {cp_sync_savepoint}")
                     cur.execute("""
                         INSERT INTO channel_partners
-                            (cp_code, name, phone, company, city_id, micro_markets,
+                            (cp_code, name, phone, company, city, micro_markets,
                              is_admin, is_active, role)
                         VALUES
                             (%s, %s, %s, %s, %s, %s::jsonb, FALSE, TRUE, 'cp')
@@ -389,7 +375,7 @@ def sync_channel_partners():
                         cp_sync_name,
                         cp_sync_phone_norm,
                         cp_sync_company,
-                        cp_sync_city_id,
+                        cp_sync_city_raw,
                         json.dumps(cp_sync_mm_list),
                     ))
                     cp_sync_new_row_id = cur.fetchone()["id"]
@@ -710,7 +696,7 @@ def sync_submissions():
                     s.public_id,
                     s.submitted_at,
                     s.status,
-                    c.name                          AS city,
+                    s.city                          AS city,
                     s.society_name,
                     s.tower,
                     s.unit_no,
@@ -742,7 +728,6 @@ def sync_submissions():
                     s.unit_less,
                     s.perfect_match_at_submit
                 FROM submissions s
-                LEFT JOIN cities c           ON s.city_id = c.id
                 JOIN channel_partners cp     ON s.cp_id = cp.id
                 LEFT JOIN rms cp_rm          ON cp.rm_id = cp_rm.id
                 LEFT JOIN rms listing_rm     ON s.listing_rm_id = listing_rm.id

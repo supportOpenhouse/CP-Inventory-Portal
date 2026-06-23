@@ -44,16 +44,17 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
   // Group selected submissions by society so we can show the per-society impact
   // (count of selected listings per society, plus the city for context).
   const societySummary = useMemo(() => {
-    const map = new Map(); // society_id -> { society_id, society_name, city, count }
+    const map = new Map(); // society (text) -> { society, society_name, city, count }
     for (const s of selectedSubmissions) {
-      if (!s.society_id) continue;
-      const ex = map.get(s.society_id);
+      const key = s.society || s.society_name;
+      if (!key) continue;
+      const ex = map.get(key);
       if (ex) {
         ex.count += 1;
       } else {
-        map.set(s.society_id, {
-          society_id: s.society_id,
-          society_name: s.society_name || `Society #${s.society_id}`,
+        map.set(key, {
+          society: key,
+          society_name: s.society_name || s.society || key,
           city: s.city || '',
           count: 1,
         });
@@ -254,7 +255,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
                   </thead>
                   <tbody>
                     {societySummary.map((soc) => (
-                      <tr key={soc.society_id}>
+                      <tr key={soc.society}>
                         <td style={td}>
                           <div style={{ fontWeight: 600 }}>{soc.society_name}</div>
                         </td>

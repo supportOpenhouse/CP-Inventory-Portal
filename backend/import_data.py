@@ -128,23 +128,22 @@ def import_cps(conn, cp_csv_path: Path, city_map: dict[str, int]) -> dict:
 
         micromarkets = parse_micromarkets(row.get("micro_markets", ""))
         company = (row.get("company_name") or "").strip() or None
-        city_id = city_map[city_name]
 
-        # Upsert on cp_code
+        # Upsert on cp_code. Writes the `city` text column.
         cur.execute(
             """
             INSERT INTO channel_partners
-                (cp_code, name, phone, company, city_id, micro_markets, is_admin, is_active)
+                (cp_code, name, phone, company, city, micro_markets, is_admin, is_active)
             VALUES (%s, %s, %s, %s, %s, %s::jsonb, FALSE, TRUE)
             ON CONFLICT (cp_code) DO UPDATE SET
                 name          = EXCLUDED.name,
                 phone         = EXCLUDED.phone,
                 company       = EXCLUDED.company,
-                city_id       = EXCLUDED.city_id,
+                city          = EXCLUDED.city,
                 micro_markets = EXCLUDED.micro_markets
             RETURNING (xmax = 0) AS was_insert
             """,
-            (cp_code, name, phone, company, city_id, json.dumps(micromarkets)),
+            (cp_code, name, phone, company, city_name, json.dumps(micromarkets)),
         )
         was_insert = cur.fetchone()["was_insert"]
         if was_insert:
@@ -194,16 +193,18 @@ def import_societies(conn, soc_csv_path: Path, city_map: dict[str, int]) -> dict
 
         city_id = city_map[city_name]
 
-        # Upsert on (name, city_id)
+        # Upsert on (name, city_id). Dual-write the `city` text column
+        # alongside city_id.
         cur.execute(
             """
-            INSERT INTO societies (name, city_id, locality)
-            VALUES (%s, %s, %s)
+            INSERT INTO societies (name, city_id, city, locality)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (name, city_id) DO UPDATE SET
+                city     = EXCLUDED.city,
                 locality = EXCLUDED.locality
             RETURNING (xmax = 0) AS was_insert
             """,
-            (name, city_id, locality),
+            (name, city_id, city_name, locality),
         )
         was_insert = cur.fetchone()["was_insert"]
         if was_insert:

@@ -45,7 +45,7 @@ def generate_token(cp: dict, ttl_minutes: int | None = None, extra_claims: dict 
         "phone": cp["phone"],
         "is_admin": bool(cp.get("is_admin", False)),
         "role": role,
-        "city_id": cp.get("city_id"),
+        "city": cp.get("city"),        # text city — what scope filters now use
         "iat": int(now.timestamp()),
         "exp": exp,
     }
@@ -154,7 +154,7 @@ def _relay_user_or_none():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, cp_code, name, phone, role, is_admin, city_id "
+                "SELECT id, cp_code, name, phone, role, is_admin, city "
                 "FROM channel_partners WHERE phone = %s AND is_active = TRUE",
                 (phone,),
             )
@@ -172,7 +172,7 @@ def _relay_user_or_none():
         "phone": cp["phone"],
         "is_admin": bool(cp.get("is_admin", False)),
         "role": cp.get("role") or "cp",
-        "city_id": cp.get("city_id"),
+        "city": cp.get("city"),
         "_relay": True,
     }
     log.info("[relay] authenticated broker cp_id=%s cp_code=%s", user["cp_id"], user["cp_code"])

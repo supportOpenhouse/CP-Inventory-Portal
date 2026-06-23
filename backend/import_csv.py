@@ -319,8 +319,8 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
             stats.samples_skipped.append(f"row {row_num}: empty society")
             return
 
-        society_id, canonical_name, score = find_society_fuzzy(society_name_raw, city_id, cache)
-        if society_id is None:
+        matched_society_id, canonical_name, score = find_society_fuzzy(society_name_raw, city_id, cache)
+        if matched_society_id is None:
             stats.skipped_no_society += 1
             return
 
@@ -350,9 +350,9 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
 
         payload = {
             "cp_id":               cp_id,
-            "society_id":          society_id,
             "society_name":        canonical_name or society_name_raw,
-            "city_id":             city_id,
+            "society":             canonical_name or society_name_raw,
+            "city":                city_normalized,
             "tower":               tower,
             "unit_no":             unit_no,
             "floor":               clean_str(row_dict.get("floor"), 50),
@@ -379,7 +379,7 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO submissions (
-                        cp_id, society_id, society_name, city_id,
+                        cp_id, society_name, society, city,
                         tower, unit_no, floor, sqft, bhk,
                         occupancy_status,
                         asking_price,
@@ -387,7 +387,7 @@ def import_row(row_dict, cache, stats, dry_run, row_num, city_filter):
                         additional_comments, referred_by_email, weak_match,
                         status, status_reason, submitted_at
                     ) VALUES (
-                        %(cp_id)s, %(society_id)s, %(society_name)s, %(city_id)s,
+                        %(cp_id)s, %(society_name)s, %(society)s, %(city)s,
                         %(tower)s, %(unit_no)s, %(floor)s, %(sqft)s, %(bhk)s,
                         %(occupancy_status)s,
                         %(asking_price)s,
