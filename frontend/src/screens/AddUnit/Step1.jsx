@@ -103,9 +103,8 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
   const canSubmitWithoutUnit = hasBaseRequired && !submitting;
 
   const buildPayload = (opts = {}) => ({
-    society: form.society.name,
+    society_id: form.society.id,
     society_name: form.society.name,
-    city: form.society.city,
     tower: opts.skipUnit ? null : (form.tower || null),
     unit_no: opts.skipUnit ? null : (form.unitNo || null),
     floor: form.floor || null,

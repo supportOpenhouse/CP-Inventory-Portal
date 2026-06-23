@@ -133,25 +133,25 @@ def _scoped_city_filter(cur):
       Unapproved is hidden either way.
 
     RM from channel_partners (legacy, cp_id in JWT with role='rm'):
-      Matches on city text (g.user['city']) OR assigned_rm_id.
+      Same as before (city_id OR assigned_rm_id).
     """
     role = g.user.get("role", "cp")
     if role == "admin":
         return "", []
 
     # Viewer: read-only, city-wide. Sees every active listing in their city
-    # regardless of which RM owns it. Denies all if the row has no city text
-    # (which would be a misconfigured viewer account).
+    # regardless of which RM owns it. Falls back to "deny all" if the row
+    # has no city_id (which would be a misconfigured viewer account).
     if role == "viewer":
-        city = g.user.get("city")
-        if city:
-            return "AND LOWER(TRIM(s.city)) = LOWER(TRIM(%s))", [city]
-        return "AND FALSE", []
+        city_id = g.user.get("city_id")
+        if not city_id:
+            return "AND FALSE", []
+        return "AND s.city_id = %s", [city_id]
 
     rm_id = g.user.get("rm_id")              # new: RM from rms table
     is_manager = bool(g.user.get("is_manager"))
     cp_id_legacy = g.user.get("cp_id")       # legacy RM in channel_partners
-    city_legacy = g.user.get("city") if not rm_id else None
+    city_id_legacy = g.user.get("city_id") if not rm_id else None
 
     if rm_id:
         # Effective RM = COALESCE(s.listing_rm_id, channel_partners.rm_id).
@@ -196,12 +196,12 @@ def _scoped_city_filter(cur):
         return f"AND {clause}", params
 
     # Legacy path — RM was a channel_partners row with role='rm'
-    if city_legacy or cp_id_legacy:
+    if city_id_legacy or cp_id_legacy:
         clauses = []
         params = []
-        if city_legacy:
-            clauses.append("LOWER(TRIM(s.city)) = LOWER(TRIM(%s))")
-            params.append(city_legacy)
+        if city_id_legacy:
+            clauses.append("s.city_id = %s")
+            params.append(city_id_legacy)
         if cp_id_legacy:
             clauses.append("s.assigned_rm_id = %s")
             params.append(cp_id_legacy)
@@ -243,7 +243,7 @@ def _apply_filters(base_sql: str, params: list):
         params.append(status)
 
     if city:
-        base_sql += " AND LOWER(TRIM(s.city)) = LOWER(TRIM(%s))"
+        base_sql += " AND c.name = %s"
         params.append(city)
 
     if search:
@@ -815,7 +815,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
     """
     if slim:
         select_clause = """
-                    s.id, s.public_id, s.society_name, s.society, s.tower, s.unit_no, s.floor,
+                    s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
                     s.sqft, s.bhk,
                     s.asking_price, s.seller_name,
                     s.counter_offer_price, s.counter_offer_status,
@@ -825,7 +825,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     s.deleted_at, s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
                     s.submitted_by_name,
-                    s.city AS city,
+                    c.name AS city,
                     cp.id AS cp_id,
                     cp.cp_code, cp.name AS cp_name,
                     rm.name AS assigned_rm_name,
@@ -836,7 +836,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
         """
     else:
         select_clause = """
-                    s.id, s.public_id, s.society_name, s.society, s.tower, s.unit_no, s.floor,
+                    s.id, s.public_id, s.society_id, s.society_name, s.tower, s.unit_no, s.floor,
                     s.sqft, s.bhk, s.occupancy_status,
                     s.asking_price,
                     s.seller_name, s.seller_phone,
@@ -845,7 +845,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                     s.unit_less, s.perfect_match_at_submit, s.withdraw_reason,
                     s.forms_uid, s.scheduled_date, s.scheduled_time, s.field_exec_name,
                     s.submitted_by_name,
-                    s.city AS city,
+                    c.name AS city,
                     cp.id AS cp_id,
                     cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
                     cp.company AS cp_company,
@@ -863,6 +863,7 @@ def _list_submissions_core(slim: bool = False, limit_per_stage=None, offset: int
                 SELECT
                     {select_clause}
                 FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
                 LEFT JOIN rms listing_rm ON s.listing_rm_id = listing_rm.id
@@ -962,6 +963,7 @@ def _stage_counts():
             base_sql = f"""
                 SELECT s.status, COUNT(*) AS cnt
                 FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 WHERE TRUE {scope_sql} AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn')
             """
@@ -977,7 +979,7 @@ def _stage_counts():
             date_to = to_str(request.args.get("date_to"))
 
             if city:
-                base_sql += " AND LOWER(TRIM(s.city)) = LOWER(TRIM(%s))"
+                base_sql += " AND c.name = %s"
                 params.append(city)
             if search:
                 base_sql += """ AND (
@@ -1089,7 +1091,7 @@ def get_submission(sid: int):
         with conn.cursor() as cur:
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
-                SELECT s.*, s.city AS city,
+                SELECT s.*, c.name AS city,
                        cp.id AS cp_id, cp.cp_code, cp.name AS cp_name,
                        cp.phone AS cp_phone, cp.company AS cp_company,
                        cp.rm_id AS cp_rm_id,
@@ -1099,6 +1101,7 @@ def get_submission(sid: int):
                        tmr.submitted_stage_at, tmr.visit_completed_stage_at,
                        co.counter_offers_sent, co.cp_counter_offers
                 FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
                 JOIN channel_partners cp ON s.cp_id = cp.id
                 LEFT JOIN rms cp_rm ON cp.rm_id = cp_rm.id
                 LEFT JOIN channel_partners rm ON s.assigned_rm_id = rm.id
@@ -1202,6 +1205,7 @@ def change_status(sid: int):
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
                 SELECT s.id, s.public_id, s.status, s.status_reason FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}
                 FOR UPDATE OF s
             """, [sid, *scope_params])
@@ -1377,6 +1381,7 @@ def add_comment(sid: int):
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
                 SELECT s.id, s.public_id FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = %s
                   AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn')
                   {scope_sql}
@@ -1786,9 +1791,10 @@ def schedule_visit(sid: int):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT s.*, s.city AS city,
+                SELECT s.*, c.name AS city,
                        cp.name AS cp_name, cp.phone AS cp_phone
                 FROM submissions s
+                LEFT JOIN cities c ON c.id = s.city_id
                 LEFT JOIN channel_partners cp ON cp.id = s.cp_id
                 WHERE s.id = %s AND s.deleted_at IS NULL
             """, (sid,))
@@ -2247,9 +2253,10 @@ def bulk_schedule_visit():
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT s.*, s.city AS city,
+                SELECT s.*, c.name AS city,
                        cp.name AS cp_name, cp.phone AS cp_phone
                 FROM submissions s
+                LEFT JOIN cities c ON c.id = s.city_id
                 LEFT JOIN channel_partners cp ON cp.id = s.cp_id
                 WHERE s.id = ANY(%s) AND s.deleted_at IS NULL
             """, (submission_ids,))
@@ -2628,8 +2635,9 @@ def cp_history(cp_id: int):
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company, cp.role,
-                       cp.city AS city
+                       c.name AS city
                 FROM channel_partners cp
+                LEFT JOIN cities c ON cp.city_id = c.id
                 WHERE cp.id = %s
             """, (cp_id,))
             cp = cur.fetchone()
@@ -2641,8 +2649,9 @@ def cp_history(cp_id: int):
                 SELECT s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
                        s.bhk, s.sqft, s.asking_price,
                        s.status, s.submitted_at, s.weak_match, s.deleted_at,
-                       s.city AS city
+                       c.name AS city
                 FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.cp_id = %s AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn') {scope_sql}
                 ORDER BY s.submitted_at DESC
                 LIMIT 500
@@ -2708,9 +2717,9 @@ def export_csv():
 def list_rms():
     """RMs from the `rms` table — used for the admin's CP\u2194RM assignment dropdown.
 
-    Returns: { rms: [ {id, name, phone, email, city, is_manager}, ... ] }
-    Active only, ordered by name.
-    Defensive: falls back gracefully if city/is_manager columns aren't there yet.
+    Returns: { rms: [ {id, name, phone, email, city_id, city, is_manager}, ... ] }
+    Active only, ordered by name. If city_id is present, joins to cities for display.
+    Defensive: falls back gracefully if city_id/is_manager columns aren't there yet.
     """
     conn = get_app_conn()
     try:
@@ -2718,20 +2727,21 @@ def list_rms():
             try:
                 cur.execute("""
                     SELECT r.id, r.name, r.phone, r.email,
-                           r.city AS city,
+                           r.city_id, c.name AS city,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            r.manager_id
                     FROM rms r
+                    LEFT JOIN cities c ON r.city_id = c.id
                     WHERE COALESCE(r.is_active, TRUE) = TRUE
                     ORDER BY r.name ASC, r.id ASC
                 """)
                 rows = cur.fetchall()
             except Exception:
                 conn.rollback()
-                # Fallback for schemas missing city / is_manager / manager_id
+                # Fallback for schemas missing city_id / is_manager / manager_id
                 cur.execute("""
                     SELECT r.id, r.name, r.phone, r.email,
-                           NULL::varchar AS city,
+                           NULL::integer AS city_id, NULL::varchar AS city,
                            FALSE AS is_manager,
                            NULL::integer AS manager_id
                     FROM rms r
@@ -2872,6 +2882,7 @@ def bulk_status():
             # Pull in-scope, not-deleted, not-already-at-target
             cur.execute(f"""
                 SELECT s.id, s.status, s.status_reason FROM submissions s
+                LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = ANY(%s)
                   AND s.deleted_at IS NULL
                   {scope_sql}
@@ -3032,7 +3043,7 @@ def _scoped_cp_filter():
 
     Mirrors _scoped_city_filter but operates on the cp alias directly.
       - admin:   no restriction.
-      - viewer:  cp.city = my city text (read-only, city-wide).
+      - viewer:  cp.city_id = my city_id (read-only, city-wide).
       - manager: cp.rm_id IN my team subtree.
       - rm:      cp.rm_id = me.
       - else:    deny by default.
@@ -3042,10 +3053,10 @@ def _scoped_cp_filter():
         return "", []
 
     if role == "viewer":
-        city = g.user.get("city")
-        if city:
-            return "AND LOWER(TRIM(cp.city)) = LOWER(TRIM(%s))", [city]
-        return "AND FALSE", []
+        city_id = g.user.get("city_id")
+        if not city_id:
+            return "AND FALSE", []
+        return "AND cp.city_id = %s", [city_id]
 
     rm_id = g.user.get("rm_id")
     is_manager = bool(g.user.get("is_manager"))
@@ -3124,8 +3135,9 @@ def search_cps():
     try:
         with conn.cursor() as cur:
             sql_parts = [
-                "SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company, cp.city AS city",
+                "SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company, c.name AS city",
                 "FROM channel_partners cp",
+                "LEFT JOIN cities c ON cp.city_id = c.id",
                 "WHERE cp.is_active = TRUE",
                 "AND COALESCE(cp.is_admin, FALSE) = FALSE",  # exclude admin accounts
             ]
@@ -3145,7 +3157,7 @@ def search_cps():
                 # Explicit city filter: restrict to CPs in that city AND skip
                 # the personal scope filter. The "on behalf" use case requires
                 # an RM to be able to act on any CP of the chosen city.
-                sql_parts.append("AND LOWER(TRIM(cp.city)) = LOWER(TRIM(%s))")
+                sql_parts.append("AND LOWER(c.name) = LOWER(%s)")
                 params.append(city)
             else:
                 # No city given — fall back to the caller's personal scope
@@ -3184,7 +3196,7 @@ def impersonate_cp(cp_id: int):
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.city,
+                SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.city_id,
                        cp.role, cp.is_active, COALESCE(cp.is_admin, FALSE) AS is_admin
                 FROM channel_partners cp
                 WHERE cp.id = %s
@@ -3210,7 +3222,7 @@ def impersonate_cp(cp_id: int):
             token = generate_token(
                 {
                     "id": cp["id"], "cp_code": cp["cp_code"], "phone": cp["phone"],
-                    "role": "cp", "city": cp.get("city"), "is_admin": False,
+                    "role": "cp", "city_id": cp.get("city_id"), "is_admin": False,
                 },
                 ttl_minutes=60,
                 extra_claims={"impersonated_by": impersonated_by, "impersonation": True},
@@ -3257,15 +3269,10 @@ def create_submission_on_behalf():
     if not target_cp_id:
         return jsonify({"error": "target_cp_id is required"}), 400
 
+    society_id = data.get("society_id")
     society_name = to_str(data.get("society_name"), 200)
-    # Admin UI sends society + city text directly; fall back to society_name
-    # for the society text when the UI only sends the display name.
-    society_text = to_str(data.get("society"), 200) or society_name
-    city_name = to_str(data.get("city"), 100)
-    if not society_name:
-        return jsonify({"error": "society_name is required"}), 400
-    if not city_name:
-        return jsonify({"error": "city is required"}), 400
+    if not society_id or not society_name:
+        return jsonify({"error": "society_id and society_name are required"}), 400
 
     # 1. Load the target CP. We don't apply the personal scope filter here:
     # the new on-behalf flow lets staff pick any CP of a chosen city, not
@@ -3292,6 +3299,19 @@ def create_submission_on_behalf():
                 return jsonify({
                     "error": "Target is an admin account, not a CP.",
                 }), 400
+
+            # 2. Resolve society + city
+            cur.execute("""
+                SELECT s.city_id, c.name AS city_name
+                FROM societies s
+                JOIN cities c ON s.city_id = c.id
+                WHERE s.id = %s
+            """, (society_id,))
+            soc_row = cur.fetchone()
+            if not soc_row:
+                return jsonify({"error": "Invalid society_id"}), 400
+            society_city_id = soc_row["city_id"]
+            city_name = soc_row["city_name"]
     finally:
         put_app_conn(conn)
 
@@ -3303,8 +3323,7 @@ def create_submission_on_behalf():
     # 3. Dup-check (uses target CP's id so RM info is resolved correctly)
     skip_unit_details = bool(data.get("skip_unit_details"))
     dup = check_duplicate(
-        society=society_name,
-        city=city_name,
+        society_id=society_id,
         bhk=to_str(data.get("bhk")),
         tower=None if skip_unit_details else to_str(data.get("tower")),
         unit_no=None if skip_unit_details else to_str(data.get("unit_no")),
@@ -3371,11 +3390,11 @@ def create_submission_on_behalf():
             # is or which RM the society defaults to. Admins don't carry an
             # rm_id — fall back to the society-driven resolver in that case.
             acting_rm_id = g.user.get("rm_id")
-            listing_rm_id = acting_rm_id if acting_rm_id else resolve_listing_rm(cur, society_name, city_name)
+            listing_rm_id = acting_rm_id if acting_rm_id else resolve_listing_rm(cur, society_id)
 
             cur.execute("""
                 INSERT INTO submissions (
-                    cp_id, society_name, society, city, public_id,
+                    cp_id, society_id, society_name, city_id, public_id,
                     tower, unit_no, floor, sqft, bhk,
                     occupancy_status,
                     asking_price, seller_name, seller_phone, photos,
@@ -3398,9 +3417,9 @@ def create_submission_on_behalf():
                 RETURNING id
             """, (
                 target_cp_id,
+                society_id,
                 society_name,
-                society_text,
-                city_name,
+                society_city_id,
                 public_id,
                 to_str(data.get("tower"), 50),
                 to_str(data.get("unit_no"), 50),
@@ -3727,7 +3746,7 @@ def set_listing_rm(sid: int):
 
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(
-                f"SELECT s.id, s.public_id, s.listing_rm_id, s.society_name, s.society "
+                f"SELECT s.id, s.public_id, s.listing_rm_id, s.society_id, s.society_name "
                 f"FROM submissions s "
                 f"WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}",
                 [sid, *scope_params],
@@ -3739,15 +3758,16 @@ def set_listing_rm(sid: int):
             # Society mapping is independent of the listing-RM diff — even if
             # listing_rm_id is already on target, we still honor a request to
             # write the society mapping (admins may be retroactively setting it).
-            if update_society_mapping and target_rm_id and sub.get("society"):
-                upsert_society_mapping(cur, sub["society"], target_rm_id)
+            if update_society_mapping and target_rm_id and sub.get("society_id"):
+                upsert_society_mapping(cur, sub["society_id"], target_rm_id)
                 society_mapping_updated = True
                 log_activity(
                     cur,
                     action="society_rm_mapping_set",
                     category="society",
-                    entity_uid=sub.get("society"),
+                    entity_uid=str(sub["society_id"]),
                     entity_type="society",
+                    entity_id=sub["society_id"],
                     details={
                         "society_name": sub.get("society_name"),
                         "rm_id": target_rm_id,
@@ -3855,7 +3875,7 @@ def bulk_reassign_listing_rm():
         return jsonify({"error": "submission_ids contains no valid integers"}), 400
 
     conn = get_app_conn()
-    societies_mapped: list[str] = []
+    society_ids_mapped: list[int] = []
     try:
         with conn.cursor() as cur:
             target_rm_name, err = _validate_target_rm(cur, target_rm_id)
@@ -3874,22 +3894,16 @@ def bulk_reassign_listing_rm():
             # regardless of whether its listing_rm_id was already on target.
             if update_society_mapping and target_rm_id:
                 cur.execute(
-                    f"SELECT DISTINCT s.society FROM submissions s "
+                    f"SELECT DISTINCT s.society_id FROM submissions s "
                     f"WHERE s.id = ANY(%s) AND s.deleted_at IS NULL "
-                    f"  AND s.society IS NOT NULL AND TRIM(s.society) <> '' "
+                    f"  AND s.society_id IS NOT NULL "
                     f"  {scope_sql}",
                     [submission_ids, *scope_params],
                 )
-                # One UPSERT per distinct society text (the mapping's PK/conflict
-                # key is now society_rm_mappings.society).
-                mapped_rows = cur.fetchall()
-                societies_mapped = []
-                for r in mapped_rows:
-                    if r["society"] in societies_mapped:
-                        continue
-                    societies_mapped.append(r["society"])
-                    upsert_society_mapping(cur, r["society"], target_rm_id)
-                if societies_mapped:
+                society_ids_mapped = [r["society_id"] for r in cur.fetchall()]
+                for soc_id in society_ids_mapped:
+                    upsert_society_mapping(cur, soc_id, target_rm_id)
+                if society_ids_mapped:
                     log_activity(
                         cur,
                         action="society_rm_mapping_set_bulk",
@@ -3898,8 +3912,8 @@ def bulk_reassign_listing_rm():
                         details={
                             "rm_id": target_rm_id,
                             "rm_name": target_rm_name,
-                            "societies": societies_mapped[:50],
-                            "society_count": len(societies_mapped),
+                            "society_ids": society_ids_mapped[:50],
+                            "society_count": len(society_ids_mapped),
                         },
                     )
 
@@ -3919,8 +3933,8 @@ def bulk_reassign_listing_rm():
                 if target_rm_id is not None
                 else "Listing RM override cleared (bulk)"
             )
-            if societies_mapped:
-                event_text += f"; future submissions for {len(societies_mapped)} societ{'y' if len(societies_mapped) == 1 else 'ies'} also route to {target_rm_name}"
+            if society_ids_mapped:
+                event_text += f"; future submissions for {len(society_ids_mapped)} societ{'y' if len(society_ids_mapped) == 1 else 'ies'} also route to {target_rm_name}"
             for sid in updated_ids:
                 cur.execute("""
                     INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
@@ -3937,7 +3951,7 @@ def bulk_reassign_listing_rm():
                     "updated_count": len(updated_ids),
                     "requested": len(submission_ids),
                     "ids": updated_ids[:50],
-                    "society_mappings_updated": len(societies_mapped),
+                    "society_mappings_updated": len(society_ids_mapped),
                 },
             )
             conn.commit()
@@ -3946,7 +3960,7 @@ def bulk_reassign_listing_rm():
 
     log.info(
         "[bulk_reassign_listing_rm] target_rm=%s n_updated=%d (of %d requested) society_mappings=%d",
-        target_rm_id, len(updated_ids), len(submission_ids), len(societies_mapped),
+        target_rm_id, len(updated_ids), len(submission_ids), len(society_ids_mapped),
     )
 
     return jsonify({
@@ -3956,7 +3970,7 @@ def bulk_reassign_listing_rm():
         "updated_count": len(updated_ids),
         "skipped_already_on_rm": len(submission_ids) - len(updated_ids),
         "submission_ids": updated_ids,
-        "society_mappings_updated": len(societies_mapped),
+        "society_mappings_updated": len(society_ids_mapped),
     }), 200
 
 
@@ -4461,10 +4475,11 @@ def list_staff_users():
                            COALESCE(r.is_active, TRUE) AS is_active,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            COALESCE(r.is_viewer, FALSE)  AS is_viewer,
-                           r.city AS city,
+                           r.city_id, c.name AS city,
                            COALESCE(r.can_see_oh_properties, TRUE) AS can_see_oh_properties,
                            r.force_logout_at, r.created_at
                     FROM rms r
+                    LEFT JOIN cities c ON r.city_id = c.id
                     ORDER BY r.id
                 """)
                 rm_rows = cur.fetchall()
@@ -4475,10 +4490,11 @@ def list_staff_users():
                            COALESCE(r.is_active, TRUE) AS is_active,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            FALSE AS is_viewer,
-                           r.city AS city,
+                           r.city_id, c.name AS city,
                            COALESCE(r.can_see_oh_properties, TRUE) AS can_see_oh_properties,
                            r.force_logout_at, r.created_at
                     FROM rms r
+                    LEFT JOIN cities c ON r.city_id = c.id
                     ORDER BY r.id
                 """)
                 rm_rows = cur.fetchall()
@@ -4497,6 +4513,7 @@ def list_staff_users():
                     "email":    r.get("email"),
                     "role":     role_name,
                     "city":     r.get("city"),
+                    "city_id":  r.get("city_id"),
                     "is_active": bool(r.get("is_active")),
                     "can_see_oh_properties": bool(r.get("can_see_oh_properties")),
                     "force_logout_at": (
@@ -4522,18 +4539,22 @@ def add_staff_user():
       { "name": str, "phone": str,
         "role": "admin" | "rm" | "manager" | "viewer",
         "email"?: str,
-        "city"?: str             # REQUIRED for viewers; ignored for admin
+        "city_id"?: int          # REQUIRED for viewers; ignored for admin
       }
 
     Phone is normalised to 10 digits; uniqueness is enforced per-table.
-    Viewers must have a city (their entire scope is city-bounded).
+    Viewers must have a city_id (their entire scope is city-bounded).
     """
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
     phone_raw = (data.get("phone") or "").strip()
     role = (data.get("role") or "").strip().lower()
     email = (data.get("email") or "").strip() or None
-    city = to_str(data.get("city"), 100) or None
+    city_id = data.get("city_id")
+    try:
+        city_id = int(city_id) if city_id not in (None, "") else None
+    except (TypeError, ValueError):
+        city_id = None
 
     phone = _normalize_phone_to_10_digits(phone_raw)
     errors = []
@@ -4543,8 +4564,8 @@ def add_staff_user():
         errors.append("phone must be a valid 10-digit number")
     if role not in ("admin", "rm", "manager", "viewer"):
         errors.append("role must be one of admin / rm / manager / viewer")
-    if role == "viewer" and not city:
-        errors.append("city is required for viewer accounts")
+    if role == "viewer" and not city_id:
+        errors.append("city_id is required for viewer accounts")
     if errors:
         return jsonify({"error": "Invalid request", "details": errors}), 400
 
@@ -4587,14 +4608,14 @@ def add_staff_user():
                 # Per repo convention, rms.phone has '+91 ' prefix with space.
                 stored_phone = f"+91 {phone}"
                 cur.execute("""
-                    INSERT INTO rms (name, phone, email, is_manager, is_viewer, city, is_active)
+                    INSERT INTO rms (name, phone, email, is_manager, is_viewer, city_id, is_active)
                     VALUES (%s, %s, %s, %s, %s, %s, TRUE)
                     RETURNING id
                 """, (
                     name, stored_phone, email,
                     role == "manager",
                     role == "viewer",
-                    city if role == "viewer" else None,
+                    city_id if role == "viewer" else None,
                 ))
                 new_id = cur.fetchone()["id"]
                 source = "rm"
@@ -4645,7 +4666,7 @@ def patch_staff_user(source, user_id):
                                 Admin (channel_partners) ↔ rms moves are
                                 rejected — admins can't be demoted in place,
                                 they have to be deactivated + re-added.
-      city                   -> str | null. Required when flipping to viewer
+      city_id                -> int | null. Required when flipping to viewer
                                 if the row doesn't already have one. Ignored
                                 for source='cp'.
       can_see_oh_properties  -> bool
@@ -4676,27 +4697,31 @@ def patch_staff_user(source, user_id):
             params.append(new_role == "manager")
             sets.append("is_viewer = %s")
             params.append(new_role == "viewer")
-            # Flipping to viewer requires a city. If the row doesn't
+            # Flipping to viewer requires a city_id. If the row doesn't
             # already have one, require it in the request.
             if new_role == "viewer":
-                requested_city = to_str(data.get("city"), 100) or None
+                requested_city = data.get("city_id")
+                try:
+                    requested_city = int(requested_city) if requested_city not in (None, "") else None
+                except (TypeError, ValueError):
+                    requested_city = None
                 if requested_city:
-                    sets.append("city = %s")
+                    sets.append("city_id = %s")
                     params.append(requested_city)
                 else:
                     conn_chk = get_app_conn()
                     try:
                         with conn_chk.cursor() as cur_chk:
                             cur_chk.execute(
-                                "SELECT city FROM rms WHERE id = %s",
+                                "SELECT city_id FROM rms WHERE id = %s",
                                 (user_id,),
                             )
                             row_chk = cur_chk.fetchone()
                     finally:
                         put_app_conn(conn_chk)
-                    if not row_chk or not (row_chk.get("city") or "").strip():
+                    if not row_chk or not row_chk.get("city_id"):
                         return jsonify({
-                            "error": "city is required when flipping a user to viewer.",
+                            "error": "city_id is required when flipping a user to viewer.",
                         }), 400
         elif source == "cp" and new_role == "admin":
             pass  # already admin in channel_partners; nothing to do
@@ -4971,6 +4996,7 @@ def _whatsapp_scope_clause(cur):
     return (
         "cp.id IN ("
         "  SELECT DISTINCT s.cp_id FROM submissions s"
+        "  LEFT JOIN cities c ON s.city_id = c.id"
         "  WHERE TRUE " + scope_sql +
         ")"
     ), scope_params
@@ -5228,6 +5254,7 @@ def get_submission_whatsapp(sid: int):
                 SELECT cp.phone
                 FROM submissions s
                 JOIN channel_partners cp ON s.cp_id = cp.id
+                LEFT JOIN cities c ON s.city_id = c.id
                 WHERE s.id = %s {scope_sql}
                 """,
                 [sid, *scope_params],

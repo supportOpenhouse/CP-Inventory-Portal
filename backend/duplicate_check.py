@@ -116,16 +116,9 @@ def _fetch_rm(city_name: str, cp_id=None):
                         "rm_phone": row["rm_phone"],
                     }
 
-            # 2. Fall back to the city's default RM (its manager) from the rms table
+            # 2. Fall back to city-level RM
             cur.execute(
-                """
-                SELECT name AS rm_name, phone AS rm_phone
-                FROM rms
-                WHERE LOWER(TRIM(city)) = LOWER(TRIM(%s))
-                  AND COALESCE(is_active, TRUE) = TRUE
-                ORDER BY COALESCE(is_manager, FALSE) DESC, id ASC
-                LIMIT 1
-                """,
+                "SELECT rm_name, rm_phone FROM cities WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s))",
                 (city_name,),
             )
             row = cur.fetchone()
@@ -157,7 +150,7 @@ def _no_match():
 _ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Offer", "Closure", "Visit Scheduled", "Visit Completed")
 
 
-def _check_submissions(society, city, bhk_n, floor_n, tower, unit_no,
+def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no,
                        exclude_submission_id=None):
     """Query the app DB submissions table for matching active submissions.
 
@@ -182,14 +175,13 @@ def _check_submissions(society, city, bhk_n, floor_n, tower, unit_no,
             status_placeholders = ",".join(["%s"] * len(_ACTIVE_SUBMISSION_STATUSES))
 
             conditions = [
-                "LOWER(TRIM(society)) = LOWER(TRIM(%s))",
-                "LOWER(TRIM(city)) = LOWER(TRIM(%s))",
+                "society_id = %s",
                 # BHK floored to its integer part: '2.5 BHK' -> '2', '3.5' -> '3'.
                 "SUBSTRING(COALESCE(bhk::text, '') FROM '[0-9]+') = %s",
                 "LOWER(TRIM(COALESCE(floor, ''))) = %s",
                 f"status IN ({status_placeholders})",
             ]
-            params = [society, city, bhk_n, floor_n, *_ACTIVE_SUBMISSION_STATUSES]
+            params = [society_id, bhk_n, floor_n, *_ACTIVE_SUBMISSION_STATUSES]
 
             if tower:
                 # Strip leading zeros from both sides so "02" matches "2", "0A2" matches "A2" etc.
@@ -349,7 +341,7 @@ def _dedup_matches(items: list) -> list:
     return out
 
 
-def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
+def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
                     floor=None, city_hint=None, cp_id=None,
                     exclude_submission_id=None):
     """
@@ -367,11 +359,25 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
     `exclude_submission_id` is forwarded to the submissions check so a row
     doesn't match itself (used by the historical backfill).
     """
-    # 1. Resolve society — use the passed-in text values directly.
-    if not society:
+    # 1. Resolve society
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT s.id, s.name, c.name AS city
+                FROM societies s
+                JOIN cities c ON s.city_id = c.id
+                WHERE s.id = %s
+            """, (society_id,))
+            soc = cur.fetchone()
+    finally:
+        put_app_conn(conn)
+
+    if not soc:
         return _no_match()
 
-    society_name = society
+    city = soc["city"]
+    society_name = soc["name"]
 
     bhk_n = _norm_bhk(bhk)
     floor_n = _norm_floor(floor)
@@ -486,7 +492,7 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
                 put_props_conn(pconn)
 
         sub_exact_rows = _check_submissions(
-            society, city, bhk_n, floor_n, tower, unit_no, exclude_submission_id,
+            society_id, bhk_n, floor_n, tower, unit_no, exclude_submission_id,
         )
 
         if prop_exact_rows or sub_exact_rows:
@@ -522,7 +528,7 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
             put_props_conn(pconn)
 
     sub_partial_rows = _check_submissions(
-        society, city, bhk_n, floor_n, None, None, exclude_submission_id,
+        society_id, bhk_n, floor_n, None, None, exclude_submission_id,
     )
     submissions_hit = bool(sub_partial_rows)
 
