@@ -69,7 +69,6 @@ export default function Dashboard({ onAdd }) {
   const [rmPhone, setRmPhone] = useState(null);
   const [rmName, setRmName] = useState(null);
   const [filter, setFilter] = useState('All');
-  const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [counterBusy, setCounterBusy] = useState({});
   // Submission opened in the full-detail modal (null = modal closed)
@@ -255,13 +254,11 @@ export default function Dashboard({ onAdd }) {
         </div>
       </div>
 
-      {/* Filter chips: ALL / VISITED / OFFER / CLOSURE + a Search toggle.
-          Five equal columns so they fit the mobile width; the Search chip
-          shows a magnifier where the others show a count. */}
+      {/* Filter chips: ALL / VISITED / OFFER / CLOSURE. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${FILTER_BOXES.length + 1}, 1fr)`,
+          gridTemplateColumns: `repeat(${FILTER_BOXES.length}, 1fr)`,
           gap: 8,
           padding: '12px 16px 8px',
         }}
@@ -313,51 +310,14 @@ export default function Dashboard({ onAdd }) {
             </button>
           );
         })}
-
-        {/* 5th chip = Search toggle. A magnifier sits where the other chips
-            show their count; tapping it reveals the text box below (which
-            pushes the list down and respects the active filter). */}
-        <button
-          key="search"
-          type="button"
-          onClick={() => { setShowSearch((v) => !v); if (showSearch) setSearchQuery(''); }}
-          aria-label="Search listings"
-          style={{
-            padding: '10px 6px',
-            borderRadius: 10,
-            border: `1.5px solid ${showSearch ? '#0EA5E9' : 'var(--oh-border)'}`,
-            background: showSearch ? '#0EA5E9' : '#fff',
-            color: showSearch ? '#fff' : 'var(--oh-charcoal)',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: 64,
-            transition: 'all 0.15s',
-          }}
-        >
-          <div style={{ fontSize: 18, lineHeight: 1, marginBottom: 4 }}>🔍</div>
-          <div style={{
-            fontSize: 10,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.3px',
-            textAlign: 'center',
-            lineHeight: 1.2,
-            opacity: showSearch ? 0.95 : 0.7,
-          }}>
-            Search
-          </div>
-        </button>
       </div>
 
-      {showSearch && (
-        <div style={{ padding: '8px 16px 4px' }}>
+      {/* Always-visible search bar with a magnifier to its left. */}
+      <div style={{ padding: '8px 16px 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span aria-hidden style={{ fontSize: 16, opacity: 0.6, flexShrink: 0 }}>🔍</span>
           <input
             type="search"
-            autoFocus
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search society, tower, unit, ID…"
@@ -365,7 +325,7 @@ export default function Dashboard({ onAdd }) {
             style={{ width: '100%' }}
           />
         </div>
-      )}
+      </div>
 
       <div className="section-title">
         {filter === 'All' ? 'Your Inventory' : `${FILTER_BOXES.find(b => b.key === filter)?.label || filter}`}
