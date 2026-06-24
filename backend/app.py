@@ -9,7 +9,7 @@ Run in production (Render):
 
 import logging
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from config import Config
@@ -42,6 +42,33 @@ def create_app() -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = 110 * 1024 * 1024
 
     CORS(app, origins=[Config.FRONTEND_ORIGIN], supports_credentials=False)
+
+    @app.before_request
+    def _csrf_origin_guard():
+        # CSRF defense-in-depth for cookie-auth browser requests. SameSite=Lax
+        # already withholds the cookie from cross-site state-changing requests;
+        # this rejects any mutating /api call that DOES ride the session cookie
+        # but whose Origin/Referer isn't our SPA. Header-authenticated callers
+        # (partner relay, Interakt webhooks, sync/cron secrets, impersonation
+        # Bearer) are checked too only if they also carry the cookie — which
+        # server-to-server callers never do — so they're unaffected.
+        # ponytail: SameSite=Lax + this Origin check; add double-submit CSRF
+        # tokens only if a stricter audit demands it.
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return
+        if not request.path.startswith("/api/"):
+            return
+        if not request.cookies.get(Config.AUTH_COOKIE_NAME):
+            return
+        origin = request.headers.get("Origin")
+        if origin is not None:
+            if origin != Config.FRONTEND_ORIGIN:
+                return jsonify({"error": "Cross-origin request blocked"}), 403
+            return
+        referer = request.headers.get("Referer", "")
+        if referer == Config.FRONTEND_ORIGIN or referer.startswith(Config.FRONTEND_ORIGIN + "/"):
+            return
+        return jsonify({"error": "Cross-origin request blocked"}), 403
 
     init_pools()
 

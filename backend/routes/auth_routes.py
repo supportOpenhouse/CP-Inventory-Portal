@@ -2,17 +2,19 @@
 
 Two-step login flow (mandatory OTP when Config.OTP_ENABLED):
   POST /api/auth/send-otp        { phone }           → { status }
-  POST /api/auth/verify-otp      { phone, code }     → { token, user }
+  POST /api/auth/verify-otp      { phone, code }     → { user } + Set-Cookie
 
 Legacy single-step flow (used when OTP_ENABLED=false):
-  POST /api/auth/phone-login     { phone }           → { token, user }
+  POST /api/auth/phone-login     { phone }           → { user } + Set-Cookie
 
-Plus /me to verify token.
+The session JWT is set as an HttpOnly cookie (not returned in the body).
+  POST /api/auth/logout          clears the cookie
+  GET  /api/me                   verifies the cookie + returns the user
 """
 
 from flask import Blueprint, g, jsonify, request
 
-from auth import generate_token, require_auth
+from auth import clear_auth_cookie, generate_token, require_auth, set_auth_cookie
 from config import Config
 from db import get_app_conn, put_app_conn
 from services_otp import send_otp, verify_otp
@@ -315,11 +317,12 @@ def verify_otp_route():
                 except Exception:
                     conn.rollback()
                 token = _generate_rm_token(rm)
-                return jsonify({
+                resp = jsonify({
                     "success": True,
-                    "token": token,
                     "user": _rm_user_response(rm),
-                }), 200
+                })
+                set_auth_cookie(resp, token, "rm")  # non-CP role → 7-day window
+                return resp, 200
 
             cp = _fetch_active_cp(cur, phone)
             if cp:
@@ -329,15 +332,25 @@ def verify_otp_route():
                 )
                 conn.commit()
                 token = generate_token(cp)
-                return jsonify({
+                resp = jsonify({
                     "success": True,
-                    "token": token,
                     "user": _user_response(cp),
-                }), 200
+                })
+                set_auth_cookie(resp, token, cp.get("role") or "cp")
+                return resp, 200
 
             return jsonify(_not_registered_response(cur)), 200
     finally:
         put_app_conn(conn)
+
+
+@bp.post("/auth/logout")
+def logout():
+    """Clear the session cookie. Unauthenticated + idempotent on purpose so a
+    logout always succeeds even with an already-expired/absent cookie."""
+    resp = jsonify({"success": True})
+    clear_auth_cookie(resp)
+    return resp, 200
 
 
 # ------------------------------------------------------------------
@@ -378,11 +391,12 @@ def phone_login():
                 except Exception:
                     conn.rollback()
                 token = _generate_rm_token(rm)
-                return jsonify({
+                resp = jsonify({
                     "success": True,
-                    "token": token,
                     "user": _rm_user_response(rm),
-                }), 200
+                })
+                set_auth_cookie(resp, token, "rm")  # non-CP role → 7-day window
+                return resp, 200
 
             cp = _fetch_active_cp(cur, phone)
             if cp:
@@ -392,11 +406,12 @@ def phone_login():
                 )
                 conn.commit()
                 token = generate_token(cp)
-                return jsonify({
+                resp = jsonify({
                     "success": True,
-                    "token": token,
                     "user": _user_response(cp),
-                }), 200
+                })
+                set_auth_cookie(resp, token, cp.get("role") or "cp")
+                return resp, 200
 
             return jsonify(_not_registered_response(cur)), 200
     finally:

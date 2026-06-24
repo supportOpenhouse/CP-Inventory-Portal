@@ -47,5 +47,16 @@ export default defineConfig({
   server: {
     port: 5173,
     host: 'localhost',
+    // Proxy /api to the Flask backend so dev is SAME-ORIGIN — the session
+    // cookie is then first-party (SameSite=Lax works over http). Mirrors the
+    // prod Vercel rewrite. cookieDomainRewrite re-scopes the backend's cookie
+    // to localhost so the browser stores it.
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        cookieDomainRewrite: 'localhost',
+      },
+    },
   },
 });

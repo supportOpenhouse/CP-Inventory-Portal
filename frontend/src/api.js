@@ -19,7 +19,9 @@ function forceLogoutOnExpiredToken() {
   }
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api';
+// Same-origin by default: prod serves /api via a Vercel rewrite, dev via the
+// Vite proxy (see vite.config.js). Both make the session cookie first-party.
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export class ApiError extends Error {
   constructor(status, data) {
@@ -29,9 +31,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body = null, auth = true } = {}) {
+async function request(path, { method = 'GET', body = null, auth = true, autoLogout = true } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (auth) {
+    // getToken() is non-null ONLY in an impersonation tab; normal sessions
+    // authenticate via the HttpOnly cookie sent by credentials: 'include'.
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
@@ -40,6 +44,7 @@ async function request(path, { method = 'GET', body = null, auth = true } = {}) 
     res = await fetch(`${API_BASE}${path}`, {
       method,
       headers,
+      credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch (netErr) {
@@ -56,8 +61,10 @@ async function request(path, { method = 'GET', body = null, auth = true } = {}) 
     // means the token is bad / expired / revoked. Clear session and reload
     // so the user lands on Login instead of staring at a "Token expired"
     // message in the middle of the app. We DON'T trigger this for unauth'd
-    // requests (login, send-otp) since those legitimately 401 on bad creds.
-    if (res.status === 401 && auth && getToken()) {
+    // requests (login, send-otp; auth:false) since those legitimately 401 on
+    // bad creds, and NOT the mount bootstrap (autoLogout:false) which 401s
+    // normally when nobody is logged in — reloading there would loop.
+    if (res.status === 401 && auth && autoLogout) {
       forceLogoutOnExpiredToken();
     }
     throw new ApiError(res.status, data || { error: `HTTP ${res.status}` });
@@ -82,6 +89,12 @@ export const api = {
   verifyOtp: (phone, code) =>
     request('/auth/verify-otp', { method: 'POST', body: { phone, code }, auth: false }),
   me: () => request('/me'),
+  // App-mount session probe: same as me() but never triggers force-logout/
+  // reload, so a logged-out visitor just lands on Login instead of looping.
+  meBootstrap: () => request('/me', { autoLogout: false }),
+  // Clears the HttpOnly session cookie server-side. auth:false (no header
+  // needed; cookie rides along via credentials:'include') and never reloads.
+  logout: () => request('/auth/logout', { method: 'POST', auth: false }),
 
   // Public lookups
   getRmContacts: () => request('/rm-contacts', { auth: false }),
@@ -282,18 +295,20 @@ export const api = {
 };
 
 /**
- * CSV export requires the browser to follow a download. Use this helper:
- * it appends the JWT to the URL via a signed query param approach — but since
- * we use Authorization header, we fetch the CSV as a blob and trigger a download.
+ * CSV export needs the browser to follow a blob download, so it builds its own
+ * fetch instead of going through request(). Auth rides the HttpOnly cookie
+ * (credentials: 'include'); the Authorization header is added only in an
+ * impersonation tab, where getToken() returns the per-tab Bearer token.
  */
 export async function downloadAdminCsv(filters = {}) {
   const token = getToken();
   const qs = buildQuery(filters);
   const res = await fetch(`${API_BASE}/admin/submissions.csv${qs}`, {
+    credentials: 'include',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
-    if (res.status === 401 && token) forceLogoutOnExpiredToken();
+    if (res.status === 401) forceLogoutOnExpiredToken();
     throw new ApiError(res.status, { error: 'Failed to export CSV' });
   }
   const blob = await res.blob();

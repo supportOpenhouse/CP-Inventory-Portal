@@ -123,6 +123,50 @@ def _decode_or_reject(token: str):
     return payload, None
 
 
+def set_auth_cookie(resp, token: str, role: str | None) -> None:
+    """Attach the session JWT as an HttpOnly cookie on `resp`.
+
+    Same-origin deploy (Vercel rewrite / Vite proxy) makes this a first-party
+    cookie, so SameSite=Lax is enough. The cookie lifetime mirrors the token's
+    role-based expiry so cookie and JWT die together.
+    """
+    resp.set_cookie(
+        Config.AUTH_COOKIE_NAME,
+        token,
+        max_age=expiry_hours_for_role(role) * 3600,
+        httponly=True,
+        secure=Config.AUTH_COOKIE_SECURE,
+        samesite=Config.AUTH_COOKIE_SAMESITE,
+        domain=Config.AUTH_COOKIE_DOMAIN,
+        path="/",
+    )
+
+
+def clear_auth_cookie(resp) -> None:
+    """Expire the session cookie (logout)."""
+    resp.delete_cookie(
+        Config.AUTH_COOKIE_NAME,
+        domain=Config.AUTH_COOKIE_DOMAIN,
+        path="/",
+        secure=Config.AUTH_COOKIE_SECURE,
+        samesite=Config.AUTH_COOKIE_SAMESITE,
+        httponly=True,
+    )
+
+
+def _token_from_request():
+    """Extract the session token, header-first then cookie.
+
+    The Authorization: Bearer header wins so impersonation tabs (per-tab Bearer
+    token) and partner-relay callers override the HttpOnly session cookie the
+    browser also sends. Falls back to the cookie for normal logged-in sessions.
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return request.cookies.get(Config.AUTH_COOKIE_NAME) or None
+
+
 def _relay_user_or_none():
     """Check for partner relay auth (API key + X-Broker-Id phone).
 
@@ -191,10 +235,10 @@ def require_auth(f):
             g.user = relay_user
             return f(*args, **kwargs)
 
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            return jsonify({"error": "Missing or invalid Authorization header"}), 401
-        payload, err = _decode_or_reject(auth[7:].strip())
+        token = _token_from_request()
+        if not token:
+            return jsonify({"error": "Missing authentication credentials"}), 401
+        payload, err = _decode_or_reject(token)
         if err:
             body, status = err
             return jsonify(body), status
@@ -211,10 +255,10 @@ def require_staff(f):
     """
     @wraps(f)
     def wrapper(*args, **kwargs):
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            return jsonify({"error": "Missing or invalid Authorization header"}), 401
-        payload, err = _decode_or_reject(auth[7:].strip())
+        token = _token_from_request()
+        if not token:
+            return jsonify({"error": "Missing authentication credentials"}), 401
+        payload, err = _decode_or_reject(token)
         if err:
             body, status = err
             return jsonify(body), status

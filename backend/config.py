@@ -18,6 +18,19 @@ class Config:
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
     ENV = os.getenv("FLASK_ENV", "development")
 
+    # -------- Auth session cookie (HttpOnly) --------
+    # The session JWT now rides in an HttpOnly cookie instead of being handed to
+    # JS. The SPA reaches the API same-origin (Vercel rewrite in prod, Vite proxy
+    # in dev), so the cookie is FIRST-PARTY and SameSite=Lax is sufficient — no
+    # SameSite=None third-party cookie (which Safari/Firefox block; that's what
+    # sank the earlier attempt).
+    AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "oh_token")
+    AUTH_COOKIE_SECURE = os.getenv(
+        "AUTH_COOKIE_SECURE", "false" if ENV == "development" else "true"
+    ).lower() == "true"
+    AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "Lax")
+    AUTH_COOKIE_DOMAIN = os.getenv("AUTH_COOKIE_DOMAIN") or None  # None => host-only
+
     # Gmail SMTP for alerts
     GMAIL_FROM_ADDRESS = os.getenv("GMAIL_FROM_ADDRESS") or None
     GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD") or None

@@ -14,7 +14,7 @@
 import { getToken } from './auth';
 
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export const MAX_PHOTOS = 5;
 export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB (images)
@@ -70,6 +70,9 @@ export function uploadToCloudinary(file, onProgress, resourceType = 'image') {
     form.append('resource_type', resourceType);
 
     xhr.open('POST', `${API_BASE}/media/upload`, true);
+    // Send the HttpOnly session cookie; add the Bearer header only when
+    // impersonating (getToken() is non-null only in an impersonation tab).
+    xhr.withCredentials = true;
     const token = getToken();
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 

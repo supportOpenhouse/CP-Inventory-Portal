@@ -1,37 +1,39 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
-import { clearSession, getToken, getUser, setToken, setUser } from '../auth';
+import { clearSession, getUser, isImpersonating, setUser } from '../auth';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUserState] = useState(() => getUser());
   const [loading, setLoading] = useState(false);
-  // True while a token exists but the user isn't loaded yet — lets the app show
-  // a spinner instead of a one-frame Login flash. This is the path an
-  // impersonation tab always takes (getUser() returns null there; /me hydrates
-  // the CP user from the CP token).
-  const [bootstrapping, setBootstrapping] = useState(() => !!getToken() && !getUser());
+  // Probe the session on mount: the HttpOnly cookie (or the impersonation
+  // Bearer token) authenticates /me. We can't see the cookie from JS, so unless
+  // we have a cached user we always probe — showing a spinner instead of a
+  // one-frame Login flash. Impersonation tabs always take this path (getUser()
+  // returns null there; /me hydrates the CP user from the CP token).
+  const [bootstrapping, setBootstrapping] = useState(() => !getUser());
 
   useEffect(() => {
-    const token = getToken();
-    if (token && !user) {
-      (async () => {
-        try {
-          const { user: me } = await api.me();
-          setUserState(me);
-          setUser(me);
-        } catch {
-          clearSession();
-          setUserState(null);
-        } finally {
-          setBootstrapping(false);
-        }
-      })();
-    } else {
+    if (user) {
       setBootstrapping(false);
+      return;
     }
+    (async () => {
+      try {
+        // meBootstrap() never force-logs-out/reloads, so a logged-out visitor
+        // just lands on Login instead of looping.
+        const { user: me } = await api.meBootstrap();
+        setUserState(me);
+        setUser(me);
+      } catch {
+        clearSession();
+        setUserState(null);
+      } finally {
+        setBootstrapping(false);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -42,8 +44,9 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       const res = await api.phoneLogin(phone);
-      if (res.token && res.user) {
-        setToken(res.token);
+      if (res.user) {
+        // Session JWT is set as an HttpOnly cookie by the server; we only
+        // cache the user object locally.
         setUser(res.user);
         setUserState(res.user);
         return { kind: 'authenticated', user: res.user };
@@ -99,8 +102,9 @@ export function AuthProvider({ children }) {
     setLoading(true);
     try {
       const res = await api.verifyOtp(phone, code);
-      if (res.token && res.user) {
-        setToken(res.token);
+      if (res.user) {
+        // Session JWT is set as an HttpOnly cookie by the server; we only
+        // cache the user object locally.
         setUser(res.user);
         setUserState(res.user);
         return { kind: 'authenticated', user: res.user };
@@ -120,7 +124,17 @@ export function AuthProvider({ children }) {
     }
   }
 
-  function logout() {
+  async function logout() {
+    // Clear the HttpOnly cookie server-side — but NOT from an impersonation tab,
+    // where that would wipe the admin's shared session cookie. There, clearing
+    // the per-tab impersonation token (clearSession) is the whole job.
+    if (!isImpersonating()) {
+      try {
+        await api.logout();
+      } catch {
+        // Clear local state regardless of a network/server hiccup.
+      }
+    }
     clearSession();
     setUserState(null);
   }
