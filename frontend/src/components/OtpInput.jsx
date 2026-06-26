@@ -26,8 +26,34 @@ export default function OtpInput({ value, onChange, onComplete, disabled = false
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
+  // Android Chrome: WebOTP reads the code straight from the SMS (no tap).
+  // Native browser API, no dependency; no-ops where unsupported. Needs the SMS
+  // to end with a line `@<your-domain> #<code>` (WebOTP origin binding).
+  // ponytail: WebOTP for Android; iOS relies on autocomplete="one-time-code".
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('OTPCredential' in window)) return;
+    const ac = new AbortController();
+    navigator.credentials
+      .get({ otp: { transport: ['sms'] }, signal: ac.signal })
+      .then((otp) => {
+        const code = (otp?.code || '').replace(/\D/g, '').slice(0, 6);
+        if (code) onChange(code);
+      })
+      .catch(() => {}); // aborted on unmount, or no SMS — ignore
+    return () => ac.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const setDigitAt = (idx, ch) => {
-    const clean = ch.replace(/\D/g, '').slice(0, 1);
+    const clean = ch.replace(/\D/g, '');
+    // iOS one-time-code autofill (and paste) dumps the whole code into one box —
+    // distribute it across all boxes instead of keeping a single digit.
+    if (clean.length > 1) {
+      const next = clean.slice(0, 6);
+      onChange(next);
+      inputsRef.current[Math.min(next.length, 5)]?.focus();
+      return;
+    }
     const arr = value.padEnd(6, ' ').slice(0, 6).split('');
     arr[idx] = clean || ' ';
     const next = arr.join('').replaceAll(' ', '');
