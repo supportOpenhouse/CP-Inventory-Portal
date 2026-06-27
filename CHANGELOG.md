@@ -7,6 +7,17 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-06-18] — Show assigned RM on board card
+
+### Added
+- **Assigned RM line on each board card.** The card footer now shows
+  `RM - {name}` below the date/CP line, using the effective RM —
+  `s.listing_rm_name || s.assigned_rm_name` — so the per-listing
+  override wins when set, else the CP's permanent RM. Mirrors the
+  `COALESCE(s.listing_rm_id, cp.rm_id)` rule in `_scoped_city_filter`,
+  so the card matches the owner the backend recognises. No backend or
+  DB change — both fields were already in the slim board SELECT.
+
 ## [2026-06-18] — Fix: viewers couldn't see the Unapproved board column
 
 ### Fixed

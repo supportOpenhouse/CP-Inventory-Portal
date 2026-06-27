@@ -344,6 +344,7 @@ export const css = `
 
   .board-card-footer { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .board-card-date { font-size: 11px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .board-card-rm { font-size: 11px; color: #999; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .board-card-onbehalf { font-size: 10px; font-weight: 700; padding: 2px 8px; background: var(--oh-orange-light); color: var(--oh-orange); border-radius: 4px; letter-spacing: 0.2px; white-space: nowrap; }
 
   .board-card-skel { height: 120px; background: #fff; border: 1px solid #E8E6E0; border-radius: 12px; margin-bottom: 10px; position: relative; overflow: hidden; }

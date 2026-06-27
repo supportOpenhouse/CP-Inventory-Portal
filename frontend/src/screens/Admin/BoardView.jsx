@@ -371,6 +371,16 @@ export default function BoardView({
                     )}
                   </div>
 
+                  {/* Effective RM = per-listing override if set, else the CP's
+                      permanent RM. Mirrors COALESCE(s.listing_rm_id, cp.rm_id)
+                      in _scoped_city_filter so the card matches who actually
+                      owns the listing. */}
+                  {(s.listing_rm_name || s.assigned_rm_name) && (
+                    <div className="board-card-rm">
+                      RM - {s.listing_rm_name || s.assigned_rm_name}
+                    </div>
+                  )}
+
                   {/* Reminder timer/aging strip temporarily disabled */}
                   {/* <AgingStrip submission={s} placement="card-bottom" /> */}
                 </div>
