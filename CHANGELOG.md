@@ -7,6 +7,24 @@ Each entry corresponds to one production push (one or more bundled commits).
 
 ## [Unreleased]
 
+## [2026-06-28] — Fix: broken thumbnails on submissions with CP-shared photos
+
+### Fixed
+- **Photo thumbnails 404'd on every submission whose photos were
+  shared via the CP "Share media" flow** (~91% of submissions with
+  photos in prod — OHLNC0615 was the reproducer). `submissions.photos`
+  has two coexisting formats: admin uploads (DetailPanel "+ Photos")
+  store bare publicIds, while the CP share-media endpoint (added
+  2026-06-18) stores full Cloudinary URLs. `cloudinaryUrl()` in
+  [`frontend/src/cloudinary.js`](frontend/src/cloudinary.js) only knew
+  the publicId shape — when given a URL it pasted its own base in
+  front and produced a malformed string Cloudinary 404'd, showing the
+  blue "?" placeholder. The helper now detects the URL shape and
+  injects the transform into the existing `/image/upload/` segment.
+  One change covers all four call sites (thumbnail grid, activity-log
+  thumbnails, uploaded-media grid, lightbox); no backend or DB
+  migration needed.
+
 ## [2026-06-18] — Show assigned RM on board card
 
 ### Added

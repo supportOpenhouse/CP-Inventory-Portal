@@ -109,6 +109,15 @@ export function uploadToCloudinary(file, onProgress, resourceType = 'image') {
  */
 export function cloudinaryUrl(publicId, transform = 'q_auto,f_auto') {
   if (!publicId) return '';
+  // submissions.photos has two coexisting formats:
+  //   - admin uploads (DetailPanel "+ Photos") store bare publicIds
+  //   - CP "Share media" (2026-06-18+) stores full Cloudinary URLs
+  // When the value is already a URL, inject the transform into the
+  // existing /image/upload/ segment instead of pasting another base URL
+  // in front (which would 404 with the blue "?" placeholder).
+  if (publicId.startsWith('https://res.cloudinary.com/')) {
+    return publicId.replace('/image/upload/', `/image/upload/${transform}/`);
+  }
   return `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/${transform}/${publicId}`;
 }
 
