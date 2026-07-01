@@ -109,6 +109,13 @@ export default function Admin() {
 
   const activeFilterCount = [bhk, dateFrom, dateTo, rmFilter].filter(Boolean).length;
 
+  // The board already loads every stage's first page, so filtering to a stage
+  // there is a pure client-side column collapse (BoardView.visibleStages) — no
+  // reason to re-hit the server. The table is a flat paginated list, so it
+  // still needs the server-side `status` filter. Hence `status` only reaches
+  // the wire in table view; clicking a stage on the board no longer reloads.
+  const serverStatus = view === 'table' ? statusFilter : '';
+
   const effectiveFilters = useMemo(() => {
     const f = {};
     if (city && city !== 'All') f.city = city;
@@ -117,9 +124,9 @@ export default function Admin() {
     if (dateFrom) f.date_from = dateFrom;
     if (dateTo) f.date_to = dateTo;
     if (rmFilter) f.rm_id = rmFilter;
-    if (statusFilter) f.status = statusFilter;
+    if (serverStatus) f.status = serverStatus;
     return f;
-  }, [city, search, bhk, dateFrom, dateTo, rmFilter, statusFilter]);
+  }, [city, search, bhk, dateFrom, dateTo, rmFilter, serverStatus]);
 
   const reload = useCallback(async () => {
     const myGen = ++reloadGen.current;
@@ -218,7 +225,9 @@ export default function Admin() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      await downloadAdminCsv(effectiveFilters);
+      // Export respects the selected stage in both views, even though the
+      // board no longer sends `status` on its normal reload.
+      await downloadAdminCsv(statusFilter ? { ...effectiveFilters, status: statusFilter } : effectiveFilters);
     } catch (err) {
       alert(err.message || 'Export failed');
     } finally {
