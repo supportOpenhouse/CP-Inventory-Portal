@@ -159,6 +159,7 @@ export const REJECTED_REASONS = [
   'Hold',
   'OH Rejected',
   'Seller Rejected',
+  'Visit Cancelled',
 ];
 
 export function stageMeta(key) {

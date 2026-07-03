@@ -60,6 +60,7 @@ REJECTED_REASONS = [
     "Hold",
     "OH Rejected",
     "Seller Rejected",
+    "Visit Cancelled",
 ]
 
 
@@ -483,8 +484,9 @@ def _sync_status_from_cp_inventory() -> int:
             cp_status = (r["cp_status"] or "").strip()
             if cp_status:
                 # Properties DB may still use the legacy stage name — treat it
-                # as an alias of the renamed 'Rejected' stage.
-                mapped = "Rejected" if cp_status == "Duplicate Rejected" else cp_status
+                # as an alias of the renamed 'Rejected' stage. A cancelled visit
+                # is a rejection too, so it also lands in 'Rejected'.
+                mapped = "Rejected" if cp_status in ("Duplicate Rejected", "Visit Cancelled") else cp_status
                 if old_status in TERMINAL:
                     pass  # never override a final human rejection
                 elif mapped not in VALID_STAGES:
@@ -501,6 +503,12 @@ def _sync_status_from_cp_inventory() -> int:
             supply = (r["supply_status"] or "").strip()
             if supply and supply != (old_reason or ""):
                 new_reason = supply
+
+            # 'Visit Cancelled' is itself a rejection reason: when the source
+            # flags it via cp_status, stamp the reason too — unless supply_status
+            # already supplied a more specific one above.
+            if cp_status == "Visit Cancelled" and new_reason is None and old_reason != "Visit Cancelled":
+                new_reason = "Visit Cancelled"
 
             if new_status is None and new_reason is None:
                 continue
