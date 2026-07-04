@@ -1059,6 +1059,20 @@ function Row({ label, value, optional = false }) {
 //   2. Already scheduled (forms_uid set): shows green pill with the UID,
 //      schedule date/time, and field exec name. No button.
 // ============================================================
+// Forms-app suggested_times come back 12-hour ("1:00 PM"); <input type="time">
+// needs 24-hour "HH:MM". Returns null if the string isn't a time we recognise.
+function to24h(t) {
+  const str = String(t).trim();
+  const ampm = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(str);
+  if (ampm) {
+    const h = (Number(ampm[1]) % 12) + (/PM/i.test(ampm[3]) ? 12 : 0);
+    return `${String(h).padStart(2, '0')}:${ampm[2]}`;
+  }
+  const h24 = /^(\d{1,2}):(\d{2})$/.exec(str);
+  if (h24) return `${String(Number(h24[1])).padStart(2, '0')}:${h24[2]}`;
+  return null;
+}
+
 function ScheduleVisitSection({ submission: s, onScheduled }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [fieldExecs, setFieldExecs] = useState([]);
@@ -1069,6 +1083,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [missingFields, setMissingFields] = useState([]);
+  const [suggestedTimes, setSuggestedTimes] = useState([]);  // Forms-app free slots on conflict (12-hour labels)
   const [toast, setToast] = useState(null);  // { kind: 'success' | 'error', text }
   // Existing-units warning: when properties-DB has rows for this society, we
   // pause submission and show a confirmation popup before pushing to Forms.
@@ -1117,6 +1132,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
   const openModal = async () => {
     setError('');
     setMissingFields([]);
+    setSuggestedTimes([]);
     setDate('');
     setTime('');
     setFieldExecId('');
@@ -1141,6 +1157,7 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
 
   const sendScheduleRequest = async () => {
     setSubmitting(true);
+    setSuggestedTimes([]);
     try {
       const result = await api.adminScheduleVisit(s.id, {
         schedule_date: date,
@@ -1155,9 +1172,16 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
       setToast({ kind: 'success', text: successMsg });
       onScheduled?.(result);
     } catch (e) {
+      // The backend forwards the Forms app's body under `details`, so a slot
+      // conflict arrives as e.data.details.{message, suggested_times}.
+      const details = e instanceof ApiError ? e.data?.details : null;
+      const suggested = details?.suggested_times || (e instanceof ApiError ? e.data?.suggested_times : null);
       if (e instanceof ApiError && e.data?.missing_fields) {
         setMissingFields(e.data.missing_fields);
         setError(e.message || 'Listing is missing required fields.');
+      } else if (Array.isArray(suggested) && suggested.length > 0) {
+        setSuggestedTimes(suggested);
+        setError(details?.message || e.message || 'That slot is taken — pick a suggested time.');
       } else {
         setError(e instanceof ApiError ? e.message : 'Failed to schedule visit');
       }
@@ -1287,6 +1311,32 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
                       <li key={i}>{mf.label || mf.field}</li>
                     ))}
                   </ul>
+                )}
+                {suggestedTimes.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                      Suggested free times — tap to fill:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {suggestedTimes.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            const v = to24h(t);
+                            if (v) { setTime(v); setError(''); setSuggestedTimes([]); }
+                          }}
+                          style={{
+                            padding: '6px 12px', borderRadius: 8, border: '1.5px solid #FCA5A5',
+                            background: '#fff', color: '#991B1B', fontSize: 13, fontWeight: 700,
+                            cursor: 'pointer', fontFamily: 'inherit',
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
