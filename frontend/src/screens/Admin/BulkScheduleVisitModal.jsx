@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../../api';
-import { todayInIST } from '../../format';
+import { todayInIST, nowTimeIST, VISIT_TIME_SLOTS } from '../../format';
 
 /**
  * Modal for scheduling visits for multiple submissions at once.
@@ -179,6 +179,22 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
     setPreflightErrors([]);
     setResultsBySid(null);
     if (!canSubmit) return;
+    if (date < todayInIST()) {
+      setError('Pick today or a future date.');
+      return;
+    }
+    if (date === todayInIST()) {
+      const now = nowTimeIST();
+      // Only the rows we're about to schedule (already-scheduled rows keep
+      // their existing, possibly-past, time in a disabled input).
+      const past = sortedSubs.filter(
+        (s) => !s.forms_uid && (timeBySid[s.id] || '') && timeBySid[s.id] < now,
+      );
+      if (past.length > 0) {
+        setError(`${past.length} row(s) have a time earlier than now — pick a later time for today.`);
+        return;
+      }
+    }
     // Pre-flight existing-units check per unique society_name. If anything
     // matches we show the warning popup and wait for an explicit confirm
     // before calling /bulk-schedule-visit.
@@ -362,13 +378,23 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                           <span style={{ fontSize: 11, color: '#666' }}>{s.status}</span>
                         </td>
                         <td style={tdStyle}>
-                          <input
-                            type="time"
+                          <select
                             value={timeBySid[s.id] || ''}
                             onChange={(e) => setTimeForSid(s.id, e.target.value)}
                             disabled={submitting || alreadyScheduled}
                             style={{ ...inputStyle, minWidth: 110 }}
-                          />
+                          >
+                            <option value="">— time —</option>
+                            {VISIT_TIME_SLOTS.map((sl) => (
+                              <option
+                                key={sl.value}
+                                value={sl.value}
+                                disabled={date === todayInIST() && sl.value < nowTimeIST()}
+                              >
+                                {sl.label}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                         <td style={tdStyle}>
                           <select

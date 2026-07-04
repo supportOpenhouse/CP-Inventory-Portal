@@ -19,6 +19,16 @@ export function todayInIST() {
   return new Date().toLocaleDateString('en-CA', { timeZone: IST_TZ });
 }
 
+/** "HH:MM" (24-hour) for the current moment in IST. Use for time-input `min`
+ *  and past-time checks so a booking dated today can't pick a time already
+ *  gone by. Zero-padded so plain string comparison with an input value works. */
+export function nowTimeIST() {
+  // en-GB + hour12:false yields 00–23 "HH:MM" (midnight = "00:00").
+  return new Date().toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: IST_TZ,
+  });
+}
+
 /** ₹95.0 L / ₹2.50 Cr / ₹50,000 */
 export function formatPrice(val) {
   if (val == null || val === '') return '—';
@@ -116,6 +126,18 @@ export function formatTime12(t) {
   if (hh === 0) hh = 12;
   return `${hh}:${mm} ${period}`;
 }
+
+/** Bookable visit times for the admin schedulers: every 30 minutes from
+ *  7:00 AM to 8:00 PM inclusive, as { value: "HH:MM" (24h), label: "7:30 AM" }.
+ *  `value` stays 24-hour so it drops straight into schedule_time unchanged. */
+export const VISIT_TIME_SLOTS = (() => {
+  const out = [];
+  for (let mins = 7 * 60; mins <= 20 * 60; mins += 30) {
+    const value = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    out.push({ value, label: formatTime12(value) });
+  }
+  return out;
+})();
 
 /** Validate 10-digit phone; returns { ok, cleaned, error } */
 export function validatePhone(raw) {

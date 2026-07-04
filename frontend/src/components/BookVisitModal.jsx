@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { api, ApiError } from '../api';
-import { todayInIST } from '../format';
+import { todayInIST, nowTimeIST } from '../format';
 
 /**
  * CP "Book visit slot" popup — pick a date (no past dates) and a time-of-day
@@ -10,10 +10,12 @@ import { todayInIST } from '../format';
  *
  * Props: open, submissionId, onClose, onBooked (fires after a successful request)
  */
+// `end` = 24-hour end of each window; a slot is unbookable once that time has
+// passed, which only matters when the chosen date is today.
 const SLOTS = [
-  { key: 'morning', label: 'Morning', time: '10 AM - 1 PM' },
-  { key: 'afternoon', label: 'Afternoon', time: '1 PM - 4 PM' },
-  { key: 'evening', label: 'Evening', time: '4 PM - 7 PM' },
+  { key: 'morning', label: 'Morning', time: '10 AM - 1 PM', end: '13:00' },
+  { key: 'afternoon', label: 'Afternoon', time: '1 PM - 4 PM', end: '16:00' },
+  { key: 'evening', label: 'Evening', time: '4 PM - 7 PM', end: '19:00' },
 ];
 
 export default function BookVisitModal({ open, submissionId, onClose, onBooked }) {
@@ -27,7 +29,12 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
   const submit = async () => {
     setError('');
     if (!date) { setError('Choose a date'); return; }
+    if (date < todayInIST()) { setError('Choose today or a future date'); return; }
     if (!slot) { setError('Choose a time slot'); return; }
+    if (date === todayInIST() && nowTimeIST() >= (SLOTS.find((x) => x.key === slot)?.end || '')) {
+      setError('That slot has already passed today — pick a later one');
+      return;
+    }
     setBusy(true);
     try {
       await api.bookVisit(submissionId, { date, slot });
@@ -39,6 +46,10 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
       setBusy(false);
     }
   };
+
+  const isToday = date === todayInIST();
+  const now = nowTimeIST();
+  const slotPast = (sl) => isToday && now >= sl.end;
 
   return (
     <div
@@ -63,18 +74,30 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
         <div className="input-label">Date</div>
         <input
           type="date" className="input-field" value={date}
-          min={todayInIST()} onChange={(e) => setDate(e.target.value)}
+          min={todayInIST()}
+          onChange={(e) => {
+            const d = e.target.value;
+            setDate(d);
+            // Deselect a slot that's already past once the date becomes today.
+            if (slot && d === todayInIST() && nowTimeIST() >= (SLOTS.find((x) => x.key === slot)?.end || '')) {
+              setSlot('');
+            }
+          }}
         />
 
         <div className="input-label" style={{ marginTop: 14 }}>Time slot</div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {SLOTS.map((sl) => (
+          {SLOTS.map((sl) => {
+            const past = slotPast(sl);
+            return (
             <button
               key={sl.key} type="button"
-              onClick={() => setSlot(sl.key)}
+              onClick={() => { if (!past) setSlot(sl.key); }}
+              disabled={past}
               style={{
                 flex: 1, padding: '8px 6px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                cursor: 'pointer', fontFamily: 'inherit',
+                cursor: past ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                opacity: past ? 0.4 : 1,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2,
                 border: `1.5px solid ${slot === sl.key ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
                 background: slot === sl.key ? 'var(--oh-orange)' : '#fff',
@@ -86,7 +109,8 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
                 {sl.time}
               </span>
             </button>
-          ))}
+            );
+          })}
         </div>
 
         {error && <div className="error-text" style={{ marginTop: 12 }}>{error}</div>}

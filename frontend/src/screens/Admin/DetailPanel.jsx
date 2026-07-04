@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '../../api';
 import {
   formatBhk, formatDateTime, formatDateOnly, formatTime12, formatPrice, formatOhPrice,
-  STAGES, AUTO_ONLY_STAGES, REJECTED_REASONS, todayInIST,
+  STAGES, AUTO_ONLY_STAGES, REJECTED_REASONS, todayInIST, nowTimeIST, VISIT_TIME_SLOTS,
 } from '../../format';
 import { getUser } from '../../auth';
 import {
@@ -1197,6 +1197,14 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
       setError('Please fill in all fields.');
       return;
     }
+    if (date < todayInIST()) {
+      setError('Pick today or a future date.');
+      return;
+    }
+    if (date === todayInIST() && time < nowTimeIST()) {
+      setError('That time has already passed today — pick a later time.');
+      return;
+    }
     // Pre-flight: warn the admin if Openhouse already has units in this
     // society. On lookup failure we don't block — fall through to schedule.
     setSubmitting(true);
@@ -1355,12 +1363,22 @@ function ScheduleVisitSection({ submission: s, onScheduled }) {
 
               <div>
                 <div className="input-label">Time <span style={{ color: '#dc2626' }}>*</span></div>
-                <input
-                  type="time"
+                <select
                   className="input-field"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                />
+                >
+                  <option value="">Select a time…</option>
+                  {VISIT_TIME_SLOTS.map((sl) => (
+                    <option
+                      key={sl.value}
+                      value={sl.value}
+                      disabled={date === todayInIST() && sl.value < nowTimeIST()}
+                    >
+                      {sl.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
