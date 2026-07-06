@@ -12,11 +12,11 @@ import NoUnitDetailsWarning from './NoUnitDetailsWarning';
 const BHK_OPTIONS = ['2', '2.5', '3', '3.5', '4'];
 const CITY_OPTIONS = ['Gurgaon', 'Noida', 'Ghaziabad'];
 
-// Floor dropdown order: Ground, Top, 1..50. Stored as VARCHAR — legacy values
+// Floor dropdown order: Top, Ground, 1..50. Stored as VARCHAR — legacy values
 // ("B1", "LG", etc.) remain valid in the DB; new submissions pick from this list.
 const FLOOR_OPTIONS = [
-  'Ground',
   'Top',
+  'Ground',
   ...Array.from({ length: 50 }, (_, i) => String(i + 1)),
 ];
 
