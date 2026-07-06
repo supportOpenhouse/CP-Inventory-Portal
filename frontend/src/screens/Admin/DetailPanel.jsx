@@ -686,6 +686,11 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                       >
                         {s.cp_name}
                       </button>
+                      {s.cp_onboarded_by && (
+                        <span style={{ fontSize: 12, color: '#777', marginLeft: 6 }}>
+                          (Onboarded by {s.cp_onboarded_by})
+                        </span>
+                      )}
                       <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
                         {s.cp_code} · +91 {s.cp_phone}
                       </div>

@@ -360,6 +360,7 @@ export default function BoardView({
                   <div className="board-card-footer">
                     <span className="board-card-date">
                       {timeAgo(s.submitted_at)} · {s.cp_name}
+                      {s.cp_onboarded_by ? ` (Onboarded by ${s.cp_onboarded_by})` : ''}
                     </span>
                     {s.submitted_by_name && (
                       <span
