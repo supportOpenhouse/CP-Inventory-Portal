@@ -41,8 +41,13 @@ BHK is normalized by stripping "BHK" and matching digits only:
 Properties DB stores config as "2 BHK" etc; submissions stores bhk as "2 BHK" etc.
 We normalize both sides.
 
-Submissions with status 'Price Rejected' or 'Rejected' are ignored
-(freed up for other CPs).
+Submissions with status 'Price Rejected' or 'Rejected' no longer free the
+unit entirely: an exact tower+unit match against a rejected lead is still
+surfaced as a perfect match (badge kept, match_level='exact') but does NOT
+auto-reject — block=False + matched_rejected=True, and the caller routes the
+new submission to 'Unapproved' for admin review. An exact match against a LIVE
+listing still auto-rejects as before. 'Unapproved' rows stay excluded from
+matching (pending review — neither live nor rejected).
 
 If the properties DB isn't configured, only that source is skipped — the
 submissions check (app DB) still runs, as does the inventory check when the
@@ -149,9 +154,15 @@ def _no_match():
 # means a CP has gotten this far through the pipeline — the unit is committed.
 _ACTIVE_SUBMISSION_STATUSES = ("Submitted", "Offer", "Closure", "Visit Scheduled", "Visit Completed")
 
+# Reject statuses whose unit was historically "freed up" and ignored entirely.
+# Now used to still surface a perfect (exact) match against a rejected lead —
+# the re-submission keeps the badge but routes to Unapproved (see check_duplicate).
+_REJECTED_SUBMISSION_STATUSES = ("Rejected", "Price Rejected")
+
 
 def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no,
-                       exclude_submission_id=None):
+                       exclude_submission_id=None,
+                       statuses=_ACTIVE_SUBMISSION_STATUSES):
     """Query the app DB submissions table for matching active submissions.
 
     Mirrors the properties-table matching logic: matches require society +
@@ -172,7 +183,7 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no,
     try:
         with conn.cursor() as cur:
             # Explicit IN placeholders (safer than ANY(array) across psycopg2 versions)
-            status_placeholders = ",".join(["%s"] * len(_ACTIVE_SUBMISSION_STATUSES))
+            status_placeholders = ",".join(["%s"] * len(statuses))
 
             conditions = [
                 "society_id = %s",
@@ -181,7 +192,7 @@ def _check_submissions(society_id, bhk_n, floor_n, tower, unit_no,
                 "LOWER(TRIM(COALESCE(floor, ''))) = %s",
                 f"status IN ({status_placeholders})",
             ]
-            params = [society_id, bhk_n, floor_n, *_ACTIVE_SUBMISSION_STATUSES]
+            params = [society_id, bhk_n, floor_n, *statuses]
 
             if tower:
                 # Strip leading zeros from both sides so "02" matches "2", "0A2" matches "A2" etc.
@@ -436,10 +447,16 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             "match_details": _dedup_matches(matches),
         }
 
-    def _exact(submissions_match: bool, matches: list):
-        """Build an exact-match response: a full 5-field hit, hard block.
+    def _exact(submissions_match: bool, matches: list, block: bool = True,
+               matched_rejected: bool = False):
+        """Build an exact-match response: a full 5-field hit.
 
-        This is the only result that drives 'Rejected' (status_reason='Duplicacy') downstream.
+        block=True  → the match is against a LIVE listing; drives 'Rejected'
+                      (status_reason='Duplicacy') downstream (unchanged).
+        block=False + matched_rejected=True → the only exact hit is a
+                      previously-REJECTED lead; the perfect-match badge is kept
+                      (match_level stays 'exact') but the caller routes the new
+                      submission to 'Unapproved' instead of auto-rejecting.
         `submissions_match` records whether the hit came from the submissions
         table (True) or the properties table (False). `matches` is the list of
         matched records persisted as submissions.match_details.
@@ -448,9 +465,16 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
         unit_label = f"{society_name}, Tower {tower}, Unit {unit_no}"
         return {
             "match_level": "exact",
-            "block": True,
-            "banner_title": "This unit is already\nwith Openhouse",
+            "block": block,
+            "matched_rejected": matched_rejected,
+            "banner_title": (
+                "Previously listed unit —\npending review" if matched_rejected
+                else "This unit is already\nwith Openhouse"
+            ),
             "message": (
+                f"This unit ({unit_label}) matches a previously rejected listing "
+                f"and will be reviewed by the Openhouse team."
+                if matched_rejected else
                 f"This unit ({unit_label}) is already with Openhouse. "
                 f"Please contact your Openhouse representative."
             ),
@@ -505,6 +529,21 @@ def check_duplicate(society_id, bhk=None, tower=None, unit_no=None,
             return _exact(
                 submissions_match=bool(sub_exact_rows) and not bool(prop_exact_rows),
                 matches=matches,
+            )
+
+        # No LIVE exact match — check previously-REJECTED leads. An exact
+        # tower+unit hit there is still a perfect match (badge kept) but must
+        # NOT auto-reject; the caller routes the new submission to Unapproved.
+        rejected_exact_rows = _check_submissions(
+            society_id, bhk_n, floor_n, tower, unit_no, exclude_submission_id,
+            statuses=_REJECTED_SUBMISSION_STATUSES,
+        )
+        if rejected_exact_rows:
+            return _exact(
+                submissions_match=True,
+                matches=[_match_item("submissions", "exact", r) for r in rejected_exact_rows],
+                block=False,
+                matched_rejected=True,
             )
         # Fall through: tower+unit given but no full match — may still be partial.
 

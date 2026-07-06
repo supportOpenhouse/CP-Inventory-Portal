@@ -210,18 +210,24 @@ def create_submission():
     # Perfect match = exact dup found in properties or other submissions
     # (only possible when unit details were given). It used to hard-block (409);
     # now it lets the submission through with a flag so CP can review/withdraw.
+    # Exact/perfect duplicate (tower+unit supplied). block=True → match is
+    # against a LIVE listing (auto-reject as Duplicacy). matched_rejected → the
+    # only exact hit is a previously-REJECTED lead: keep the perfect-match badge
+    # but route to Unapproved for admin review instead of auto-rejecting.
     is_perfect_match = (
         not skip_unit_details
         and dup.get("match_level") == "exact"
-        and bool(dup.get("block"))
     )
+    matched_rejected = is_perfect_match and bool(dup.get("matched_rejected"))
     is_unit_less = skip_unit_details
     has_collated_match = bool(dup.get("collated_match"))
     has_submissions_match = bool(dup.get("submissions_match"))
 
     # Status logic:
-    #   - Perfect match  → Rejected (status_reason='Duplicacy'; admin sees red
-    #                      card; CP saw 409 + Contact RM)
+    #   - Perfect match (live)     → Rejected (status_reason='Duplicacy'; admin
+    #                      sees red card; CP saw 409 + Contact RM)
+    #   - Perfect match (rejected lead) → Unapproved (badge kept, admin reviews
+    #                      a re-submission of a previously-rejected unit)
     #   - Unit-less      → Unapproved (CP didn't give tower/unit, admin must
     #                      verify before the listing enters the pipeline)
     #   - Collated match → Unapproved (scraper saw the same society+bhk+floor;
@@ -230,9 +236,12 @@ def create_submission():
     #                      dup (legacy "Add anyway" path) lands in Unapproved
     force_create = bool(data.get("force_create"))
     initial_status_reason = None
-    if is_perfect_match:
+    if is_perfect_match and not matched_rejected:
         initial_status = "Rejected"
         initial_status_reason = "Duplicacy"
+    elif matched_rejected:
+        # Perfect match, but only against a rejected lead → admin review.
+        initial_status = "Unapproved"
     elif is_unit_less:
         initial_status = "Unapproved"
     elif has_collated_match:
