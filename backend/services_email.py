@@ -153,15 +153,14 @@ def _send_new_submission_alert_sync(submission_id: int) -> None:
                         s.id, s.society_name, s.tower, s.unit_no, s.floor,
                         s.sqft, s.bhk, s.asking_price,
                         s.occupancy_status, s.seller_name, s.seller_phone,
-                        c.name AS city,
+                        s.city AS city,
                         cp.cp_code, cp.name AS cp_name, cp.phone AS cp_phone,
                         cp.company AS cp_company,
                         rm.name AS rm_name, rm.email AS rm_email
                     FROM submissions s
-                    LEFT JOIN cities c ON s.city_id = c.id
                     JOIN channel_partners cp ON s.cp_id = cp.id
                     LEFT JOIN channel_partners rm
-                        ON rm.city_id = s.city_id AND rm.role = 'rm'
+                        ON LOWER(TRIM(rm.city)) = LOWER(TRIM(s.city)) AND rm.role = 'rm'
                     WHERE s.id = %s
                 """, (submission_id,))
                 row = cur.fetchone()

@@ -48,10 +48,9 @@ def _user_response(cp: dict) -> dict:
 def _fetch_active_cp(cur, phone: str):
     cur.execute("""
         SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company,
-               cp.is_admin, cp.role, cp.micro_markets, cp.city_id,
-               c.name AS city
+               cp.is_admin, cp.role, cp.micro_markets,
+               cp.city AS city
         FROM channel_partners cp
-        LEFT JOIN cities c ON cp.city_id = c.id
         WHERE cp.phone = %s AND cp.is_active = TRUE
     """, (phone,))
     return cur.fetchone()
@@ -64,7 +63,7 @@ def _fetch_active_rm(cur, phone: str):
     while normalize_phone() returns last-10-digits only. Both sides are
     normalized in SQL so the match works regardless of storage format.
 
-    Tries the fullest query first (city_id + manager columns). If that fails
+    Tries the fullest query first (city + manager columns). If that fails
     (e.g. migration hasn't run yet), rolls back the aborted transaction and
     tries simpler fallbacks so login doesn't 500 during partial migrations.
     """
@@ -74,11 +73,10 @@ def _fetch_active_rm(cur, phone: str):
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
-                   r.city_id, c.name AS city,
+                   r.city AS city,
                    r.is_manager, r.manager_id,
                    COALESCE(r.is_viewer, FALSE) AS is_viewer
             FROM rms r
-            LEFT JOIN cities c ON r.city_id = c.id
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
               AND COALESCE(r.is_active, TRUE) = TRUE
             LIMIT 1
@@ -91,15 +89,14 @@ def _fetch_active_rm(cur, phone: str):
         except Exception:
             pass
 
-    # Fallback 1: has city_id + manager but no viewer column
+    # Fallback 1: has city + manager but no viewer column
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
-                   r.city_id, c.name AS city,
+                   r.city AS city,
                    r.is_manager, r.manager_id,
                    FALSE AS is_viewer
             FROM rms r
-            LEFT JOIN cities c ON r.city_id = c.id
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
               AND COALESCE(r.is_active, TRUE) = TRUE
             LIMIT 1
@@ -114,15 +111,14 @@ def _fetch_active_rm(cur, phone: str):
         except Exception:
             pass
 
-    # Fallback 2: has city_id but no manager / viewer columns
+    # Fallback 2: has city but no manager / viewer columns
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
-                   r.city_id, c.name AS city,
+                   r.city AS city,
                    FALSE AS is_manager, NULL::integer AS manager_id,
                    FALSE AS is_viewer
             FROM rms r
-            LEFT JOIN cities c ON r.city_id = c.id
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
               AND COALESCE(r.is_active, TRUE) = TRUE
             LIMIT 1
@@ -137,11 +133,11 @@ def _fetch_active_rm(cur, phone: str):
         except Exception:
             pass
 
-    # Fallback 3: neither migration ran (no city_id, no manager / viewer cols)
+    # Fallback 3: neither migration ran (no city, no manager / viewer cols)
     try:
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
-                   NULL::integer AS city_id, NULL::varchar AS city,
+                   NULL::varchar AS city,
                    FALSE AS is_manager, NULL::integer AS manager_id,
                    FALSE AS is_viewer
             FROM rms r
@@ -205,7 +201,7 @@ def _generate_rm_token(rm: dict) -> str:
       - is_manager  : bool — true if user has direct reports
       - is_viewer   : bool — true if user is read-only city viewer
       - manager_id  : this user's own manager (NULL if top of chain)
-      - city_id     : the row's city. Used by the viewer scope filter.
+      - city        : the row's text city. Used by the viewer scope filter.
     """
     import jwt
     from datetime import datetime, timedelta, timezone
@@ -223,7 +219,7 @@ def _generate_rm_token(rm: dict) -> str:
         "is_manager": is_mgr,
         "is_viewer": is_viewer,
         "manager_id": rm.get("manager_id"),
-        "city_id": rm.get("city_id"),
+        "city": rm.get("city"),        # text city — what the viewer scope filter now uses
         "iat": int(now.timestamp()),  # for force-logout check in auth middleware
         # Non-CP roles auto-logout after 7 days (vs 1 day for CPs).
         "exp": now + timedelta(hours=expiry_hours_for_role(role)),
@@ -232,11 +228,20 @@ def _generate_rm_token(rm: dict) -> str:
 
 
 def _not_registered_response(cur):
-    cur.execute("SELECT name, rm_name, rm_phone FROM cities ORDER BY name")
-    cities = cur.fetchall()
+    # Per-city RM contacts = each city's default RM (its manager) from the rms table.
+    cur.execute(
+        """
+        SELECT DISTINCT ON (LOWER(TRIM(city)))
+               city, name, phone
+        FROM rms
+        WHERE city IS NOT NULL AND TRIM(city) <> ''
+          AND COALESCE(is_active, TRUE) = TRUE
+        ORDER BY LOWER(TRIM(city)), COALESCE(is_manager, FALSE) DESC, id ASC
+        """
+    )
     rm_contacts = {
-        c["name"]: {"name": c["rm_name"], "phone": c["rm_phone"]}
-        for c in cities
+        c["city"]: {"name": c["name"], "phone": c["phone"]}
+        for c in cur.fetchall()
     }
     return {
         "success": True,
@@ -436,10 +441,9 @@ def me():
                 try:
                     cur.execute("""
                         SELECT r.id, r.name, r.phone, r.email,
-                               r.city_id, c.name AS city,
+                               r.city AS city,
                                r.is_manager, r.manager_id
                         FROM rms r
-                        LEFT JOIN cities c ON r.city_id = c.id
                         WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
                     """, (rm_id,))
                     rm = cur.fetchone()
@@ -447,10 +451,9 @@ def me():
                     conn.rollback()
                     cur.execute("""
                         SELECT r.id, r.name, r.phone, r.email,
-                               r.city_id, c.name AS city,
+                               r.city AS city,
                                FALSE AS is_manager, NULL::integer AS manager_id
                         FROM rms r
-                        LEFT JOIN cities c ON r.city_id = c.id
                         WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
                     """, (rm_id,))
                     rm = cur.fetchone()
@@ -466,10 +469,9 @@ def me():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT cp.id, cp.cp_code, cp.name, cp.phone, cp.company,
-                       cp.is_admin, cp.role, cp.micro_markets, cp.city_id,
-                       c.name AS city
+                       cp.is_admin, cp.role, cp.micro_markets,
+                       cp.city AS city
                 FROM channel_partners cp
-                LEFT JOIN cities c ON cp.city_id = c.id
                 WHERE cp.id = %s AND cp.is_active = TRUE
             """, (g.user["cp_id"],))
             cp = cur.fetchone()

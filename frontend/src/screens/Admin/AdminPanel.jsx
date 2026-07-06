@@ -30,9 +30,9 @@ const ROLE_OPTIONS = [
 // Admin/index.jsx; ids match cities.id in the prod App DB seed
 // (Noida=1, Gurgaon=2, Ghaziabad=3).
 const CITY_OPTIONS = [
-  { value: 1, label: 'Noida' },
-  { value: 2, label: 'Gurgaon' },
-  { value: 3, label: 'Ghaziabad' },
+  { value: 'Noida', label: 'Noida' },
+  { value: 'Gurgaon', label: 'Gurgaon' },
+  { value: 'Ghaziabad', label: 'Ghaziabad' },
 ];
 
 export default function AdminPanel({ onClose }) {
@@ -83,7 +83,7 @@ export default function AdminPanel({ onClose }) {
         phone: newPhone.trim(),
         role: newRole,
         email: newEmail.trim() || undefined,
-        city_id: newRole === 'viewer' ? Number(newCityId) : undefined,
+        city: newRole === 'viewer' ? newCityId : undefined,
       });
       setNewName(''); setNewPhone(''); setNewEmail('');
       setNewRole('rm'); setNewCityId('');
@@ -114,7 +114,7 @@ export default function AdminPanel({ onClose }) {
     // prompt the admin to pick one. The backend re-validates this — the prompt
     // is just a friendlier path than letting the PATCH 400.
     const payload = { role: nextRole };
-    if (nextRole === 'viewer' && !u.city_id) {
+    if (nextRole === 'viewer' && !u.city) {
       const cityLabels = CITY_OPTIONS.map((c, i) => `${i + 1}=${c.label}`).join(', ');
       const pick = prompt(
         `Viewers are bounded to one city. Pick a city for ${u.name || u.phone}:\n${cityLabels}\n\n` +
@@ -122,7 +122,7 @@ export default function AdminPanel({ onClose }) {
       );
       const idx = parseInt(pick, 10);
       if (!idx || idx < 1 || idx > CITY_OPTIONS.length) return;
-      payload.city_id = CITY_OPTIONS[idx - 1].value;
+      payload.city = CITY_OPTIONS[idx - 1].value;
     }
     try {
       await api.adminPatchStaffUser(u.source, u.id, payload);

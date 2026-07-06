@@ -50,7 +50,7 @@ def my_rm():
                 SELECT rm.name AS name, rm.phone AS phone
                 FROM channel_partners me
                 JOIN channel_partners rm
-                  ON rm.city_id = me.city_id
+                  ON LOWER(TRIM(rm.city)) = LOWER(TRIM(me.city))
                  AND rm.role = 'rm'
                  AND rm.is_active = TRUE
                 WHERE me.id = %s
@@ -63,13 +63,16 @@ def my_rm():
             if row and row.get("phone"):
                 return jsonify({"rm": {"name": row["name"], "phone": row["phone"]}}), 200
 
-            # 3. Legacy cities.rm_name / rm_phone default
+            # 3. The CP's city default RM (its manager) from the rms table
             cur.execute(
                 """
-                SELECT c.rm_name AS name, c.rm_phone AS phone
+                SELECT r.name AS name, r.phone AS phone
                 FROM channel_partners cp
-                LEFT JOIN cities c ON c.id = cp.city_id
+                JOIN rms r ON LOWER(TRIM(r.city)) = LOWER(TRIM(cp.city))
+                          AND COALESCE(r.is_active, TRUE) = TRUE
                 WHERE cp.id = %s
+                ORDER BY COALESCE(r.is_manager, FALSE) DESC, r.id ASC
+                LIMIT 1
                 """,
                 (cp_id,),
             )
@@ -89,12 +92,19 @@ def rm_contacts():
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT name, rm_name, rm_phone FROM cities ORDER BY name"
+                """
+                SELECT DISTINCT ON (LOWER(TRIM(city)))
+                       city, name, phone
+                FROM rms
+                WHERE city IS NOT NULL AND TRIM(city) <> ''
+                  AND COALESCE(is_active, TRUE) = TRUE
+                ORDER BY LOWER(TRIM(city)), COALESCE(is_manager, FALSE) DESC, id ASC
+                """
             )
             rows = cur.fetchall()
         return jsonify({
             "contacts": {
-                r["name"]: {"name": r["rm_name"], "phone": r["rm_phone"]}
+                r["city"]: {"name": r["name"], "phone": r["phone"]}
                 for r in rows
             }
         }), 200

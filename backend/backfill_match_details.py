@@ -44,7 +44,7 @@ def main() -> None:
             # Backfill Unapproved + Rejected leads. Skip rows already scanned
             # (match_scanned_at set) so re-runs only process new/unscanned rows.
             cur.execute("""
-                SELECT id, cp_id, society_id, bhk, tower, unit_no, floor
+                SELECT id, cp_id, society, city, bhk, tower, unit_no, floor
                 FROM submissions
                 WHERE deleted_at IS NULL
                   AND status IN ('Unapproved', 'Rejected', 'Price Rejected')
@@ -63,7 +63,8 @@ def main() -> None:
     for i, r in enumerate(rows, 1):
         try:
             dup = check_duplicate(
-                society_id=r["society_id"],
+                society=r["society"],
+                city=r["city"],
                 bhk=r["bhk"],
                 tower=r["tower"],
                 unit_no=r["unit_no"],
