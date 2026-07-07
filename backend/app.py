@@ -21,6 +21,7 @@ from routes.health import bp as health_bp
 from routes.media import bp as media_bp
 from routes.meta import bp as meta_bp
 from routes.societies import bp as societies_bp
+from routes.relay import bp as relay_bp
 from routes.submissions import bp as submissions_bp
 from routes.sync import bp as sync_bp
 from routes.webhooks import bp as webhooks_bp
@@ -78,6 +79,7 @@ def create_app() -> Flask:
     app.register_blueprint(meta_bp)
     app.register_blueprint(societies_bp)
     app.register_blueprint(submissions_bp)
+    app.register_blueprint(relay_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(sync_bp)
     app.register_blueprint(cron_bp)

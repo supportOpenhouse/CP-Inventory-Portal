@@ -223,6 +223,78 @@ def _relay_user_or_none():
     return user, None
 
 
+def _normalize_relay_phone(raw: str) -> str:
+    digits = "".join(c for c in (raw or "") if c.isdigit())
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+def require_relay_on_behalf(f):
+    """Partner relay auth for sales-manager on-behalf unit submission.
+
+    Requires API key + X-Broker-Id (target CP phone) + X-Sales-Id.
+    Optional X-Sales-Name for submitted_by_name audit display.
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        relay_key = (Config.RELAY_API_KEY or "").strip()
+        if not relay_key:
+            return jsonify({"error": "Relay is not configured"}), 503
+
+        header_name = Config.RELAY_API_KEY_HEADER
+        incoming_key = request.headers.get(header_name, "").strip()
+        if not incoming_key or incoming_key != relay_key:
+            log.warning("[relay/on-behalf] invalid API key from %s", request.remote_addr)
+            return jsonify({"error": "Invalid relay API key"}), 401
+
+        phone = _normalize_relay_phone(request.headers.get("X-Broker-Id", ""))
+        if not phone:
+            return jsonify({
+                "error": "X-Broker-Id header with a valid phone is required for relay on-behalf requests",
+            }), 400
+
+        sales_phone = _normalize_relay_phone(
+            request.headers.get(Config.RELAY_SALES_ID_HEADER, ""),
+        )
+        if not sales_phone:
+            return jsonify({
+                "error": f"{Config.RELAY_SALES_ID_HEADER} header with sales phone is required",
+            }), 400
+
+        sales_name = (request.headers.get(Config.RELAY_SALES_NAME_HEADER) or "").strip()
+        submitted_by_name = sales_name if sales_name else sales_phone
+
+        conn = get_app_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, name, phone, cp_code, is_active,
+                           COALESCE(is_admin, FALSE) AS is_admin
+                    FROM channel_partners
+                    WHERE phone = %s
+                    """,
+                    (phone,),
+                )
+                cp = cur.fetchone()
+        finally:
+            put_app_conn(conn)
+
+        if not cp:
+            return jsonify({"error": "Broker not found for the provided phone"}), 404
+        if not cp.get("is_active"):
+            return jsonify({"error": "Target CP is inactive"}), 400
+        if cp.get("is_admin"):
+            return jsonify({"error": "Target is an admin account, not a CP"}), 400
+
+        g.relay_target_cp_id = cp["id"]
+        g.relay_target_cp_name = (cp.get("name") or f"CP #{cp['id']}").strip()
+        g.relay_submitted_by_name = submitted_by_name
+        g.relay_sales_phone = sales_phone
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
 def require_auth(f):
     """Any authenticated user (CP, RM, or admin). Accepts JWT or relay API key."""
     @wraps(f)

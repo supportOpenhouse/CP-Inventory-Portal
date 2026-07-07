@@ -68,6 +68,8 @@ class Config:
     # Generate a long random string (>= 48 chars) for production.
     RELAY_API_KEY = os.getenv("RELAY_API_KEY") or None
     RELAY_API_KEY_HEADER = (os.getenv("RELAY_API_KEY_HEADER") or "X-API-Key").strip() or "X-API-Key"
+    RELAY_SALES_ID_HEADER = (os.getenv("RELAY_SALES_ID_HEADER") or "X-Sales-Id").strip() or "X-Sales-Id"
+    RELAY_SALES_NAME_HEADER = (os.getenv("RELAY_SALES_NAME_HEADER") or "X-Sales-Name").strip() or "X-Sales-Name"
 
     # -------- WhatsApp (Interakt) — CP reminder templates --------
     # Interakt API key (basic-auth token; see https://www.interakt.shop/api-docs).
