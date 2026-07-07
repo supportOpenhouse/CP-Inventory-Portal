@@ -59,7 +59,7 @@ _SUBMISSIONS_SELECT = """
                 SELECT s.id, s.public_id, s.society_name, s.tower, s.unit_no, s.floor,
                        s.sqft, s.bhk, s.occupancy_status,
                        s.asking_price,
-                       s.status, s.status_reason, s.photos, s.videos, s.submitted_at,
+                       s.status, s.status_reason, s.submitted_by_name, s.photos, s.videos, s.submitted_at,
                        s.requested_visit_date, s.requested_visit_slot, s.requested_rm_id,
                        s.counter_offer_price, s.counter_offer_status, s.counter_offer_at,
                        s.counter_offer_response_text,
