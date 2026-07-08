@@ -103,6 +103,13 @@ def sync_collated_data():
         {"rows": [ {source, city, ..., listing_link, ...}, ... ]}
     Response: {"ok": true, "inserted": N, "skipped": M, "total": N+M}
     """
+    # ponytail: inventory writes disabled on purpose (2026-07-08). Return a
+    # clean no-op so the Apps Script caller sees 200 and doesn't error/retry.
+    # Reads (dup-check, admin) keep using rows already in inventory.
+    # Re-enable: delete this block (or `git revert` this commit).
+    return jsonify({"ok": True, "inserted": 0, "skipped": 0, "total": 0,
+                    "note": "inventory sync disabled"})
+
     auth_err = _require_sync_auth()
     if auth_err is not None:
         return auth_err
