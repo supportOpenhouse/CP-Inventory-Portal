@@ -14,7 +14,7 @@ import BulkReassignRmModal from './BulkReassignRmModal';
 import ExternalInventory from './ExternalInventory';
 import ActivityLog from './ActivityLog';
 import AdminPanel from './AdminPanel';
-import WhatsAppInbox, { WaIcon } from './WhatsAppInbox';
+import ChatInbox, { ChatIcon } from './ChatInbox';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK'];
@@ -75,7 +75,7 @@ export default function Admin() {
   const [externalInventoryOpen, setExternalInventoryOpen] = useState(false);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
-  const [whatsappInboxOpen, setWhatsappInboxOpen] = useState(false);
+  const [chatInboxOpen, setChatInboxOpen] = useState(false);
   const [viewAsCpOpen, setViewAsCpOpen] = useState(false);
 
   // Reset window scroll whenever the user enters or leaves a full-screen
@@ -84,7 +84,7 @@ export default function Admin() {
   // to the next, so returning to the admin board lands them mid-page.
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [addingInventory, externalInventoryOpen, activityLogOpen, whatsappInboxOpen]);
+  }, [addingInventory, externalInventoryOpen, activityLogOpen, chatInboxOpen]);
 
   // Filter bar state
   const [showFilters, setShowFilters] = useState(false);
@@ -306,10 +306,10 @@ export default function Admin() {
     return <ActivityLog onClose={() => setActivityLogOpen(false)} />;
   }
 
-  // WhatsApp Inbox — read-only thread view per CP phone. Same scoping
+  // Chat Inbox — CometChat conversations, role-scoped. Same scoping
   // rules as the rest of the admin app (require_staff on the API).
-  if (whatsappInboxOpen) {
-    return <WhatsAppInbox onClose={() => setWhatsappInboxOpen(false)} />;
+  if (chatInboxOpen) {
+    return <ChatInbox onClose={() => setChatInboxOpen(false)} />;
   }
 
   return (
@@ -336,10 +336,10 @@ export default function Admin() {
           {(isStaff || isViewer) && (
             <button
               className="logout-btn wa-topbar-btn"
-              onClick={() => setWhatsappInboxOpen(true)}
-              title="WhatsApp Inbox — CP replies + sent reminders"
+              onClick={() => setChatInboxOpen(true)}
+              title="Chat Inbox — CP conversations"
             >
-              <WaIcon size={30} />
+              <ChatIcon size={30} />
             </button>
           )}
           {isAdmin && (

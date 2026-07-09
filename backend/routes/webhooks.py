@@ -1,20 +1,19 @@
 """Inbound webhooks from external providers.
 
 Currently:
-    POST /api/webhooks/interakt
-        Receives every Interakt webhook event. We persist text replies from
-        CPs into `whatsapp_messages` so they show up on the admin
-        submission detail panel and the new WhatsApp Inbox screen.
+    POST /api/webhooks/cometchat
+        Receives every CometChat 'message_sent' webhook event and persists
+        both directions of chat traffic to `chat_messages` for the admin
+        Chat Inbox / CP detail panel.
 
-Auth: shared secret in `Authorization: Bearer <token>` header (configured
-in the Interakt dashboard's webhook settings, matched against
-INTERAKT_WEBHOOK_SECRET env var).
+Auth: HTTP Basic Auth (Authorization: Basic base64(user:pass)), matched
+against COMET_WEBHOOK_USER / COMET_WEBHOOK_PASS env vars — CometChat does
+not send a Bearer token.
 """
 
-import hashlib
 import hmac
-import json
 import logging
+import re as _re
 
 from flask import Blueprint, jsonify, request
 
@@ -27,336 +26,95 @@ log = logging.getLogger(__name__)
 bp = Blueprint("webhooks", __name__, url_prefix="/api/webhooks")
 
 
-# Interakt webhook event types we care about. Inbound text replies arrive
-# as `message_received` (or sometimes `message`). Delivery / read receipts
-# arrive as `message_delivered` / `message_read` — we ignore those for now
-# (they're noise unless we surface delivery status in the UI).
-_INBOUND_EVENT_TYPES = {
-    "message_received",
-    "message_reply",
-    "message",  # observed on some webhook variants
-}
+_CP_UID = _re.compile(r"^cp_(\d+)$")
 
 
-def _normalize_phone(raw):
-    """Strip non-digits, return last-10 or None."""
-    if raw is None:
+def _uid_cp_id(uid):
+    m = _CP_UID.match(uid or "")
+    return int(m.group(1)) if m else None
+
+
+def _parse_comet_message(payload):
+    """Extract a chat_messages row from a CometChat 'message_sent' webhook, or None."""
+    # CometChat envelope: {trigger, data: {<message>}, appId, webhook}. Message
+    # fields sit DIRECTLY under data — there is no data.message level.
+    msg = (payload or {}).get("data")
+    if not isinstance(msg, dict) or msg.get("category") != "message":
         return None
-    digits = "".join(c for c in str(raw) if c.isdigit())
-    return digits[-10:] if len(digits) >= 10 else None
-
-
-def _verify_hmac_signature(secret: str) -> bool:
-    """Verify Interakt's `Interakt-Signature: sha256=<hex>` header.
-
-    Interakt computes HMAC-SHA256 of the verbatim request body using the
-    "Secret key" set in their webhook UI. We recompute it server-side and
-    compare in constant time. Body MUST be the raw bytes — re-serializing
-    the parsed JSON changes whitespace/key-order and breaks the hash.
-    """
-    sig_header = request.headers.get("Interakt-Signature", "").strip()
-    if not sig_header.lower().startswith("sha256="):
-        return False
-    expected_hex = sig_header.split("=", 1)[1].strip().lower()
-    raw = request.get_data(cache=True) or b""
-    try:
-        computed = hmac.new(
-            secret.encode("utf-8"), raw, hashlib.sha256,
-        ).hexdigest()
-    except Exception:
-        log.exception("[webhook/interakt] HMAC compute failed")
-        return False
-    return hmac.compare_digest(expected_hex, computed)
-
-
-def _check_auth():
-    """Validate Interakt's webhook auth.
-
-    Primary: `Interakt-Signature: sha256=<hex>` HMAC over the body
-    (Interakt's actual scheme — same pattern as GitHub/Stripe).
-
-    Fallbacks (kept defensively for other potential providers / tests):
-    `Authorization: Bearer <secret>`, custom secret headers, `?secret=`
-    query param, or a `secret` field in the JSON body.
-    """
-    secret = (Config.INTERAKT_WEBHOOK_SECRET or "").strip()
-    if not secret:
-        log.error("[webhook/interakt] INTERAKT_WEBHOOK_SECRET not configured")
-        return jsonify({"error": "Webhook not configured"}), 503
-
-    if _verify_hmac_signature(secret):
-        return None
-
-    candidates = []
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        candidates.append(auth[7:].strip())
-    elif auth:
-        candidates.append(auth.strip())
-    for h in ("X-Interakt-Secret", "X-Webhook-Secret", "X-Webhook-Token", "X-Sync-Token"):
-        v = request.headers.get(h, "").strip()
-        if v:
-            candidates.append(v)
-    qs = request.args.get("secret", "").strip()
-    if qs:
-        candidates.append(qs)
-    body = request.get_json(silent=True) or {}
-    if isinstance(body, dict):
-        for k in ("secret", "secretKey", "secret_key", "token"):
-            v = body.get(k)
-            if isinstance(v, str) and v.strip():
-                candidates.append(v.strip())
-
-    if any(c == secret for c in candidates):
-        return None
-    log.warning("[webhook/interakt] auth failed (signature + fallback all rejected)")
-    return jsonify({"error": "Unauthorized"}), 401
-
-
-def _first(*candidates):
-    """Return the first truthy candidate, or None."""
-    for c in candidates:
-        if c:
-            return c
-    return None
-
-
-def _extract_inbound(payload):
-    """Pull (phone, text, message_id, timestamp_iso, event_type) from a
-    raw Interakt webhook body. Interakt nests fields deeper than the
-    typical webhook (phone is at data.customer.phone_number, text is at
-    data.message.message_data.text), so we walk several plausible paths.
-
-    Returns a dict or None (None = not an inbound text we care about).
-    """
-    if not isinstance(payload, dict):
-        return None
-
-    event_type = (
-        payload.get("type")
-        or payload.get("event")
-        or payload.get("eventType")
-        or ""
-    ).lower()
-    if event_type and event_type not in _INBOUND_EVENT_TYPES:
-        return None
-
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
-    contact = payload.get("contact") if isinstance(payload.get("contact"), dict) else {}
-    message = (
-        data.get("message")
-        or payload.get("message")
-        or {}
-    )
-    if not isinstance(message, dict):
-        message = {}
-    msg_data = message.get("message_data") if isinstance(message.get("message_data"), dict) else {}
-
-    # Interakt's documented `message_received` schema:
-    #   data.customer.channel_phone_number (full ISD+national, e.g. 917003705584)
-    #   data.customer.phone_number         (without country code, fallback)
-    #   data.message.message               (the actual text body)
-    #   data.message.id                    (message id, e.g. UUID)
-    #   data.message.message_content_type  ("Text" | "Image" | "Document" | ...)
-    # We still try a handful of fallbacks in case Interakt's older accounts
-    # use different shapes.
-    phone = _first(
-        customer.get("channel_phone_number"),
-        customer.get("phone_number"),
-        customer.get("phoneNumber"),
-        data.get("phoneNumber"),
-        data.get("phone_number"),
-        data.get("from"),
-        contact.get("phoneNumber"),
-        contact.get("phone"),
-        payload.get("phoneNumber"),
-        payload.get("phone_number"),
-        payload.get("from"),
-    )
-    cc = _first(
-        customer.get("country_code"),
-        customer.get("countryCode"),
-        data.get("countryCode"),
-        data.get("country_code"),
-        payload.get("countryCode"),
-        payload.get("country_code"),
-        "",
-    )
-    # channel_phone_number already has the country code baked in. Don't
-    # re-prefix in that case — would double-CC.
-    if cc and phone and not customer.get("channel_phone_number"):
-        if not str(phone).startswith(str(cc).lstrip("+")):
-            phone = f"{str(cc).lstrip('+')}{phone}"
-
-    norm_phone = _normalize_phone(phone)
-
-    # Text — Interakt's primary path is `data.message.message`. The
-    # rest are defensive fallbacks for media / older payload variants.
-    text = _first(
-        message.get("message"),
-        msg_data.get("text"),
-        msg_data.get("body"),
-        message.get("text"),
-        message.get("body"),
-        data.get("text"),
-        payload.get("text"),
-    )
-    if isinstance(text, dict):
-        text = text.get("body") or text.get("text") or json.dumps(text)
-
-    # Non-text messages (image / doc / audio / location) — keep a
-    # readable label so the thread shows that something arrived; full
-    # media reference stays in raw_payload.
-    if not text:
-        mtype = _first(
-            message.get("message_content_type"),
-            msg_data.get("type"),
-            message.get("type"),
-        )
-        if mtype:
-            text = f"[{mtype} attached]"
-
-    msg_id = _first(
-        message.get("id"),
-        message.get("messageId"),
-        message.get("message_id"),
-        msg_data.get("messageId"),
-        msg_data.get("message_id"),
-        msg_data.get("id"),
-        payload.get("messageId"),
-        data.get("messageId"),
-        data.get("message_id"),
-    )
-
-    timestamp = _first(
-        message.get("received_at_utc"),
-        message.get("timestamp"),
-        msg_data.get("timestamp"),
-        data.get("timestamp"),
-        payload.get("timestamp"),
-    )
-
-    if not norm_phone or not text:
-        return None
+    sender = msg.get("sender")
+    receiver = msg.get("receiver")
+    staff_uid = Config.COMET_STAFF_UID
+    if sender == staff_uid:
+        direction, cp_id = "outbound", _uid_cp_id(receiver)
+    else:
+        direction, cp_id = "inbound", _uid_cp_id(sender)
+    meta = (msg.get("data") or {}).get("metadata") or {}
     return {
-        "phone": norm_phone,
-        "text": str(text)[:4000],
-        "message_id": str(msg_id) if msg_id else None,
-        "timestamp": timestamp,
-        "event_type": event_type or "message",
+        "comet_message_id": msg.get("id"),
+        "sender_uid": sender,
+        "direction": direction,
+        "cp_id": cp_id,
+        "staff_id": meta.get("staff_id"),
+        "body": (msg.get("data") or {}).get("text"),
+        "conversation_id": msg.get("conversationId"),
+        "sent_at": msg.get("sentAt"),
     }
 
 
-@bp.post("/interakt")
-def interakt_webhook():
-    """Persist inbound CP replies to whatsapp_messages and surface them on
-    the submission detail panel + the new admin WhatsApp Inbox.
+@bp.post("/cometchat")
+def cometchat_webhook():
+    """Persist every CometChat message-sent webhook event to `chat_messages`.
 
-    Always returns 200 once auth passes, even when the payload doesn't
-    look like an inbound message — webhooks should ack and move on rather
-    than keep the provider retrying noise events.
+    Auth: CometChat sends HTTP Basic Auth (Authorization: Basic
+    base64(user:pass)), NOT a Bearer token — Flask parses it into
+    request.authorization. Validate against COMET_WEBHOOK_USER/PASS.
     """
-    auth_err = _check_auth()
-    if auth_err is not None:
-        return auth_err
+    auth = request.authorization
+    u, p = Config.COMET_WEBHOOK_USER, Config.COMET_WEBHOOK_PASS
+    if (not u or not p or auth is None
+            or not hmac.compare_digest((auth.username or "").encode(), u.encode())
+            or not hmac.compare_digest((auth.password or "").encode(), p.encode())):
+        return jsonify({"error": "unauthorized"}), 401
 
-    payload = request.get_json(silent=True) or {}
-    info = _extract_inbound(payload)
-    if not info:
-        # Delivery receipt / unknown event — ack and move on.
-        return jsonify({"ok": True, "stored": False, "reason": "not_inbound_text"}), 200
+    row = _parse_comet_message(request.get_json(silent=True) or {})
+    if not row or not row["comet_message_id"]:
+        return jsonify({"ok": True, "skipped": True}), 200
 
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            # Find the CP by phone (last-10-digit normalize). If nothing
-            # matches, the row still gets stored — admins can see "unknown
-            # number" replies in the inbox and reach out manually.
-            cur.execute(
-                "SELECT id, name FROM channel_partners WHERE phone = %s LIMIT 1",
-                (info["phone"],),
-            )
-            cp = cur.fetchone()
-            cp_id = cp["id"] if cp else None
-
-            # Best-effort attach to the CP's most recent in-flight submission.
-            # The reply is most likely about the unit they were just reminded
-            # about. If they have no in-flight units, leave submission_id NULL
-            # (still searchable in the inbox by phone).
-            submission_id = None
-            public_id = None
-            if cp_id:
-                cur.execute(
-                    """
-                    SELECT id, public_id FROM submissions
-                    WHERE cp_id = %s
-                      AND deleted_at IS NULL
-                      AND status IN ('Submitted', 'Visit Completed')
-                    ORDER BY submitted_at DESC
-                    LIMIT 1
-                    """,
-                    (cp_id,),
-                )
-                row = cur.fetchone()
-                if row:
-                    submission_id = row["id"]
-                    public_id = row.get("public_id")
-
-            # Dedup on Interakt's message id (ON CONFLICT). Webhooks can
-            # be retried if our 2xx ack never lands.
             cur.execute(
                 """
-                INSERT INTO whatsapp_messages
-                    (direction, phone, cp_id, submission_id,
-                     template_name, body, body_params,
-                     provider_msg_id, raw_payload, received_at)
-                VALUES ('inbound', %s, %s, %s,
-                        NULL, %s, NULL,
-                        %s, %s::jsonb, COALESCE(%s::timestamptz, NOW()))
-                ON CONFLICT (provider_msg_id) DO NOTHING
+                INSERT INTO chat_messages
+                    (direction, cp_id, sender_uid, staff_id, body,
+                     comet_message_id, conversation_id, sent_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s, to_timestamp(%s))
+                ON CONFLICT (comet_message_id) DO NOTHING
                 RETURNING id
                 """,
-                (
-                    info["phone"],
-                    cp_id,
-                    submission_id,
-                    info["text"],
-                    info["message_id"],
-                    json.dumps(payload),
-                    info["timestamp"],
-                ),
+                (row["direction"], row["cp_id"], row["sender_uid"], row["staff_id"],
+                 row["body"], row["comet_message_id"], row["conversation_id"],
+                 row["sent_at"]),
             )
             inserted = cur.fetchone()
-            new_id = inserted["id"] if inserted else None
-
-            # Drop a row in activity_log for the submission detail panel +
-            # the existing Activity Log page. Skip if the message was a
-            # dedup (already-seen Interakt id).
-            if new_id and submission_id:
+            if inserted and row["direction"] == "inbound" and row["cp_id"]:
+                # log_activity's actor comes from flask.g.user (none here —
+                # this is a server-to-server webhook, same as the Interakt
+                # handler above), so we record the CP as the entity instead
+                # and stash the chat_message id in details.
                 log_activity(
                     cur,
-                    action="cp_whatsapp_reply",
-                    category="cp_whatsapp",
-                    entity_uid=public_id,
-                    entity_type="submission",
-                    entity_id=submission_id,
+                    action="cp_chat_reply",
+                    category="cp_chat",
+                    entity_type="cp",
+                    entity_id=row["cp_id"],
                     details={
-                        "phone": info["phone"],
-                        "cp_id": cp_id,
-                        "cp_name": cp["name"] if cp else None,
-                        "preview": info["text"][:240],
-                        "wa_message_id": new_id,
+                        "cp_id": row["cp_id"],
+                        "chat_message_id": inserted["id"],
+                        "preview": (row["body"] or "")[:240],
                     },
                 )
             conn.commit()
     finally:
         put_app_conn(conn)
-
-    return jsonify({
-        "ok": True,
-        "stored": bool(new_id),
-        "deduped": new_id is None,
-        "submission_id": submission_id,
-        "cp_id": cp_id,
-    }), 200
+    return jsonify({"ok": True}), 200

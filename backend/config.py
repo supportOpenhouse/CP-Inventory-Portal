@@ -71,27 +71,16 @@ class Config:
     RELAY_SALES_ID_HEADER = (os.getenv("RELAY_SALES_ID_HEADER") or "X-Sales-Id").strip() or "X-Sales-Id"
     RELAY_SALES_NAME_HEADER = (os.getenv("RELAY_SALES_NAME_HEADER") or "X-Sales-Name").strip() or "X-Sales-Name"
 
-    # -------- WhatsApp (Interakt) — CP reminder templates --------
-    # Interakt API key (basic-auth token; see https://www.interakt.shop/api-docs).
-    # Templates expected on the Interakt side:
-    #   - cp_visit_reminder        (params: cp_name, tower-unit-society, days_left)
-    #   - cp_sellermeeting_reminder(params: cp_name, tower-unit-society, days_left)
-    INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY") or None
-    INTERAKT_API_URL = os.getenv(
-        "INTERAKT_API_URL", "https://api.interakt.ai/v1/public/message/"
-    )
-    # Kill-switch: set to "false" to disable outbound WhatsApp without removing creds.
-    WA_ENABLED = os.getenv("WA_ENABLED", "true").lower() == "true"
-    # Country code prefixed to CP phones before sending. CP rows store
-    # 10-digit national numbers; Interakt needs an explicit country code.
-    WA_DEFAULT_COUNTRY_CODE = os.getenv("WA_DEFAULT_COUNTRY_CODE", "91")
-
-    # -------- Interakt inbound webhook --------
-    # Secret expected on the inbound /api/webhooks/interakt endpoint. Set
-    # the SAME value in your Interakt dashboard's webhook settings as a
-    # custom header (Authorization: Bearer <token>) so we can reject
-    # unauthenticated POSTs. Long random string (>= 48 chars).
-    INTERAKT_WEBHOOK_SECRET = os.getenv("INTERAKT_WEBHOOK_SECRET") or None
+    # -------- CometChat (in-app chat; replaces Interakt WhatsApp) --------
+    COMET_APP_ID = os.getenv("COMET_APP_ID") or None
+    COMET_REGION = os.getenv("COMET_REGION") or None
+    COMET_REST_API_KEY = os.getenv("COMET_REST_API_KEY") or None
+    COMET_AUTH_KEY = os.getenv("COMET_AUTH_KEY") or None
+    # Webhook uses HTTP Basic Auth (CometChat does NOT send a Bearer token).
+    COMET_WEBHOOK_USER = os.getenv("COMET_WEBHOOK_USER") or None
+    COMET_WEBHOOK_PASS = os.getenv("COMET_WEBHOOK_PASS") or None
+    # Shared staff identity all admins/RMs reply as.
+    COMET_STAFF_UID = os.getenv("COMET_STAFF_UID", "openhouse")
 
     # -------- CP reminder cron (X-Sync-Token header) --------
     # Daily job runs in an external scheduler (GitHub Actions / Render cron /

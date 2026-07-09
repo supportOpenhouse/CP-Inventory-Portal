@@ -23,10 +23,12 @@ from utils import normalize_phone
 # Optional LOCAL DEV bypass. The module is gitignored and only present on dev
 # machines; in production the import fails and `_local_bypass` stays None, so
 # phone-only login is blocked and OTP is strictly enforced. See local_bypass.py.
-try:
-    from local_bypass import phone_login_bypass_enabled as _local_bypass
-except Exception:
-    _local_bypass = None
+# --- LOCAL BYPASS COMMENTED OUT PER REQUEST — re-enable when advised ---
+# try:
+#     from local_bypass import phone_login_bypass_enabled as _local_bypass
+# except Exception:
+#     _local_bypass = None
+_local_bypass = None
 
 bp = Blueprint("auth_routes", __name__, url_prefix="/api")
 
@@ -285,7 +287,8 @@ def send_otp_route():
     return jsonify({
         "success": True,
         "status": status,
-        "message": "OTP sent" if status == "sent" else "Dev mode: any 6 digits will work",
+        "devMode": status == "dev_bypass",
+        "message": "OTP sent" if status == "sent" else "Dev mode — enter 000000",
     }), 200
 
 

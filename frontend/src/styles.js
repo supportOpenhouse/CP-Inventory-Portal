@@ -361,7 +361,14 @@ export const css = `
   .wa-topbar-btn:active { transform: translateY(0); }
   .wa-topbar-btn svg { display: block; }
   .wa-topbar-title { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: #fff; }
-  .wa-topbar-icon { display: inline-flex; color: #25D366; }
+  .wa-topbar-icon { display: inline-flex; color: var(--oh-orange); }
+
+  /* Admin chat inbox left pane: the "Chats | Users" toggle IS the header, so
+     hide CometChat's built-in list-header title bar to avoid a duplicate
+     "Chats"/"Users" heading. Scoped to .oh-chatlist so it never touches the
+     CP-side message pane. Search bar + list are siblings and remain. */
+  .oh-chatlist .cometchat-conversations__header,
+  .oh-chatlist .cometchat-users__header { display: none !important; }
 
   /* Thread shell — used both inside the admin DetailPanel side pane and
      the full Inbox screen. flex column so the composer pins to the

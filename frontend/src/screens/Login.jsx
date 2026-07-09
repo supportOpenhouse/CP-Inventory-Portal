@@ -8,8 +8,10 @@ const RESEND_COOLDOWN_SEC = 30;
 // Optional LOCAL DEV bypass — see src/local_bypass.js (gitignored). import.meta.glob
 // matches that file only when it's present (dev box); in production it's absent,
 // the glob returns {}, LOCAL_OTP_BYPASS stays false, and the full OTP flow runs.
-const _localBypassMods = import.meta.glob('../local_bypass.js', { eager: true });
-const LOCAL_OTP_BYPASS = Object.values(_localBypassMods)[0]?.LOCAL_OTP_BYPASS === true;
+// --- LOCAL BYPASS COMMENTED OUT PER REQUEST — re-enable when advised ---
+// const _localBypassMods = import.meta.glob('../local_bypass.js', { eager: true });
+// const LOCAL_OTP_BYPASS = Object.values(_localBypassMods)[0]?.LOCAL_OTP_BYPASS === true;
+const LOCAL_OTP_BYPASS = false;
 
 export default function Login() {
   const { sendOtp, verifyOtp, login, loading } = useAuth();

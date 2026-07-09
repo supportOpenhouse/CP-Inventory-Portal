@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
 import { clearSession, getUser, isImpersonating, setUser } from '../auth';
+import { logoutCometChat } from '../cometchat';
 
 const AuthContext = createContext(null);
 
@@ -125,6 +126,16 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
+    // Tear down the CometChat session + cached login promise BEFORE clearing
+    // the portal session / redirecting. Without this, a logout->login in the
+    // same tab reuses the cached loginPromise and the next user (e.g. a CP)
+    // inherits the previous user's CometChat identity (e.g. shared `openhouse`
+    // staff session). Best-effort: never block portal logout on chat.
+    try {
+      await logoutCometChat();
+    } catch {
+      // ignore — chat logout is best-effort
+    }
     // Clear the HttpOnly cookie server-side — but NOT from an impersonation tab,
     // where that would wipe the admin's shared session cookie. There, clearing
     // the per-tab impersonation token (clearSession) is the whole job.
