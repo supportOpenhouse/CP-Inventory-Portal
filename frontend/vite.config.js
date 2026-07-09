@@ -38,6 +38,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // The CometChat UI Kit + SDK push the main bundle past Workbox's
+        // default 2 MiB precache cap. Raise it so the build doesn't fail.
+        // (It's the app's own JS — cached on first load regardless.)
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       devOptions: {
         enabled: true,
