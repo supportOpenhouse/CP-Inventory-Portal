@@ -29,6 +29,9 @@ export function loginCometChat() {
     }
     return uid;
   })();
+  // Don't cache a FAILED login — a CP enabled mid-session (or a transient
+  // error) must be able to retry without a page reload.
+  loginPromise.catch(() => { loginPromise = null; });
   return loginPromise;
 }
 

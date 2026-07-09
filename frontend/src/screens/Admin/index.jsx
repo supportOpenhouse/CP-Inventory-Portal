@@ -15,6 +15,8 @@ import ExternalInventory from './ExternalInventory';
 import ActivityLog from './ActivityLog';
 import AdminPanel from './AdminPanel';
 import ChatInbox, { ChatIcon } from './ChatInbox';
+import UnreadBadge from '../../components/UnreadBadge';
+import { useUnreadChat } from '../../hooks/useUnreadChat';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 const BHK_OPTIONS = ['', '2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK'];
@@ -38,6 +40,7 @@ export default function Admin() {
   // per keystroke on a multi-thousand-row dataset.
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const { count: unreadChat, refresh: refreshUnread } = useUnreadChat();
   const [view, setView] = useState('board');
   const [submissions, setSubmissions] = useState([]);
   const [counts, setCounts] = useState({});
@@ -309,7 +312,7 @@ export default function Admin() {
   // Chat Inbox — CometChat conversations, role-scoped. Same scoping
   // rules as the rest of the admin app (require_staff on the API).
   if (chatInboxOpen) {
-    return <ChatInbox onClose={() => setChatInboxOpen(false)} />;
+    return <ChatInbox onClose={() => { setChatInboxOpen(false); refreshUnread(); }} />;
   }
 
   return (
@@ -338,8 +341,10 @@ export default function Admin() {
               className="logout-btn wa-topbar-btn"
               onClick={() => setChatInboxOpen(true)}
               title="Chat Inbox — CP conversations"
+              style={{ position: 'relative' }}
             >
               <ChatIcon size={30} />
+              <UnreadBadge count={unreadChat} />
             </button>
           )}
           {isAdmin && (

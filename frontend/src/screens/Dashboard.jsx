@@ -14,6 +14,8 @@ import BookVisitModal from '../components/BookVisitModal';
 import MediaVisitActions from '../components/MediaVisitActions';
 import CpChat from './CpChat';
 import { ChatIcon } from './Admin/ChatInbox';
+import UnreadBadge from '../components/UnreadBadge';
+import { useUnreadChat } from '../hooks/useUnreadChat';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
 // Note: 'Price Rejected' / 'Rejected' are intentionally NOT in the filter row
@@ -70,6 +72,7 @@ export default function Dashboard({ onAdd }) {
   });
   const [rmPhone, setRmPhone] = useState(null);
   const [rmName, setRmName] = useState(null);
+  const { count: unreadChat, refresh: refreshUnread } = useUnreadChat();
   const [filter, setFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [counterBusy, setCounterBusy] = useState({});
@@ -184,7 +187,7 @@ export default function Dashboard({ onAdd }) {
     }
   };
 
-  if (chatOpen) return <CpChat onClose={() => setChatOpen(false)} />;
+  if (chatOpen) return <CpChat onClose={() => { setChatOpen(false); refreshUnread(); }} />;
 
   return (
     <div className="app-shell">
@@ -243,6 +246,7 @@ export default function Dashboard({ onAdd }) {
               onClick={() => setChatOpen(true)}
               title="Chat with Openhouse"
               style={{
+                position: 'relative',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
@@ -260,6 +264,7 @@ export default function Dashboard({ onAdd }) {
             >
               <ChatIcon size={13} />
               Chat
+              <UnreadBadge count={unreadChat} />
             </button>
             <button
               onClick={() => setShowLogoutConfirm(true)}
