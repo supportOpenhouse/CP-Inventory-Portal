@@ -9,7 +9,7 @@ import { getUser } from '../../auth';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
 } from '../../cloudinary';
-import WhatsAppThread from './WhatsAppThread';
+import CpThread from './CpThread';
 
 // Fields the admin can edit (mirrors EDITABLE_FIELDS in backend/routes/admin.py) go
 const EDITABLE_FIELDS = [
@@ -955,14 +955,12 @@ export default function DetailPanel({ submissionId, onClose, onChanged, onOpenCp
                 </div>
               </div>
 
-              {/* WhatsApp thread — outbound reminders the cron fired +
-                  every CP reply Interakt forwarded for this CP's phone.
-                  Staff (admin/manager/RM) get a composer to reply
-                  free-text inside the 24h customer-service window;
-                  viewers see read-only. */}
+              {/* Chat thread — in-app CometChat conversation between this
+                  CP and the shared 'openhouse' staff identity. Replaces the
+                  old WhatsApp/Interakt thread. */}
               <div className="admin-panel-section">
-                <div className="admin-panel-section-title">WhatsApp</div>
-                <WhatsAppThread submissionId={s.id} hideEmpty={false} canSend={isStaff} autoScroll={false} />
+                <div className="admin-panel-section-title">Chat</div>
+                <CpThread cpId={s.cp_id} />
               </div>
 
               {/* Uploaded media — CP-shared photos + videos, at the bottom. */}

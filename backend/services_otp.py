@@ -6,6 +6,8 @@ Security:
 - Max attempts: 5 per OTP.
 - Rate limit: 3 sends per 10 minutes per phone.
 - Dev bypass: phones in OTP_DEV_BYPASS_PHONES accept code `000000`.
+- Local bypass: a genuinely local (loopback) request accepts `000000` for ANY
+  phone, via the gitignored local_bypass module (absent in prod).
 - Dev fallback: if KALEYRA_API_KEY is unset, any 6 digits are accepted for
   ANY phone. This prevents prod credentials leaking to dev but keeps
   local testing easy.
@@ -36,6 +38,21 @@ from config import Config
 from db import get_app_conn, put_app_conn
 
 logger = logging.getLogger("otp")
+
+# Optional LOCAL DEV OTP bypass — gitignored module, present only on dev
+# machines. When present, a genuinely local (loopback) request accepts the code
+# '000000' as the OTP for ANY phone (and send_otp skips the real SMS). Absent in
+# production → the import fails softly and OTP stays strictly verified.
+try:
+    from local_bypass import local_dev_request as _local_dev_request
+except Exception:  # noqa: BLE001 — module is dev-only / optional
+    _local_dev_request = None
+
+_LOCAL_BYPASS_CODE = "000000"
+
+
+def _local_dev_bypass_active() -> bool:
+    return bool(_local_dev_request) and _local_dev_request()
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +145,12 @@ def _send_sms_via_kaleyra(phone: str, code: str) -> tuple[bool, Optional[str]]:
 def send_otp(phone: str, ip: Optional[str] = None) -> tuple[str, Optional[str]]:
     """Generate and send an OTP. See module docstring for return contract."""
 
+    # LOCAL DEV: a genuinely local request never sends a real SMS — '000000'
+    # will log in (see verify_otp). Gated by the gitignored local_bypass module.
+    if _local_dev_bypass_active():
+        logger.info("[OTP] local dev request — bypass, no SMS for %s", phone)
+        return "dev_bypass", None
+
     # Dev bypass for specific phones — no SMS, no DB record.
     if _is_dev_bypass_phone(phone):
         logger.info("[OTP] dev bypass phone %s — not sending", phone)
@@ -188,6 +211,13 @@ def verify_otp(phone: str, code: str) -> tuple[str, Optional[str]]:
     code = (code or "").strip()
     if not code.isdigit() or len(code) != 6:
         return "invalid", "OTP must be 6 digits"
+
+    # LOCAL DEV bypass: on a genuinely local request, '000000' logs in ANY phone
+    # — real OTP verification is skipped. Gated by the gitignored local_bypass
+    # module, so production (module absent) stays strictly verified.
+    if code == _LOCAL_BYPASS_CODE and _local_dev_bypass_active():
+        logger.info("[OTP] local bypass — '000000' accepted for %s", phone)
+        return "ok", None
 
     # Dev bypass: specific phones accept ONLY the universal dev code
     if _is_dev_bypass_phone(phone):

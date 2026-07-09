@@ -12,6 +12,8 @@ import AgingStrip from '../components/AgingStrip';
 import ShareMediaModal from '../components/ShareMediaModal';
 import BookVisitModal from '../components/BookVisitModal';
 import MediaVisitActions from '../components/MediaVisitActions';
+import CpChat from './CpChat';
+import { ChatIcon } from './Admin/ChatInbox';
 
 // Stats / filter boxes shown at the top. Clicking a box filters the list.
 // Note: 'Price Rejected' / 'Rejected' are intentionally NOT in the filter row
@@ -78,6 +80,7 @@ export default function Dashboard({ onAdd }) {
   // Confirmation dialogs for destructive actions
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [pendingRejectId, setPendingRejectId] = useState(null);  // submission id awaiting reject confirmation
+  const [chatOpen, setChatOpen] = useState(false);  // full-screen CP<->Openhouse chat
 
   const loadSubmissions = () => {
     setState((st) => ({ ...st, loading: true }));
@@ -181,6 +184,8 @@ export default function Dashboard({ onAdd }) {
     }
   };
 
+  if (chatOpen) return <CpChat onClose={() => setChatOpen(false)} />;
+
   return (
     <div className="app-shell">
       {/* Admin "View as CP" banner — only present when this tab is an
@@ -233,24 +238,48 @@ export default function Dashboard({ onAdd }) {
           >
             📍 {user.city || 'All'}
           </div>
-          <button
-            onClick={() => setShowLogoutConfirm(true)}
-            title="Log out"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#fff',
-              background: 'rgba(255,255,255,0.12)',
-              border: '1px solid rgba(255,255,255,0.3)',
-              padding: '4px 12px',
-              borderRadius: 999,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              letterSpacing: '0.3px',
-            }}
-          >
-            Log out
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setChatOpen(true)}
+              title="Chat with Openhouse"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#fff',
+                background: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                padding: '4px 12px',
+                borderRadius: 999,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                letterSpacing: '0.3px',
+              }}
+            >
+              <ChatIcon size={13} />
+              Chat
+            </button>
+            <button
+              onClick={() => setShowLogoutConfirm(true)}
+              title="Log out"
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#fff',
+                background: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                padding: '4px 12px',
+                borderRadius: 999,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                letterSpacing: '0.3px',
+              }}
+            >
+              Log out
+            </button>
+          </div>
         </div>
       </div>
 

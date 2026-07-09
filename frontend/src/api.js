@@ -96,6 +96,35 @@ export const api = {
   // needed; cookie rides along via credentials:'include') and never reloads.
   logout: () => request('/auth/logout', { method: 'POST', auth: false }),
 
+  // CometChat: provision current user + fetch a login token.
+  getCometAuthToken: () => request('/comet/auth-token', { method: 'POST' }),
+  // Staff-only: lazily provision a CP's CometChat user before opening a
+  // thread with a CP who has never logged into chat themselves.
+  cometEnsureCpUser: (cpId) => request('/comet/ensure-user', { method: 'POST', body: { cp_id: cpId } }),
+  // Admin-only: mass-message CPs via CometChat. cp_ids (non-empty) takes
+  // precedence over city ('All' or a city name). Returns
+  // { total, sent, failed, truncated }.
+  cometBroadcast: (payload) => request('/comet/broadcast', { method: 'POST', body: payload }),
+  // CP-only: ask an admin to enable their chat access. Idempotent (one
+  // pending request per CP).
+  cometRequestChat: () => request('/comet/request-chat', { method: 'POST' }),
+  // Proxy a chat message through the backend so it's logged (with the real
+  // sender) then relayed to CometChat. Staff pass the target { cp_id, text };
+  // a CP passes just { text } (their own cp_id comes from the session).
+  cometSend: ({ cp_id = null, text }) =>
+    request('/comet/send', { method: 'POST', body: { cp_id, text } }),
+  // Staff-only: attributed chat history for one CP, read from chat_messages
+  // (who actually sent each proxied message). On-demand, not live.
+  cometHistory: (cpId) => request(`/comet/history?cp_id=${cpId}`),
+  // Admin-only: pending chat requests. Returns { requests: [{cp_id, name, phone, city, requested_at}] }.
+  cometListRequests: () => request('/comet/requests'),
+  // Admin-only: which of the given CP ids currently have chat enabled. Returns { enabled: [cpId] }.
+  cometAccessStatus: (cpIds) => request(`/comet/access?cp_ids=${cpIds.join(',')}`),
+  // Admin-only: enable a CP's chat access (provisions the CometChat user too).
+  cometEnableCp: (cpId) => request('/comet/enable', { method: 'POST', body: { cp_id: cpId } }),
+  // Admin-only: disable a CP's chat access (revokes live CometChat tokens).
+  cometDisableCp: (cpId) => request('/comet/disable', { method: 'POST', body: { cp_id: cpId } }),
+
   // Public lookups
   getRmContacts: () => request('/rm-contacts', { auth: false }),
   // Auth'd: returns the CP's own assigned RM (via channel_partners.rm -> rms)
@@ -263,24 +292,6 @@ export const api = {
     request(`/admin/staff-users/${source}/${id}/force-logout`, { method: 'POST' }),
   adminForceLogoutAll: () =>
     request('/admin/staff-users/force-logout-all', { method: 'POST' }),
-
-  // WhatsApp messages (inbound CP replies + outbound reminders).
-  // Threads list and per-thread / per-submission detail views.
-  adminListWhatsAppThreads: (filters = {}) =>
-    request(`/admin/whatsapp/threads${buildQuery(filters)}`),
-  adminGetWhatsAppThread: (phone) =>
-    request(`/admin/whatsapp/threads/${encodeURIComponent(phone)}`),
-  adminGetSubmissionWhatsApp: (submissionId) =>
-    request(`/admin/submissions/${submissionId}/whatsapp`),
-  // Free-text WhatsApp reply (24h customer-service window only — outside
-  // that window WhatsApp policy forces template messages and Interakt
-  // returns an error). The backend persists the outbound row only on a
-  // successful Interakt 2xx.
-  adminSendWhatsAppMessage: (phone, message) =>
-    request(`/admin/whatsapp/threads/${encodeURIComponent(phone)}/send`, {
-      method: 'POST',
-      body: { message },
-    }),
 
   // Activity Log — admin-only feed of all mutations across the dashboard.
   // Filters: { action, category, actor_email, actor_name, search, date_from, date_to, page, page_size }
