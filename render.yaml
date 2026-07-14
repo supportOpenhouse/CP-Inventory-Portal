@@ -1,0 +1,27 @@
+# Render Blueprint for the Flask backend. The frontend deploys separately on
+# Vercel (see frontend/vercel.json). Deploy: Render Dashboard → New → Blueprint.
+#
+# The service name below sets the default hostname
+# (https://cp-inventory-portal-api.onrender.com) — it MUST match the /api
+# rewrite destination in frontend/vercel.json. Rename both together if you
+# change it.
+services:
+  - type: web
+    name: cp-inventory-portal-api
+    runtime: python           # exact version pinned by backend/runtime.txt
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # App-factory pattern — Render's auto-detected `gunicorn app:app` would fail.
+    startCommand: gunicorn "app:create_app()" --bind 0.0.0.0:$PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLASK_ENV        # → Secure cookies + debug off (see config.py)
+        value: production
+      - key: FRONTEND_ORIGIN  # your Vercel URL, e.g. https://cp-inventory-portal.vercel.app
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      # Optional integrations (inventory DB, OTP, sync/relay, Cloudinary,
+      # CometChat, email) — set in the dashboard as needed. See backend/.env.example.

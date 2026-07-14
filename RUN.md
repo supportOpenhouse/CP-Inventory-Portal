@@ -34,3 +34,17 @@ Login is phone + OTP. Use a phone that exists as a **staff** row (`rms`) or admi
 ## Tests / migrations
 - The `tickets` table migration (`backend/migrations/2026-07-03-tickets.sql`) is already applied to the DB. Re-applying is idempotent.
 - Two WhatsApp drop-migrations exist but are optional to apply.
+
+# Deploying (frontend → Vercel, backend → Render)
+
+The two halves deploy separately but the browser sees **one origin**: the SPA calls `/api/*` (relative), and Vercel rewrites those to the Render backend server-side (`frontend/vercel.json`). That keeps the session cookie first-party (SameSite=Lax) — no cross-site cookie, no CORS in the browser.
+
+**Backend — Render** (`render.yaml`)
+1. Render Dashboard → New → **Blueprint** → pick this repo. It reads `render.yaml` (rootDir `backend`, factory start command, `/api/health` check).
+2. Set the `sync:false` env vars when prompted: `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_ORIGIN` (= your Vercel URL). Add optional integration vars from `backend/.env.example` as needed.
+3. Default hostname: `https://cp-inventory-portal-api.onrender.com`. **If your service name differs, update the `/api` rewrite in `frontend/vercel.json` to match.**
+
+**Frontend — Vercel** (`frontend/vercel.json`)
+1. Import the repo → set **Root Directory = `frontend`** (Vite is auto-detected → builds `dist`).
+2. Env vars: `VITE_API_BASE_URL` can be left unset (code defaults to `/api`). Set the public `VITE_CLOUDINARY_*` and `VITE_COMET_*` vars (see `frontend/.env`) or those features stay off.
+3. After the first deploy, set the backend's `FRONTEND_ORIGIN` on Render to the Vercel URL and redeploy — the CSRF Origin guard (`app.py`) and cookie both depend on it.
