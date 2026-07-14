@@ -7,60 +7,31 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'maskable-icon-512.png'],
       manifest: {
-        name: 'CP OpenHouse',
-        short_name: 'CP OpenHouse',
-        description: 'CP OpenHouse inventory portal',
-        theme_color: '#FF6B2B',
-        background_color: '#FFFFFF',
-        display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        name: 'CP OpenHouse', short_name: 'CP OpenHouse',
+        theme_color: '#FF6B2B', display: 'standalone', start_url: '/',
         icons: [
-          {
-            src: 'icon-192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: 'icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-          {
-            src: 'maskable-icon-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/maskable-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        // The CometChat UI Kit + SDK push the main bundle past Workbox's
-        // default 2 MiB precache cap. Raise it so the build doesn't fail.
-        // (It's the app's own JS — cached on first load regardless.)
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // The CometChat UIKit bundle is large (>2 MiB); raise the precache
+        // cap so the SW build doesn't drop it from the manifest.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
-      devOptions: {
-        enabled: true,
-      },
+      // Dev SW disabled: a dev service worker precaches the app and serves
+      // stale/broken content on reload (the "blank screen, stuck on Loading"
+      // symptom). The SW still ships in production builds (autoUpdate).
+      devOptions: { enabled: false },
     }),
   ],
   server: {
     port: 5173,
-    host: 'localhost',
-    // Proxy /api to the Flask backend so dev is SAME-ORIGIN — the session
-    // cookie is then first-party (SameSite=Lax works over http). Mirrors the
-    // prod Vercel rewrite. cookieDomainRewrite re-scopes the backend's cookie
-    // to localhost so the browser stores it.
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:5000',
-        changeOrigin: true,
-        cookieDomainRewrite: 'localhost',
-      },
+      '/api': { target: 'http://127.0.0.1:5000', changeOrigin: true, cookieDomainRewrite: 'localhost' },
     },
   },
 });

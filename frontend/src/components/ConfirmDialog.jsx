@@ -1,5 +1,7 @@
 /**
- * Reusable confirmation modal for destructive actions.
+ * Reusable confirmation modal for destructive actions. Ported from CP
+ * verbatim (same props/behavior); retokened to Direct's .modal-* classes
+ * and .btn-danger/.btn-primary instead of CP's inline-styled markup.
  *
  * Props:
  *   open        — boolean; controls visibility
@@ -25,91 +27,21 @@ export default function ConfirmDialog({
 }) {
   if (!open) return null;
 
-  const confirmBg = destructive ? '#DC2626' : 'var(--oh-orange)';
-  const confirmBorder = destructive ? '#DC2626' : 'var(--oh-orange)';
-
   return (
-    <div
-      onClick={onCancel}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(15,23,42,0.55)',
-        zIndex: 1100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-        backdropFilter: 'blur(2px)',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#fff',
-          borderRadius: 16,
-          padding: '24px 22px',
-          maxWidth: 360,
-          width: '100%',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-        }}
-      >
-        <div style={{
-          fontFamily: 'Fraunces, serif',
-          fontSize: 20,
-          fontWeight: 700,
-          color: 'var(--oh-charcoal)',
-          marginBottom: 8,
-        }}>
-          {title}
-        </div>
-        {message && (
-          <div style={{
-            fontSize: 14,
-            color: 'var(--oh-gray)',
-            lineHeight: 1.5,
-            marginBottom: 20,
-          }}>
-            {message}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            style={{
-              flex: 1,
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: '1.5px solid var(--oh-border)',
-              background: '#fff',
-              color: 'var(--oh-charcoal)',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: busy ? 'not-allowed' : 'pointer',
-              opacity: busy ? 0.5 : 1,
-              fontFamily: 'inherit',
-            }}
-          >
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{title}</h3>
+        {message && <p className="modal-sub">{message}</p>}
+        <div className="modal-actions">
+          <span style={{ flex: 1 }} />
+          <button type="button" className="btn-ghost" onClick={onCancel} disabled={busy}>
             {cancelLabel}
           </button>
           <button
             type="button"
+            className={destructive ? 'btn-danger' : 'btn-primary'}
             onClick={onConfirm}
             disabled={busy}
-            style={{
-              flex: 1,
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: `1.5px solid ${confirmBorder}`,
-              background: confirmBg,
-              color: '#fff',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: busy ? 'not-allowed' : 'pointer',
-              opacity: busy ? 0.6 : 1,
-              fontFamily: 'inherit',
-            }}
           >
             {busy ? 'Please wait…' : confirmLabel}
           </button>

@@ -35,7 +35,19 @@ export function loginCometChat() {
   return loginPromise;
 }
 
+// Idempotent CP provisioning, memoized per session — CpThread mounts on every
+// submission-detail open, and re-POSTing /comet/ensure-user each time is a wasted
+// round-trip (the CometChat user only needs creating once). Only cached on
+// success, so a transient failure still retries.
+const ensuredCps = new Set();
+export async function ensureCpUser(cpId) {
+  if (ensuredCps.has(cpId)) return;
+  await api.cometEnsureCpUser(cpId);
+  ensuredCps.add(cpId);
+}
+
 export async function logoutCometChat() {
   loginPromise = null;
+  ensuredCps.clear();
   try { await CometChatUIKit.logout(); } catch { /* ignore */ }
 }

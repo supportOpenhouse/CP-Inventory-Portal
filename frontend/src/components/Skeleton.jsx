@@ -1,6 +1,12 @@
 /**
  * Shimmering skeleton placeholder. Replaces "Loading…" text.
  * Usage: <Skeleton height={40} /> or <Skeleton width="60%" height={16} />
+ *
+ * Ported from CP verbatim (leaf dependency copied per task-1 brief step 1).
+ * NOT yet wired into any submissions/detail section — available for
+ * Task 3/4 board/table loading states. Its classnames (.skeleton-shimmer,
+ * .unit-card, .dash-stat) are CP-specific and not yet defined in Direct's
+ * styles.css; add matching CSS (or swap classnames) when wiring this in.
  */
 export default function Skeleton({ width = '100%', height = 14, radius = 6, style = {} }) {
   return (

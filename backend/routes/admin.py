@@ -1043,20 +1043,24 @@ def _stage_counts():
 @bp.get("/submissions")
 @require_staff
 def list_submissions():
-    # Auto-sync Visit Scheduled -> Visit Completed from properties.visit_submitted_at
-    # before returning the list, so the admin board reflects field-level updates
-    # without needing a separate Forms-app webhook. Best-effort; doesn't block
-    # the response on properties-side errors.
-    _sync_visit_completed_from_properties()
-    # Pull tower/unit_no/floor back from properties for any submission with a
-    # forms_uid — field execs register the actual unit details on-site and
-    # properties is the authoritative source after a visit. Always overwrites.
-    _sync_unit_details_from_properties()
-    # Sync submission status from the Forms-app cp_inventory_status table:
-    # valid_cp_id rows whose cp_id matches our public_id push their cp_status
-    # onto submissions.status. Runs last so the cp_status table has final say.
-    # Best-effort; skips terminal (rejected) cards.
-    _sync_status_from_cp_inventory()
+    # `skip_counts=true` is set by load-more / per-stage pagination requests. The
+    # board fans those out across every stage at once, and each one used to re-run
+    # all three cross-DB properties syncs below — a burst that drains the small
+    # props pool ("connection pool exhausted"). The primary board load (which
+    # computes counts) already reconciles EVERY matching submission, not just the
+    # visible page, so the extra rows a load-more fetches are already synced.
+    # Gate the syncs (and, as before, the counts) on that same flag.
+    skip_counts = request.args.get("skip_counts", "false").lower() == "true"
+    if not skip_counts:
+        # Auto-sync Visit Scheduled -> Visit Completed from properties.visit_submitted_at
+        # so the admin board reflects field-level updates without a Forms webhook.
+        _sync_visit_completed_from_properties()
+        # Pull tower/unit_no/floor back from properties for any submission with a
+        # forms_uid — properties is authoritative after a visit. Always overwrites.
+        _sync_unit_details_from_properties()
+        # Sync submission status from the Forms-app cp_inventory_status table
+        # (runs last so cp_status has final say). Best-effort; skips terminal cards.
+        _sync_status_from_cp_inventory()
 
     # Pagination: default 15 per stage, capped at 500 for safety. Frontend
     # passes `offset` only when paginating a single stage (status filter is
@@ -1078,10 +1082,8 @@ def list_submissions():
     # actually render. The side panel re-fetches the full row on click.
     subs = _list_submissions_core(slim=True, limit_per_stage=limit, offset=offset)
 
-    # `skip_counts=true` is set by load-more requests so we don't re-run the
-    # COUNT-per-stage aggregate every scroll trigger. Counts only need to
-    # change when filters change (handled by a fresh reload, not a load-more).
-    skip_counts = request.args.get("skip_counts", "false").lower() == "true"
+    # skip_counts (parsed above) also skips the COUNT-per-stage aggregate on
+    # load-more — counts only change when filters change (a fresh reload).
     counts = None if skip_counts else _stage_counts()
     payload = {"submissions": subs}
     if counts is not None:
@@ -1433,7 +1435,9 @@ EDITABLE_FIELDS = {
 
 @bp.patch("/submissions/<int:sid>")
 @require_staff
-@require_admin_role
+# Unit-details editing is open to every staff role (admin/manager/rm/viewer) —
+# only CPs are excluded, and they can't reach admin routes anyway. (Was
+# admin-only; deliberately relaxed per product decision.)
 def edit_submission(sid: int):
     data = request.get_json(silent=True) or {}
     allowed = {k: v for k, v in data.items() if k in EDITABLE_FIELDS}
@@ -2727,7 +2731,7 @@ def list_rms():
             try:
                 cur.execute("""
                     SELECT r.id, r.name, r.phone, r.email,
-                           r.city AS city,
+                           r.city AS city, r.manager_id,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            r.manager_id
                     FROM rms r
@@ -3970,457 +3974,17 @@ def bulk_reassign_listing_rm():
 
 
 # ============================================================
-# External inventory view: inventory (Inventory DB) + properties (Properties DB)
-# ============================================================
-#
-# Read-only view of inventory rows that are NOT in our submissions table.
-# Merged + paginated in Python (cross-DB, can't UNION at SQL level). Used by
-# the admin "External Data" page.
-#
-# Display labels: inventory => "D Data"; properties => "F Data".
-# ============================================================
-
-EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT = 100
-EXTERNAL_INVENTORY_PAGE_SIZE_MAX = 500
-
-# Facet dropdowns (Source, BHK) on the OH Properties page must show the
-# FULL set of options regardless of the user's current filters. If we
-# narrowed facets by the active filters, picking City=Gurgaon would hide
-# any BHK that doesn't exist in Gurgaon and the user couldn't switch
-# from one value to another without first clearing. We cache the full
-# distinct-value lists in memory with a small TTL.
-_EXT_FACETS_CACHE = {"data": None, "expires_at": 0.0}
-_EXT_FACETS_TTL_SECONDS = 300
-
-
-def _canonical_source(s):
-    """Strip trailing '-Scraping' (case-insensitive) so e.g. '99acres' and
-    '99acres-Scraping' fold to one canonical value."""
-    if not s:
-        return s
-    return re.sub(r"-[Ss]craping$", "", s).strip()
-
-
-def _canonical_bhk(s):
-    """Normalize BHK strings so '2 BHK', '2BHK', and '2bhk' all fold to
-    one canonical display: '<n> BHK'. Non-matching strings (e.g.
-    'Studio') are returned trimmed but otherwise unchanged.
-    """
-    if not s:
-        return s
-    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*BHK\s*$", str(s).strip(), re.IGNORECASE)
-    if m:
-        return f"{m.group(1)} BHK"
-    return str(s).strip()
-
-
-def _ext_inventory_global_facets():
-    """All distinct sources / BHKs across both tables, regardless of the
-    caller's current filters. Memoised for `_EXT_FACETS_TTL_SECONDS` so
-    we don't hit the DB on every paginated query.
-    """
-    import time
-    now = time.time()
-    if _EXT_FACETS_CACHE["data"] and _EXT_FACETS_CACHE["expires_at"] > now:
-        return _EXT_FACETS_CACHE["data"]
-
-    sources_d, bhks_d = [], []
-    if inventory_configured():
-        ac = get_inv_conn()
-        try:
-            with ac.cursor() as cur:
-                cur.execute(
-                    "SELECT DISTINCT source FROM inventory "
-                    "WHERE source IS NOT NULL AND TRIM(source) <> ''"
-                )
-                sources_d = [r["source"] for r in cur.fetchall()]
-                # inventory.bedrooms is INTEGER — cast to text for the facet list.
-                cur.execute(
-                    "SELECT DISTINCT bedrooms::text AS bedrooms FROM inventory "
-                    "WHERE bedrooms IS NOT NULL"
-                )
-                bhks_d = [r["bedrooms"] for r in cur.fetchall()]
-        finally:
-            put_inv_conn(ac)
-
-    sources_p, bhks_p = [], []
-    if properties_configured():
-        pc = get_props_conn()
-        try:
-            with pc.cursor() as cur:
-                cur.execute(
-                    "SELECT DISTINCT source FROM properties "
-                    "WHERE source IS NOT NULL AND TRIM(source) <> '' "
-                    "  AND COALESCE(is_dead, FALSE) = FALSE"
-                )
-                sources_p = [r["source"] for r in cur.fetchall()]
-                cur.execute(
-                    "SELECT DISTINCT configuration FROM properties "
-                    "WHERE configuration IS NOT NULL AND TRIM(configuration) <> '' "
-                    "  AND COALESCE(is_dead, FALSE) = FALSE"
-                )
-                bhks_p = [r["configuration"] for r in cur.fetchall()]
-        finally:
-            put_props_conn(pc)
-
-    sources = sorted({_canonical_source(s) for s in (sources_d + sources_p) if s} - {""})
-    # Collapse "2 BHK" / "2BHK" / "2bhk" duplicates via _canonical_bhk.
-    bhks = sorted({_canonical_bhk(b) for b in (bhks_d + bhks_p) if b} - {""})
-
-    facets = {
-        "sources": sources,
-        "bhks":    bhks,
-        "cities":  ["Gurgaon", "Noida", "Ghaziabad"],  # well-known short list
-    }
-    _EXT_FACETS_CACHE["data"] = facets
-    _EXT_FACETS_CACHE["expires_at"] = now + _EXT_FACETS_TTL_SECONDS
-    return facets
-
-
-SORTABLE_COLUMNS = {
-    "type":    {"is_str": True},
-    "id":      {"is_str": True},
-    "source":  {"is_str": True},
-    "society": {"is_str": True},
-    "city":    {"is_str": True},
-    "bhk":     {"is_str": True},
-    "floor":   {"is_str": True},   # mixed text/numeric across sources; treat as string
-    "tower":   {"is_str": True},
-    "unit_no": {"is_str": True},
-    "area":    {"is_str": False},
-    "date":    {"is_str": True},   # ISO strings sort lexicographically = chronologically
-}
-
-
-@bp.get("/external-inventory")
-@require_staff
-def list_external_inventory():
-    """Merged read-only view of `inventory` (Inventory DB) + `properties`
-    (Properties DB), normalised to a single column shape.
-
-    Query string:
-      q           substring match against society/locality/source
-      city        exact-match (case-insensitive)
-      source      exact-match (case-insensitive) on the row's source
-      bhk         exact-match (case-insensitive) on bedrooms/configuration
-      floor       exact-match string against floor (case/whitespace-insensitive)
-      area_min    minimum area_sqft (inclusive)
-      area_max    maximum area_sqft (inclusive)
-      date_from   YYYY-MM-DD inclusive lower bound (against posting_date /
-                  schedule_submitted_at)
-      date_to     YYYY-MM-DD inclusive upper bound
-      type        'D' | 'F' | omitted (both)
-      sort        column name (see SORTABLE_COLUMNS)
-      direction   'asc' | 'desc'  (default desc)
-      page        1-based (default 1)
-      page_size   default 100, capped at 500
-    """
-    # Per-user gate: admins can disable a staff user's access to OH Properties
-    # via the admin panel (PATCH /staff-users/.../can_see_oh_properties=false).
-    if not _user_can_see_oh_properties():
-        return jsonify({
-            "error": "Access to OH Properties is disabled for your account. "
-                     "Contact an admin if you need it.",
-        }), 403
-
-    args = request.args
-    q       = (args.get("q") or "").strip()
-    city    = (args.get("city") or "").strip() or None
-    source  = (args.get("source") or "").strip() or None
-    bhk     = (args.get("bhk") or "").strip() or None
-    floor   = (args.get("floor") or "").strip() or None
-    type_filter = (args.get("type") or "").strip().upper() or None
-    if type_filter not in ("D", "F"):
-        type_filter = None
-    sort_col = (args.get("sort") or "date").strip().lower()
-    if sort_col not in SORTABLE_COLUMNS:
-        sort_col = "date"
-    direction = (args.get("direction") or "desc").strip().lower()
-    if direction not in ("asc", "desc"):
-        direction = "desc"
-
-    def _to_int(v):
-        try: return int(v) if v not in (None, "") else None
-        except (TypeError, ValueError): return None
-    area_min = _to_int(args.get("area_min"))
-    area_max = _to_int(args.get("area_max"))
-
-    def _validate_date(s):
-        s = (s or "").strip()
-        if not s: return None
-        return s if re.match(r"^\d{4}-\d{2}-\d{2}$", s) else None
-    date_from = _validate_date(args.get("date_from"))
-    date_to   = _validate_date(args.get("date_to"))
-
-    try:
-        page = max(1, int(args.get("page") or 1))
-    except ValueError:
-        page = 1
-    try:
-        page_size = int(args.get("page_size") or EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT)
-    except ValueError:
-        page_size = EXTERNAL_INVENTORY_PAGE_SIZE_DEFAULT
-    page_size = max(1, min(EXTERNAL_INVENTORY_PAGE_SIZE_MAX, page_size))
-
-    rows = []
-
-    # ── 1) inventory (Inventory DB) → "D Data" ────────────────────
-    if type_filter in (None, "D") and inventory_configured():
-        conn = get_inv_conn()
-        try:
-            with conn.cursor() as cur:
-                clauses, params = [], []
-                if city:
-                    clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
-                    params.append(city)
-                if source:
-                    # "-Scraping" variants collapse into their base name —
-                    # 99acres + 99acres-Scraping are treated as the same source
-                    # by the user. Strip the suffix on both sides for the match.
-                    clauses.append(
-                        "LOWER(TRIM(REGEXP_REPLACE(COALESCE(source, ''), '-[Ss]craping$', ''))) "
-                        "= LOWER(TRIM(REGEXP_REPLACE(%s, '-[Ss]craping$', '')))"
-                    )
-                    params.append(source)
-                if bhk:
-                    # BHK floored to its integer part: '2.5 BHK' -> '2'. The
-                    # inventory.bedrooms INTEGER column already holds the floored
-                    # value, so this matches it directly.
-                    clauses.append(
-                        "SUBSTRING(COALESCE(bedrooms::text, '') FROM '[0-9]+') "
-                        "= SUBSTRING(%s FROM '[0-9]+')"
-                    )
-                    params.append(bhk)
-                if floor:
-                    clauses.append("LOWER(TRIM(COALESCE(floor, ''))) = LOWER(TRIM(%s))")
-                    params.append(floor)
-                if area_min is not None:
-                    clauses.append("COALESCE(area_sqft, 0) >= %s")
-                    params.append(area_min)
-                if area_max is not None:
-                    clauses.append("COALESCE(area_sqft, 0) <= %s")
-                    params.append(area_max)
-                if date_from:
-                    clauses.append("posting_date >= %s::date")
-                    params.append(date_from)
-                if date_to:
-                    clauses.append("posting_date <= %s::date")
-                    params.append(date_to)
-                if q:
-                    clauses.append("(society ILIKE %s OR locality ILIKE %s OR source ILIKE %s)")
-                    like = f"%{q}%"
-                    params.extend([like, like, like])
-                where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-                cur.execute(f"""
-                    SELECT oh_id, id, source, city, locality, society, bedrooms::text AS bedrooms,
-                           area_sqft, floor, price, posting_date, listing_link
-                    FROM inventory
-                    {where}
-                """, params)
-                for r in cur.fetchall():
-                    pd = r.get("posting_date")
-                    # Use the business id `oh_id` as the row's display id; fall
-                    # back to the serial `id` only if oh_id is missing (nullable).
-                    oh_id = r.get("oh_id")
-                    row_id = oh_id if oh_id not in (None, "") else (
-                        str(r["id"]) if r.get("id") is not None else None
-                    )
-                    rows.append({
-                        "type":     "D",
-                        "id":       row_id,
-                        "source":   r.get("source"),
-                        "society":  r.get("society"),
-                        "city":     r.get("city"),
-                        "locality": r.get("locality"),
-                        "bhk":      _canonical_bhk(r.get("bedrooms")),
-                        "floor":    r.get("floor"),
-                        "tower":    None,
-                        "unit_no":  None,
-                        "area":     r.get("area_sqft"),
-                        "price":    float(r["price"]) if r.get("price") is not None else None,
-                        "date":     pd.isoformat() if pd else None,
-                        "listing_link": r.get("listing_link"),
-                    })
-        finally:
-            put_inv_conn(conn)
-
-    # ── 2) properties (Properties DB) → "F Data" ──────────────────
-    if type_filter in (None, "F") and properties_configured():
-        pconn = get_props_conn()
-        try:
-            with pconn.cursor() as cur:
-                clauses, params = [], []
-                if city:
-                    clauses.append("LOWER(TRIM(city)) = LOWER(TRIM(%s))")
-                    params.append(city)
-                if source:
-                    # Same -Scraping collapsing as inventory above.
-                    clauses.append(
-                        "LOWER(TRIM(REGEXP_REPLACE(COALESCE(source, ''), '-[Ss]craping$', ''))) "
-                        "= LOWER(TRIM(REGEXP_REPLACE(%s, '-[Ss]craping$', '')))"
-                    )
-                    params.append(source)
-                if bhk:
-                    # Same BHK flooring as inventory above: '2.5 BHK' -> '2'.
-                    clauses.append(
-                        "SUBSTRING(COALESCE(configuration, '') FROM '[0-9]+') "
-                        "= SUBSTRING(%s FROM '[0-9]+')"
-                    )
-                    params.append(bhk)
-                if floor:
-                    # properties.floor is INT; cast both sides to text for match
-                    clauses.append("LOWER(TRIM(COALESCE(floor::text, ''))) = LOWER(TRIM(%s))")
-                    params.append(floor)
-                if area_min is not None:
-                    clauses.append("COALESCE(area_sqft, 0) >= %s")
-                    params.append(area_min)
-                if area_max is not None:
-                    clauses.append("COALESCE(area_sqft, 0) <= %s")
-                    params.append(area_max)
-                if date_from:
-                    clauses.append("schedule_submitted_at >= %s::date")
-                    params.append(date_from)
-                if date_to:
-                    # Inclusive end-of-day so a single-day filter catches the full day
-                    clauses.append("schedule_submitted_at < (%s::date + interval '1 day')")
-                    params.append(date_to)
-                if q:
-                    clauses.append("(society_name ILIKE %s OR locality ILIKE %s OR source ILIKE %s)")
-                    like = f"%{q}%"
-                    params.extend([like, like, like])
-                # Hide rows the prod team has marked dead (is_dead=true).
-                clauses.append("COALESCE(is_dead, FALSE) = FALSE")
-                where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-                cur.execute(f"""
-                    SELECT uid, source, city, locality, society_name,
-                           configuration, area_sqft, floor, tower_no, unit_no,
-                           schedule_submitted_at
-                    FROM properties
-                    {where}
-                """, params)
-                for r in cur.fetchall():
-                    ts = r.get("schedule_submitted_at")
-                    rows.append({
-                        "type":     "F",
-                        "id":       r.get("uid"),
-                        "source":   r.get("source"),
-                        "society":  r.get("society_name"),
-                        "city":     r.get("city"),
-                        "locality": r.get("locality"),
-                        "bhk":      _canonical_bhk(r.get("configuration")),
-                        "floor":    str(r["floor"]) if r.get("floor") is not None else None,
-                        "tower":    r.get("tower_no"),
-                        "unit_no":  r.get("unit_no"),
-                        "area":     float(r["area_sqft"]) if r.get("area_sqft") is not None else None,
-                        "price":    None,
-                        "date":     ts.isoformat() if ts else None,
-                        "listing_link": None,
-                    })
-        finally:
-            put_props_conn(pconn)
-
-    # Server-side sort by chosen column.
-    #
-    # Special handling:
-    #  - DATES are mixed: inventory.posting_date is a DATE (isoformat
-    #    "YYYY-MM-DD"), properties.schedule_submitted_at is a TIMESTAMPTZ
-    #    (isoformat "YYYY-MM-DDTHH:MM:SS+00:00"). Compare just the first 10
-    #    characters so a same-day bare-date and timestamp sort together
-    #    (and so the lexicographic order genuinely reflects calendar order).
-    #  - NULLS always sink to the bottom regardless of direction. We do
-    #    this by partitioning before sort — using `reverse=True` inverts
-    #    the entire list, which would have floated nulls to the top.
-    is_str = SORTABLE_COLUMNS[sort_col]["is_str"]
-
-    def _is_empty(v):
-        return v is None or (isinstance(v, str) and not v.strip())
-
-    def _key(r):
-        v = r.get(sort_col)
-        if sort_col == "date":
-            return str(v)[:10]   # YYYY-MM-DD only — strips any time/TZ suffix
-        if is_str:
-            return str(v).lower()
-        return v
-
-    non_null = [r for r in rows if not _is_empty(r.get(sort_col))]
-    null_rows = [r for r in rows if     _is_empty(r.get(sort_col))]
-    non_null.sort(key=_key)
-    if direction == "desc":
-        non_null.reverse()
-    rows = non_null + null_rows
-
-    total = len(rows)
-    start = (page - 1) * page_size
-    paged = rows[start:start + page_size]
-
-    counts = {
-        "D": sum(1 for r in rows if r["type"] == "D"),
-        "F": sum(1 for r in rows if r["type"] == "F"),
-    }
-
-    # Facet values for the filter dropdowns — pulled from the GLOBAL
-    # distinct-value cache, NOT from the filtered row set. Otherwise
-    # picking one filter narrows the other dropdowns and the user can't
-    # switch values without first going back to "All". See
-    # _ext_inventory_global_facets() for the cache.
-    facets = _ext_inventory_global_facets()
-
-    return jsonify({
-        "results":   paged,
-        "total":     total,
-        "page":      page,
-        "page_size": page_size,
-        "counts":    counts,
-        "facets":    facets,
-        "sort":      sort_col,
-        "direction": direction,
-    }), 200
-
-
-# ============================================================
 # Admin Panel: staff-user management
 # ============================================================
 #
 # A small admin-only surface to manage staff users (RMs / managers / admins),
 # their per-feature permissions, and force-logout. Backed by:
 #   - submissions / channel_partners / rms tables (existing)
-#   - `force_logout_at` and `can_see_oh_properties` columns added in
-#     migrations/2026-05-01-admin-panel.sql
+#   - `force_logout_at` column added in migrations/2026-05-01-admin-panel.sql
 #
 # CPs are NOT shown here — they have their own onboarding flow (OTP signup)
 # and aren't part of "staff".
 # ============================================================
-
-
-def _user_can_see_oh_properties() -> bool:
-    """Look up the calling user's can_see_oh_properties flag. Defaults
-    to TRUE (the column has DEFAULT TRUE) so no row should ever lack it.
-    """
-    role = g.user.get("role", "cp")
-    conn = get_app_conn()
-    try:
-        with conn.cursor() as cur:
-            if role in ("rm", "manager"):
-                rm_id = g.user.get("rm_id")
-                if not rm_id:
-                    return False
-                cur.execute(
-                    "SELECT can_see_oh_properties FROM rms WHERE id = %s",
-                    (rm_id,),
-                )
-            else:
-                cp_id = g.user.get("cp_id")
-                if not cp_id:
-                    return False
-                cur.execute(
-                    "SELECT can_see_oh_properties FROM channel_partners WHERE id = %s",
-                    (cp_id,),
-                )
-            row = cur.fetchone()
-            return bool(row and row.get("can_see_oh_properties"))
-    finally:
-        put_app_conn(conn)
 
 
 @bp.get("/staff-users")
@@ -4440,8 +4004,7 @@ def list_staff_users():
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT id, name, phone, COALESCE(is_active, TRUE) AS is_active,
-                       COALESCE(can_see_oh_properties, TRUE) AS can_see_oh_properties,
+                SELECT id, name, phone, email, COALESCE(is_active, TRUE) AS is_active,
                        force_logout_at, created_at
                 FROM channel_partners
                 WHERE COALESCE(is_admin, FALSE) = TRUE
@@ -4453,10 +4016,10 @@ def list_staff_users():
                     "id":       r["id"],
                     "name":     r.get("name") or "",
                     "phone":    r.get("phone") or "",
-                    "email":    None,
+                    "email":    r.get("email"),
+                    "manager_id": None,
                     "role":     "admin",
                     "is_active": bool(r.get("is_active")),
-                    "can_see_oh_properties": bool(r.get("can_see_oh_properties")),
                     "force_logout_at": (
                         r["force_logout_at"].isoformat()
                         if r.get("force_logout_at") else None
@@ -4470,8 +4033,7 @@ def list_staff_users():
                            COALESCE(r.is_active, TRUE) AS is_active,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            COALESCE(r.is_viewer, FALSE)  AS is_viewer,
-                           r.city AS city,
-                           COALESCE(r.can_see_oh_properties, TRUE) AS can_see_oh_properties,
+                           r.city AS city, r.manager_id,
                            r.force_logout_at, r.created_at
                     FROM rms r
                     ORDER BY r.id
@@ -4484,8 +4046,7 @@ def list_staff_users():
                            COALESCE(r.is_active, TRUE) AS is_active,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            FALSE AS is_viewer,
-                           r.city AS city,
-                           COALESCE(r.can_see_oh_properties, TRUE) AS can_see_oh_properties,
+                           r.city AS city, r.manager_id,
                            r.force_logout_at, r.created_at
                     FROM rms r
                     ORDER BY r.id
@@ -4506,8 +4067,8 @@ def list_staff_users():
                     "email":    r.get("email"),
                     "role":     role_name,
                     "city":     r.get("city"),
+                    "manager_id": r.get("manager_id"),
                     "is_active": bool(r.get("is_active")),
-                    "can_see_oh_properties": bool(r.get("can_see_oh_properties")),
                     "force_logout_at": (
                         r["force_logout_at"].isoformat()
                         if r.get("force_logout_at") else None
@@ -4626,7 +4187,6 @@ def add_staff_user():
             "email": email,
             "role": role,
             "is_active": True,
-            "can_see_oh_properties": True,
         },
     }), 201
 
@@ -4657,7 +4217,11 @@ def patch_staff_user(source, user_id):
       city                   -> str | null. Required when flipping to viewer
                                 if the row doesn't already have one. Ignored
                                 for source='cp'.
-      can_see_oh_properties  -> bool
+      name                   -> str (non-empty)
+      phone                  -> str (normalised to 10 digits; must be unique)
+      email                  -> str | null
+      manager_id             -> int | null (rms only) — the manager this user
+                                reports to. Must reference an is_manager row.
       is_active              -> bool
     """
     try:
@@ -4668,9 +4232,65 @@ def patch_staff_user(source, user_id):
     data = request.get_json(silent=True) or {}
     sets, params = [], []
 
-    if "can_see_oh_properties" in data:
-        sets.append("can_see_oh_properties = %s")
-        params.append(bool(data["can_see_oh_properties"]))
+    if "name" in data:
+        name = to_str(data.get("name"), 200)
+        if not name:
+            return jsonify({"error": "name cannot be empty"}), 400
+        sets.append("name = %s")
+        params.append(name)
+    if "phone" in data:
+        phone = _normalize_phone_to_10_digits((data.get("phone") or "").strip())
+        if not phone or len(phone) != 10 or phone.startswith("0"):
+            return jsonify({"error": "phone must be a valid 10-digit number"}), 400
+        conn_p = get_app_conn()
+        try:
+            with conn_p.cursor() as cur_p:
+                cur_p.execute(
+                    f"SELECT id FROM {table} "
+                    "WHERE RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 10) = %s AND id <> %s",
+                    (phone, user_id),
+                )
+                if cur_p.fetchone():
+                    return jsonify({"error": "Another user already has that phone."}), 409
+        finally:
+            put_app_conn(conn_p)
+        # rms store the '+91 ' prefix (repo convention); channel_partners store raw.
+        sets.append("phone = %s")
+        params.append(f"+91 {phone}" if source == "rm" else phone)
+    if "email" in data:
+        sets.append("email = %s")
+        params.append(to_str(data.get("email"), 200) or None)
+    if source == "rm" and "manager_id" in data:
+        mid = data["manager_id"]
+        if mid in (None, "", 0, "0"):
+            sets.append("manager_id = %s")
+            params.append(None)
+        else:
+            try:
+                mid = int(mid)
+            except (TypeError, ValueError):
+                return jsonify({"error": "manager_id must be an integer or null"}), 400
+            if mid == user_id:
+                return jsonify({"error": "a user can't be their own manager"}), 400
+            conn_m = get_app_conn()
+            try:
+                with conn_m.cursor() as cur_m:
+                    cur_m.execute(
+                        "SELECT COALESCE(is_manager, FALSE) AS is_manager FROM rms WHERE id = %s",
+                        (mid,),
+                    )
+                    row_m = cur_m.fetchone()
+            finally:
+                put_app_conn(conn_m)
+            if not row_m:
+                return jsonify({"error": "manager not found"}), 400
+            if not row_m.get("is_manager"):
+                return jsonify({"error": "that user is not a manager"}), 400
+            # ponytail: blocks only the direct self-loop; deeper cycles (A→B→A) are
+            # tolerated — the team CTE (routes/tickets.py) already UNION-guards
+            # traversal, so a cycle can't hang a query.
+            sets.append("manager_id = %s")
+            params.append(mid)
     if "is_active" in data:
         sets.append("is_active = %s")
         params.append(bool(data["is_active"]))
@@ -4735,7 +4355,8 @@ def patch_staff_user(source, user_id):
             log_activity(
                 cur, action="staff_user_updated", category="staff_user",
                 entity_type=("channel_partner" if source == "cp" else "rm"), entity_id=user_id,
-                details={k: v for k, v in data.items() if k in ("role", "is_active", "can_see_oh_properties")},
+                details={k: v for k, v in data.items()
+                         if k in ("role", "is_active", "name", "phone", "email", "manager_id")},
             )
             conn.commit()
     finally:
@@ -4921,7 +4542,7 @@ def list_activity_log():
 def list_activity_log_facets():
     """Distinct values used to populate the filter dropdowns. Computed
     over the entire table, NOT the current filter set, so dropdowns
-    don't narrow as you select things (same gotcha we hit on OH Properties)."""
+    don't narrow as you select things."""
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:

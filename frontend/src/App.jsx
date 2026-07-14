@@ -1,45 +1,59 @@
-import { useState } from 'react';
+import { lazy, Suspense } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext.jsx';
+import Layout from './components/Layout.jsx';
+import Login from './pages/Login.jsx';
+import Home from './pages/Home.jsx';
+import Submissions from './pages/Submissions.jsx';
+import CpApp from './pages/CpApp.jsx';
+import DotLoader from './components/DotLoader.jsx';
 
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import InstallPrompt from './components/InstallPrompt';
-import Login from './screens/Login';
-import Dashboard from './screens/Dashboard';
-import AddUnit from './screens/AddUnit';
-import Admin from './screens/Admin';
-import { css, fonts } from './styles';
+const Impersonator = lazy(() => import('./pages/Impersonator.jsx'));
+const Logs = lazy(() => import('./pages/Logs.jsx'));
+const Users = lazy(() => import('./pages/Users.jsx'));
+const Tickets = lazy(() => import('./pages/Tickets.jsx'));
+const Profile = lazy(() => import('./pages/Profile.jsx'));
+const Chat = lazy(() => import('./pages/Chat.jsx'));
 
-function Shell() {
-  const { user, bootstrapping } = useAuth();
-  const [screen, setScreen] = useState('dashboard');
+const STAFF = ['admin', 'manager', 'rm', 'viewer'];
 
-  // A token exists but the user isn't hydrated yet (e.g. an impersonation tab
-  // fetching /me). Hold a blank frame instead of flashing Login.
-  if (bootstrapping) {
-    return <div style={{ minHeight: '100vh', background: '#fff' }} />;
+// roles=undefined → any authenticated staff; roles=[] → admin only;
+// roles=[...] → those roles (admin always passes).
+function RequireRole({ user, roles, children }) {
+  if (roles && !roles.includes(user.role) && user.role !== 'admin') {
+    return <Navigate to="/" replace />;
   }
-
-  if (!user) return <Login />;
-
-  // Staff (RM / manager / admin / viewer) all go to admin dashboard.
-  // Viewers see the same UI but every action button is hidden — they have
-  // read-only city-wide access.
-  if (['rm', 'manager', 'admin', 'viewer'].includes(user.role)) {
-    return <Admin />;
-  }
-
-  // CPs get original flow
-  if (screen === 'addUnit') {
-    return <AddUnit onDone={() => setScreen('dashboard')} />;
-  }
-  return <Dashboard onAdd={() => setScreen('addUnit')} />;
+  return children;
 }
 
 export default function App() {
+  const { user, bootstrapping } = useAuth();
+  // Bouncing-dots loader during the session probe + while a lazy route chunk
+  // loads — the two most visible loading moments.
+  const pageLoader = (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'grid', placeItems: 'center' }}>
+      <DotLoader />
+    </div>
+  );
+  if (bootstrapping) return pageLoader;
+  if (!user) return <Login />;
+  if (!STAFF.includes(user.role)) return <CpApp />;   // role === 'cp'
+
   return (
-    <AuthProvider>
-      <style>{fonts}{css}</style>
-      <Shell />
-      <InstallPrompt />
-    </AuthProvider>
+    <Suspense fallback={pageLoader}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/submissions" element={<Submissions />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/tickets" element={<RequireRole user={user} roles={['manager', 'rm']}><Tickets /></RequireRole>} />
+          <Route path="/impersonator" element={<RequireRole user={user} roles={[]}><Impersonator /></RequireRole>} />
+          <Route path="/users" element={<RequireRole user={user} roles={[]}><Users /></RequireRole>} />
+          <Route path="/logs" element={<RequireRole user={user} roles={[]}><Logs /></RequireRole>} />
+          <Route path="/chat" element={<RequireRole user={user} roles={['manager', 'rm']}><Chat /></RequireRole>} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

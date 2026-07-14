@@ -46,10 +46,10 @@ class Config:
     KALEYRA_SENDER_ID = os.getenv("KALEYRA_SENDER_ID", "OHAVAN")
     KALEYRA_TEMPLATE_ID = os.getenv("KALEYRA_TEMPLATE_ID", "1107173502114302174")
     # Comma-separated list of phone numbers that accept `000000` as a universal bypass.
-    # Default includes the admin phone so testing works even without env setup.
+    # Empty by default — no phone bypasses OTP unless explicitly opted in via env.
     OTP_DEV_BYPASS_PHONES = [
         p.strip() for p in os.getenv(
-            "OTP_DEV_BYPASS_PHONES", "9555666059"
+            "OTP_DEV_BYPASS_PHONES", ""
         ).split(",") if p.strip()
     ]
     # OTP behavior
@@ -68,25 +68,9 @@ class Config:
     # Generate a long random string (>= 48 chars) for production.
     RELAY_API_KEY = os.getenv("RELAY_API_KEY") or None
     RELAY_API_KEY_HEADER = (os.getenv("RELAY_API_KEY_HEADER") or "X-API-Key").strip() or "X-API-Key"
+    # Headers the relay uses to identify the acting salesperson for on-behalf submissions.
     RELAY_SALES_ID_HEADER = (os.getenv("RELAY_SALES_ID_HEADER") or "X-Sales-Id").strip() or "X-Sales-Id"
     RELAY_SALES_NAME_HEADER = (os.getenv("RELAY_SALES_NAME_HEADER") or "X-Sales-Name").strip() or "X-Sales-Name"
-
-    # -------- CometChat (in-app chat; replaces Interakt WhatsApp) --------
-    COMET_APP_ID = os.getenv("COMET_APP_ID") or None
-    COMET_REGION = os.getenv("COMET_REGION") or None
-    COMET_REST_API_KEY = os.getenv("COMET_REST_API_KEY") or None
-    COMET_AUTH_KEY = os.getenv("COMET_AUTH_KEY") or None
-    # Webhook uses HTTP Basic Auth (CometChat does NOT send a Bearer token).
-    COMET_WEBHOOK_USER = os.getenv("COMET_WEBHOOK_USER") or None
-    COMET_WEBHOOK_PASS = os.getenv("COMET_WEBHOOK_PASS") or None
-    # Shared staff identity all admins/RMs reply as.
-    COMET_STAFF_UID = os.getenv("COMET_STAFF_UID", "openhouse")
-
-    # -------- CP reminder cron (X-Sync-Token header) --------
-    # Daily job runs in an external scheduler (GitHub Actions / Render cron /
-    # cron-job.org) that POSTs to /api/cron/send-cp-reminders. Token shared
-    # via this env var. If unset, the cron endpoint returns 503.
-    CP_REMINDER_CRON_TOKEN = os.getenv("CP_REMINDER_CRON_TOKEN") or None
 
     # -------- Forms App integration (Schedule Visit) --------
     # External Forms app handles visit scheduling end-to-end. Admin clicks
@@ -106,6 +90,17 @@ class Config:
     CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME") or None
     CLOUDINARY_UPLOAD_PRESET = os.getenv("CLOUDINARY_UPLOAD_PRESET") or None
 
+    # -------- CometChat (in-app chat; replaces Interakt WhatsApp) --------
+    COMET_APP_ID = os.getenv("COMET_APP_ID") or None
+    COMET_REGION = os.getenv("COMET_REGION") or None
+    COMET_REST_API_KEY = os.getenv("COMET_REST_API_KEY") or None
+    COMET_AUTH_KEY = os.getenv("COMET_AUTH_KEY") or None
+    # Webhook uses HTTP Basic Auth (CometChat does NOT send a Bearer token).
+    COMET_WEBHOOK_USER = os.getenv("COMET_WEBHOOK_USER") or None
+    COMET_WEBHOOK_PASS = os.getenv("COMET_WEBHOOK_PASS") or None
+    # Shared staff identity all admins/RMs reply as.
+    COMET_STAFF_UID = os.getenv("COMET_STAFF_UID", "openhouse")
+
     @classmethod
     def validate(cls) -> None:
         missing = []
@@ -113,6 +108,11 @@ class Config:
             missing.append("DATABASE_URL")
         if not cls.JWT_SECRET or cls.JWT_SECRET == "change-me-to-a-48-char-random-string":
             missing.append("JWT_SECRET")
+        # If OTP is enabled, the SMS provider MUST be configured. Otherwise
+        # verify_otp falls open (any 6 digits log in any phone) — fail closed
+        # at startup instead of silently disabling authentication.
+        if cls.OTP_ENABLED and not cls.KALEYRA_API_KEY:
+            missing.append("KALEYRA_API_KEY (required when OTP_ENABLED=true)")
         if missing:
             raise RuntimeError(
                 f"Missing required environment variables: {', '.join(missing)}. "

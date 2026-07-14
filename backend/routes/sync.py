@@ -11,6 +11,7 @@ Auth: shared secret via `X-Sync-Token` header (env var SYNC_SECRET_TOKEN).
       Not tied to user sessions — caller is a service account (Apps Script).
 """
 
+import hmac
 import logging
 
 from flask import Blueprint, request, jsonify
@@ -58,7 +59,7 @@ def _require_sync_auth():
         log.error("[sync] SYNC_SECRET_TOKEN not configured on server")
         return jsonify({"error": "Sync endpoint not configured"}), 503
     got = request.headers.get("X-Sync-Token", "")
-    if not got or got != expected:
+    if not got or not hmac.compare_digest(got, expected):
         log.warning("[sync] auth failed (header missing or mismatch)")
         return jsonify({"error": "Unauthorized"}), 401
     return None

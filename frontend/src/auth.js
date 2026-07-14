@@ -19,18 +19,35 @@ const USER_KEY = 'oh_user';
 const IMP_TOKEN_KEY = 'oh_impersonation_token';
 const IMP_FLAG_KEY = 'oh_impersonating';
 
+// FRAME-LOCAL impersonation (used when the CP view is EMBEDDED in an <iframe>
+// inside the staff app — see the Impersonator page). A same-origin iframe SHARES
+// sessionStorage with the parent tab, so writing the token there would flip the
+// staff session too. An embedded frame therefore keeps its token in memory only
+// (these module vars are per-frame); the parent frame never sees it. Standalone
+// impersonation TABS still use sessionStorage (isolated per tab).
+let _frameToken = null;
+let _frameImp = false;
+
 // Impersonation bootstrap — runs ONCE at module load, before React mounts and
 // before AuthContext's useState(getUser). It must run here (not in main.jsx):
 // ES modules evaluate dependencies before dependents, so this beats any
-// getUser() call. Captures the CP token handed off via the URL hash, then
-// strips the hash so the JWT doesn't linger in the address bar / history.
+// getUser() call. Captures the CP token handed off via the URL hash.
 (function bootstrapImpersonation() {
   try {
     const params = new URLSearchParams(window.location.search);
     if (params.get('impersonate') !== '1') return;
     const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
     const token = new URLSearchParams(hash).get('it');
-    if (token) {
+    if (!token) return;
+    if (window.self !== window.top) {
+      // Embedded iframe: memory-only, and KEEP the hash so an iframe reload can
+      // re-bootstrap (its URL isn't user-visible — the address bar is the
+      // parent's). Never touch sessionStorage → the parent stays the admin.
+      _frameToken = token;
+      _frameImp = true;
+    } else {
+      // Standalone impersonation tab: persist to THIS tab's own sessionStorage,
+      // then strip the JWT from the address bar / history.
       sessionStorage.setItem(IMP_TOKEN_KEY, token);
       sessionStorage.setItem(IMP_FLAG_KEY, '1');
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -41,6 +58,7 @@ const IMP_FLAG_KEY = 'oh_impersonating';
 })();
 
 function impersonating() {
+  if (_frameImp) return true;
   try {
     return sessionStorage.getItem(IMP_FLAG_KEY) === '1';
   } catch {
@@ -61,6 +79,7 @@ export function isImpersonating() {
  * cookie being sent automatically).
  */
 export function getToken() {
+  if (_frameImp) return _frameToken;
   try {
     return impersonating() ? sessionStorage.getItem(IMP_TOKEN_KEY) : null;
   } catch {
@@ -93,6 +112,12 @@ export function setUser(user) {
 }
 
 export function clearSession() {
+  if (_frameImp) {
+    // Embedded iframe: just drop the in-memory token; nothing was persisted.
+    _frameImp = false;
+    _frameToken = null;
+    return;
+  }
   if (impersonating()) {
     // End only this tab's impersonation; the admin's session stays intact.
     // After this the tab falls back to the admin's cookie session.

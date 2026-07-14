@@ -25,7 +25,7 @@ export default class ChatErrorBoundary extends Component {
       return (
         <div className="empty-state">
           <p>Chat failed to load.</p>
-          <p style={{ fontSize: 12, color: '#991B1B', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+          <p style={{ fontSize: 12, color: 'var(--red-fg)', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
             {String(this.state.error?.message || this.state.error)}
           </p>
         </div>

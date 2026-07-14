@@ -17,7 +17,6 @@ from db import init_pools
 from routes.admin import bp as admin_bp
 from routes.auth_routes import bp as auth_bp
 from routes.comet import bp as comet_bp
-from routes.cron import bp as cron_bp
 from routes.health import bp as health_bp
 from routes.media import bp as media_bp
 from routes.meta import bp as meta_bp
@@ -25,6 +24,7 @@ from routes.societies import bp as societies_bp
 from routes.relay import bp as relay_bp
 from routes.submissions import bp as submissions_bp
 from routes.sync import bp as sync_bp
+from routes.tickets import bp as tickets_bp
 from routes.webhooks import bp as webhooks_bp
 
 
@@ -51,10 +51,9 @@ def create_app() -> Flask:
         # already withholds the cookie from cross-site state-changing requests;
         # this rejects any mutating /api call that DOES ride the session cookie
         # but whose Origin/Referer isn't our SPA. Header-authenticated callers
-        # (partner relay, Interakt webhooks, CometChat webhooks, sync/cron
-        # secrets, impersonation Bearer) are checked too only if they also
-        # carry the cookie — which server-to-server callers never do — so
-        # they're unaffected.
+        # (partner relay, Interakt webhooks, sync/cron secrets, impersonation
+        # Bearer) are checked too only if they also carry the cookie — which
+        # server-to-server callers never do — so they're unaffected.
         # ponytail: SameSite=Lax + this Origin check; add double-submit CSRF
         # tokens only if a stricter audit demands it.
         if request.method in ("GET", "HEAD", "OPTIONS"):
@@ -80,12 +79,12 @@ def create_app() -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(meta_bp)
     app.register_blueprint(societies_bp)
-    app.register_blueprint(submissions_bp)
     app.register_blueprint(relay_bp)
+    app.register_blueprint(submissions_bp)
     app.register_blueprint(admin_bp)
-    app.register_blueprint(comet_bp)
     app.register_blueprint(sync_bp)
-    app.register_blueprint(cron_bp)
+    app.register_blueprint(tickets_bp)
+    app.register_blueprint(comet_bp)
     app.register_blueprint(webhooks_bp)
 
     @app.errorhandler(400)

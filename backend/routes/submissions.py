@@ -129,6 +129,50 @@ def list_my_submissions():
     return jsonify({"submissions": subs, "stats": stats}), 200
 
 
+@bp.get("/submissions/search")
+@require_auth
+def search_my_submissions():
+    """Search the logged-in CP's submissions across their FULL history — the
+    list endpoint caps at 100 rows, so a heavy CP could never search their
+    older listings from the client-side filter alone. Multi-word AND across
+    society / tower / unit / bhk / floor / sqft / price / public_id / status,
+    mirroring the client filter the dashboard used. Includes withdrawn rows
+    (same as the list). Bounded to 500 matches.
+    """
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"submissions": []}), 200
+    tokens = [t for t in q.lower().split() if t]
+
+    hay = (
+        "LOWER("
+        "COALESCE(s.society_name::text,'') || ' ' || COALESCE(s.tower::text,'') || ' ' || "
+        "COALESCE(s.unit_no::text,'') || ' ' || COALESCE(s.bhk::text,'') || ' ' || "
+        "COALESCE(s.floor::text,'') || ' ' || COALESCE(s.sqft::text,'') || ' ' || "
+        "COALESCE(s.asking_price::text,'') || ' ' || COALESCE(s.public_id::text,'') || ' ' || "
+        "COALESCE(s.status::text,''))"
+    )
+    where = ["s.cp_id = %s"]
+    params = [g.user["cp_id"]]
+    for t in tokens:
+        where.append(f"{hay} LIKE %s")
+        params.append(f"%{t}%")
+
+    sql = (
+        _SUBMISSIONS_SELECT
+        + " WHERE " + " AND ".join(where)
+        + " ORDER BY s.submitted_at DESC LIMIT 500"
+    )
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            subs = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+    return jsonify({"submissions": subs}), 200
+
+
 @bp.get("/submissions/<int:sid>")
 @require_auth
 def get_my_submission(sid: int):
@@ -932,6 +976,10 @@ def book_visit(sid: int):
             if err:
                 body, status = err
                 return jsonify(body), status
+            # Don't resurrect a rejected listing (would wipe status_reason).
+            # Mirrors the guard on share_media.
+            if row["status"] in ("Rejected", "Price Rejected"):
+                return jsonify({"error": "Can't book a visit on a rejected listing"}), 409
 
             # If an rm_id was supplied, validate it's active and in the
             # submission's city. Savepoint so a missing rms table doesn't abort.

@@ -1,57 +1,58 @@
 import { useEffect, useState } from 'react';
 import { CometChat } from '@cometchat/chat-sdk-javascript';
-
 import { loginCometChat } from '../cometchat';
 
+const STAFF_UID = 'openhouse';
+
 /**
- * Total unread chat count for the logged-in portal user, read from CometChat's
- * OWN read tracking — no backend load. Live-updates via a message listener;
- * call refresh() after the user views a chat to re-sync the badge.
+ * Unread chat count from the CometChat SDK (there is no backend endpoint for
+ * it). Two modes drive two badges:
+ *   - default (CP):   total unread MESSAGES from the shared "openhouse" thread.
+ *   - people (admin): number of distinct CPs (people) that have any unread.
  *
- * ponytail: logs into CometChat on mount just to read the count. Fine while
- * chat is admin-gated (few enabled users); if chat goes universal, cache the
- * auth token so every dashboard load doesn't re-issue one.
+ * Refreshes: initial fetch after login, a real-time message listener, a 15s
+ * poll while visible, and on focus / a `chat:changed` event. Silent no-op when
+ * chat isn't enabled/configured (login rejects) or `enabled` is false.
  */
-export function useUnreadChat() {
+export function useUnreadChat({ people = false, enabled = true } = {}) {
   const [count, setCount] = useState(0);
 
-  const refresh = async () => {
-    try {
-      await loginCometChat();
-      const res = await CometChat.getUnreadMessageCount();
-      // Shape: { users: { uid: n }, groups: { guid: n } } — sum every leaf.
-      let total = 0;
-      for (const bucket of Object.values(res || {})) {
-        for (const n of Object.values(bucket || {})) total += Number(n) || 0;
-      }
-      setCount(total);
-    } catch {
-      setCount(0); // not enabled / not logged in → no badge
-    }
-  };
-
   useEffect(() => {
+    if (!enabled) { setCount(0); return undefined; }
     let alive = true;
-    const listenerId = 'unread-badge';
-    (async () => {
-      await refresh();
-      if (!alive) return;
-      try {
-        CometChat.addMessageListener(
-          listenerId,
-          new CometChat.MessageListener({
-            onTextMessageReceived: () => { if (alive) refresh(); },
-            onMediaMessageReceived: () => { if (alive) refresh(); },
-          }),
-        );
-      } catch { /* SDK not ready — badge just won't live-update */ }
-    })();
+    let interval;
+    const listenerId = `oh-unread-chat-${people ? 'people' : 'msgs'}`;
+
+    const refresh = () => {
+      const p = people
+        ? CometChat.getUnreadMessageCountForAllUsers().then((res) => Object.values(res || {}).filter((n) => Number(n) > 0).length)
+        : CometChat.getUnreadMessageCountForUser(STAFF_UID).then((res) => Number(res?.[STAFF_UID]) || 0);
+      p.then((n) => { if (alive) setCount(n); }).catch(() => {});
+    };
+    const onFocus = () => { if (!document.hidden) refresh(); };
+
+    loginCometChat()
+      .then(() => {
+        if (!alive) return;
+        refresh();
+        CometChat.addMessageListener(listenerId, new CometChat.MessageListener({
+          onTextMessageReceived: refresh,
+          onMediaMessageReceived: refresh,
+        }));
+        interval = setInterval(() => { if (!document.hidden) refresh(); }, 15000);
+        window.addEventListener('focus', onFocus);
+        window.addEventListener('chat:changed', refresh);
+      })
+      .catch(() => { /* chat not enabled — no badge */ });
+
     return () => {
       alive = false;
-      try { CometChat.removeMessageListener(listenerId); } catch { /* ignore */ }
+      if (interval) clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('chat:changed', refresh);
+      try { CometChat.removeMessageListener(listenerId); } catch { /* not added */ }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [people, enabled]);
 
-  return { count, refresh };
+  return count;
 }

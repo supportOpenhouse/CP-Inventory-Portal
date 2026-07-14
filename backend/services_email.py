@@ -15,6 +15,15 @@ from db import get_app_conn, put_app_conn
 logger = logging.getLogger(__name__)
 
 
+def _mask_email(addr: str) -> str:
+    """Redact an email for logs — keep the first char and the domain."""
+    a = addr or ""
+    if "@" not in a:
+        return "***"
+    local, _, domain = a.partition("@")
+    return f"{local[:1]}***@{domain}"
+
+
 # ---- Formatting helpers ----
 
 def _fmt_price(v):
@@ -123,9 +132,9 @@ def _send_smtp(to_address: str, subject: str, body: str) -> None:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
             server.login(Config.GMAIL_FROM_ADDRESS, Config.GMAIL_APP_PASSWORD)
             server.send_message(msg)
-        logger.info("Alert email sent to %s: %s", to_address, subject)
+        logger.info("Alert email sent to %s: %s", _mask_email(to_address), subject)
     except Exception as e:
-        logger.error("Failed to send alert email to %s: %s", to_address, e)
+        logger.error("Failed to send alert email to %s: %s", _mask_email(to_address), e)
 
 
 # ---- Public API ----

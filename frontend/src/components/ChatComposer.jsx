@@ -4,6 +4,7 @@ import { useState } from 'react';
  * Minimal text composer that replaces CometChat's built-in composer so every
  * message is proxied through our backend (api.cometSend) and logged in
  * chat_messages with the real sender. Enter sends, Shift+Enter is a newline.
+ * Re-skinned to our design tokens (see .chat-composer in styles.css).
  *
  * Props:
  *   onSend(text) => Promise   — resolves when sent; rejects to keep the draft.
@@ -36,32 +37,18 @@ export default function ChatComposer({ onSend, disabled = false, placeholder = '
 
   const canSend = !!text.trim() && !busy && !disabled;
   return (
-    <div style={{ borderTop: '1px solid var(--oh-border, #eee)', background: '#fff' }}>
-      {err && (
-        <div style={{ padding: '6px 14px 0', color: '#991b1b', fontSize: 12 }}>{err}</div>
-      )}
-      <div style={{ display: 'flex', gap: 8, padding: 12, alignItems: 'center' }}>
+    <div className="chat-composer">
+      {err && <div className="chat-composer-err">{err}</div>}
+      <div className="chat-composer-row">
         <input
+          className="chat-composer-input"
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           disabled={disabled || busy}
-          style={{
-            flex: 1, padding: '10px 14px', border: '1px solid var(--oh-border, #ddd)',
-            borderRadius: 20, fontSize: 14, fontFamily: 'inherit', outline: 'none',
-          }}
         />
-        <button
-          type="button"
-          onClick={send}
-          disabled={!canSend}
-          style={{
-            padding: '0 20px', height: 40, borderRadius: 20, border: 0,
-            background: 'var(--oh-orange, #FF6B2B)', color: '#fff', fontWeight: 600,
-            fontSize: 14, cursor: canSend ? 'pointer' : 'default', opacity: canSend ? 1 : 0.5,
-          }}
-        >
+        <button type="button" className="btn-primary chat-composer-send" onClick={send} disabled={!canSend}>
           {busy ? '…' : 'Send'}
         </button>
       </div>

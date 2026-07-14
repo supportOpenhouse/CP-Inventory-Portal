@@ -23,9 +23,9 @@ from config import Config
 logger = logging.getLogger("db")
 
 
-_app_pool: Optional[pool.SimpleConnectionPool] = None
-_props_pool: Optional[pool.SimpleConnectionPool] = None
-_inv_pool: Optional[pool.SimpleConnectionPool] = None
+_app_pool: Optional[pool.ThreadedConnectionPool] = None
+_props_pool: Optional[pool.ThreadedConnectionPool] = None
+_inv_pool: Optional[pool.ThreadedConnectionPool] = None
 
 
 def _make_optional_pool(label: str, dsn: str):
@@ -35,9 +35,11 @@ def _make_optional_pool(label: str, dsn: str):
     logged (it contains the host, not credentials) so the cause is visible.
     """
     try:
-        return pool.SimpleConnectionPool(
+        # ThreadedConnectionPool: pool bookkeeping is locked, so the daemon
+        # threads in services_email can share it with request threads safely.
+        return pool.ThreadedConnectionPool(
             minconn=1,
-            maxconn=5,
+            maxconn=10,
             dsn=dsn,
             cursor_factory=RealDictCursor,
             keepalives=1,
@@ -57,7 +59,7 @@ def init_pools() -> None:
     """Initialize the pools. Called once at app startup."""
     global _app_pool, _props_pool, _inv_pool
 
-    _app_pool = pool.SimpleConnectionPool(
+    _app_pool = pool.ThreadedConnectionPool(
         minconn=1,
         maxconn=10,
         dsn=Config.DATABASE_URL,

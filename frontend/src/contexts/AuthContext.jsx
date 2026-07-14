@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { clearSession, getUser, isImpersonating, setUser } from '../auth';
 import { logoutCometChat } from '../cometchat';
+import { detailStore } from '../components/submissions/submissionDetailStore.js';
 
 const AuthContext = createContext(null);
 
@@ -15,6 +16,29 @@ export function AuthProvider({ children }) {
   // one-frame Login flash. Impersonation tabs always take this path (getUser()
   // returns null there; /me hydrates the CP user from the CP token).
   const [bootstrapping, setBootstrapping] = useState(() => !getUser());
+
+  // Welcome-curtain transition (Direct Inventory pattern): a full-screen orange
+  // curtain that grows over the screen with a "Welcome back, {name}" / "Goodbye"
+  // greeting on sign-in / sign-out, hiding the login↔dashboard swap behind it.
+  const [transition, setTransition] = useState(null); // null | 'in' | 'out'
+  const [tname, setTname] = useState('');
+
+  // Kick off the curtain; auto-clear after it finishes (must outlast the ~1.7s
+  // CSS animation in styles.css .welcome-curtain).
+  function runCurtain(kind, name) {
+    setTname(name || '');
+    setTransition(kind);
+    setTimeout(() => setTransition(null), 1900);
+  }
+
+  // Sign in: cache the user, start the curtain, then flip the visible state
+  // ~once the curtain has covered the screen so the route swap stays hidden.
+  function signIn(u) {
+    api.resetCache();  // new identity — never serve the previous user's cached reads
+    setUser(u);
+    runCurtain('in', u?.name);
+    setTimeout(() => setUserState(u), 650);
+  }
 
   useEffect(() => {
     if (user) {
@@ -46,10 +70,7 @@ export function AuthProvider({ children }) {
     try {
       const res = await api.phoneLogin(phone);
       if (res.user) {
-        // Session JWT is set as an HttpOnly cookie by the server; we only
-        // cache the user object locally.
-        setUser(res.user);
-        setUserState(res.user);
+        signIn(res.user);
         return { kind: 'authenticated', user: res.user };
       }
       return { kind: 'not_registered', rmContacts: res.rm_contacts || {} };
@@ -63,11 +84,6 @@ export function AuthProvider({ children }) {
 
   /**
    * Step 1 of OTP flow: request an OTP.
-   * Returns:
-   *   { kind: 'otp_sent', devMode: boolean } — OTP sent (or dev bypass active)
-   *   { kind: 'not_registered', rmContacts }  — phone not a CP
-   *   { kind: 'rate_limited', message }
-   *   { kind: 'error', message }
    */
   async function sendOtp(phone) {
     setLoading(true);
@@ -92,22 +108,14 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * Step 2 of OTP flow: verify OTP + log in.
-   * Returns:
-   *   { kind: 'authenticated', user }
-   *   { kind: 'not_registered', rmContacts }
-   *   { kind: 'invalid', message }
-   *   { kind: 'error', message }
+   * Step 2 of OTP flow: verify OTP + log in (plays the sign-in curtain).
    */
   async function verifyOtp(phone, code) {
     setLoading(true);
     try {
       const res = await api.verifyOtp(phone, code);
       if (res.user) {
-        // Session JWT is set as an HttpOnly cookie by the server; we only
-        // cache the user object locally.
-        setUser(res.user);
-        setUserState(res.user);
+        signIn(res.user);
         return { kind: 'authenticated', user: res.user };
       }
       if (res.user === null) {
@@ -125,34 +133,38 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function logout() {
+  function logout() {
+    // Play "Goodbye" over the dashboard first, then clear auth ~once the curtain
+    // covers the screen (so the swap back to login stays hidden behind it). The
+    // server-side cookie clear happens in the background (skipped in an
+    // impersonation tab, where it would wipe the admin's shared cookie).
+    runCurtain('out', user?.name);
     // Tear down the CometChat session + cached login promise BEFORE clearing
-    // the portal session / redirecting. Without this, a logout->login in the
-    // same tab reuses the cached loginPromise and the next user (e.g. a CP)
-    // inherits the previous user's CometChat identity (e.g. shared `openhouse`
-    // staff session). Best-effort: never block portal logout on chat.
-    try {
-      await logoutCometChat();
-    } catch {
-      // ignore — chat logout is best-effort
-    }
-    // Clear the HttpOnly cookie server-side — but NOT from an impersonation tab,
-    // where that would wipe the admin's shared session cookie. There, clearing
-    // the per-tab impersonation token (clearSession) is the whole job.
-    if (!isImpersonating()) {
-      try {
-        await api.logout();
-      } catch {
-        // Clear local state regardless of a network/server hiccup.
-      }
-    }
-    clearSession();
-    setUserState(null);
+    // the portal session, so a logout→login in the same tab doesn't let the
+    // next user inherit this user's CometChat identity.
+    logoutCometChat().catch(() => {});
+    setTimeout(() => {
+      if (!isImpersonating()) api.logout().catch(() => {});
+      api.resetCache();  // drop this user's cached reads on the way out
+      detailStore.clear();  // + the persisted submission-detail store (soft logout keeps the JS context)
+      clearSession();
+      setUserState(null);
+    }, 650);
   }
 
   return (
     <AuthContext.Provider value={{ user, loading, bootstrapping, login, sendOtp, verifyOtp, logout }}>
       {children}
+      {transition && (
+        <div className={`welcome-curtain ${transition}`} aria-hidden="true">
+          <div className="wc-grad">
+            <div className="wc-greeting">
+              <span className="wc-hi">{transition === 'out' ? 'Goodbye :(' : 'Welcome back,'}</span>
+              <span className="wc-name">{tname ? tname.split(' ')[0] : ''}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }

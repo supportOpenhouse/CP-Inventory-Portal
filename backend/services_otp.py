@@ -72,6 +72,12 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _mask_phone(phone: str) -> str:
+    """Redact a phone for logs — keep only the last 3 digits."""
+    p = phone or ""
+    return (("*" * (len(p) - 3)) + p[-3:]) if len(p) > 3 else "***"
+
+
 def _is_dev_bypass_phone(phone: str) -> bool:
     return phone in Config.OTP_DEV_BYPASS_PHONES
 
@@ -123,12 +129,11 @@ def _send_sms_via_kaleyra(phone: str, code: str) -> tuple[bool, Optional[str]]:
     }
 
     logger.info("[OTP] sending to %s via Kaleyra v2 (sender=%s, template=%s)",
-                to, sender_id, template_id)
+                _mask_phone(to), sender_id, template_id)
 
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=8)
-        logger.info("[OTP] Kaleyra response status=%d body=%s",
-                    r.status_code, r.text[:500])
+        logger.info("[OTP] Kaleyra response status=%d", r.status_code)
         # Kaleyra returns 200 OR 202 for success
         if r.status_code in (200, 202):
             return True, None
@@ -148,12 +153,12 @@ def send_otp(phone: str, ip: Optional[str] = None) -> tuple[str, Optional[str]]:
     # LOCAL DEV: a genuinely local request never sends a real SMS — '000000'
     # will log in (see verify_otp). Gated by the gitignored local_bypass module.
     if _local_dev_bypass_active():
-        logger.info("[OTP] local dev request — bypass, no SMS for %s", phone)
+        logger.info("[OTP] local dev request — bypass, no SMS for %s", _mask_phone(phone))
         return "dev_bypass", None
 
     # Dev bypass for specific phones — no SMS, no DB record.
     if _is_dev_bypass_phone(phone):
-        logger.info("[OTP] dev bypass phone %s — not sending", phone)
+        logger.info("[OTP] dev bypass phone %s — not sending", _mask_phone(phone))
         return "dev_bypass", None
 
     # Dev mode: Kaleyra not configured — don't insert fake OTPs, just accept anything.
@@ -216,19 +221,19 @@ def verify_otp(phone: str, code: str) -> tuple[str, Optional[str]]:
     # — real OTP verification is skipped. Gated by the gitignored local_bypass
     # module, so production (module absent) stays strictly verified.
     if code == _LOCAL_BYPASS_CODE and _local_dev_bypass_active():
-        logger.info("[OTP] local bypass — '000000' accepted for %s", phone)
+        logger.info("[OTP] local bypass — '000000' accepted for %s", _mask_phone(phone))
         return "ok", None
 
     # Dev bypass: specific phones accept ONLY the universal dev code
     if _is_dev_bypass_phone(phone):
         if code == "000000":
-            logger.info("[OTP] dev bypass accepted for %s", phone)
+            logger.info("[OTP] dev bypass accepted for %s", _mask_phone(phone))
             return "ok", None
         return "invalid", "Invalid OTP"
 
     # Dev mode: Kaleyra unset — any 6 digits pass
     if _dev_mode_no_kaleyra():
-        logger.warning("[OTP] dev mode accept (no Kaleyra) for %s", phone)
+        logger.warning("[OTP] dev mode accept (no Kaleyra) for %s", _mask_phone(phone))
         return "ok", None
 
     conn = get_app_conn()

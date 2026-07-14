@@ -1,5 +1,6 @@
 """JWT token helpers and auth decorators."""
 
+import hmac
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -183,7 +184,7 @@ def _relay_user_or_none():
     if not incoming_key:
         return None, None  # no relay key in this request
 
-    if incoming_key != relay_key:
+    if not hmac.compare_digest(incoming_key, relay_key):
         log.warning("[relay] invalid API key from %s", request.remote_addr)
         return None, ({"error": "Invalid relay API key"}, 401)
 
@@ -242,7 +243,7 @@ def require_relay_on_behalf(f):
 
         header_name = Config.RELAY_API_KEY_HEADER
         incoming_key = request.headers.get(header_name, "").strip()
-        if not incoming_key or incoming_key != relay_key:
+        if not incoming_key or not hmac.compare_digest(incoming_key, relay_key):
             log.warning("[relay/on-behalf] invalid API key from %s", request.remote_addr)
             return jsonify({"error": "Invalid relay API key"}), 401
 

@@ -42,9 +42,10 @@ CREATE TABLE IF NOT EXISTS channel_partners (
 CREATE INDEX IF NOT EXISTS idx_cp_phone ON channel_partners(phone);
 CREATE INDEX IF NOT EXISTS idx_cp_city  ON channel_partners(city_id);
 
--- Seed admin account (phone 9555666059, bypasses nothing per new rules — is_admin kept for future use)
+-- Seed admin account. Set the real admin phone after seeding:
+--   UPDATE channel_partners SET phone = '<admin-phone>' WHERE cp_code = 'ADMIN';
 INSERT INTO channel_partners (cp_code, name, phone, company, city_id, is_admin)
-VALUES ('ADMIN', 'Admin', '9555666059', 'Openhouse', NULL, TRUE)
+VALUES ('ADMIN', 'Admin', '0000000000', 'Openhouse', NULL, TRUE)
 ON CONFLICT (cp_code) DO NOTHING;
 
 

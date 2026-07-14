@@ -127,9 +127,9 @@ export function formatTime12(t) {
   return `${hh}:${mm} ${period}`;
 }
 
-/** Bookable visit times for the admin schedulers: every 30 minutes from
- *  7:00 AM to 8:00 PM inclusive, as { value: "HH:MM" (24h), label: "7:30 AM" }.
- *  `value` stays 24-hour so it drops straight into schedule_time unchanged. */
+// 8:00 AM -> 8:00 PM in 30-minute steps, for the Schedule Visit time picker.
+// value stays 24-hour "HH:MM" (what the backend/Forms app expects); label is
+// the 12-hour display via formatTime12.
 export const VISIT_TIME_SLOTS = (() => {
   const out = [];
   for (let mins = 7 * 60; mins <= 20 * 60; mins += 30) {
@@ -147,13 +147,24 @@ export function validatePhone(raw) {
   return { ok: true, cleaned: cleaned.slice(-10), error: null };
 }
 
+/**
+ * Sanitize a phone-input value for onChange: digits only (drops '+', spaces,
+ * and any non-digit), capped at 10 digits — or 12 when it starts with the
+ * country code '91' (so "91" + 10-digit national number is allowed).
+ */
+export function sanitizePhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  const max = digits.startsWith('91') ? 12 : 10;
+  return digits.slice(0, max);
+}
+
 // Display order for the stage tabs / columns. The STATUS values themselves
 // are unchanged; this is purely how they appear left-to-right in the UI.
 // Visit Scheduled + Visit Completed sit before Offer because admin
 // triage scans visit-related queues before rebalancing pricing.
 // `label` (when set) is what the UI renders — `key` is the DB value.
 export const STAGES = [
-  { key: 'Unapproved',         color: '#B8860B', bg: '#FFF8E1', adminOnly: true },
+  { key: 'Unapproved',         color: '#ffd73b', bg: '#ffd73b', fg: '#1a1a1a', adminOnly: true },
   { key: 'Submitted',          color: '#6366F1', bg: '#EEF2FF' },
   { key: 'Visit Requested',    color: '#8b5cf6', bg: '#F5F3FF' },   // CP booked a slot; awaiting admin scheduling
   { key: 'Visit Scheduled',    color: '#D946EF', bg: '#FDF4FF' },
