@@ -10,6 +10,7 @@ import { useTheme } from '../contexts/ThemeContext.jsx';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LegalLinks from '../components/LegalLinks';
 import { IconPhone, IconLogout, IconChevron, IconSun, IconMoon } from '../components/icons.jsx';
+import { showToast } from '../components/Toast.jsx';
 
 function Row({ label, value }) {
   return (
@@ -68,7 +69,13 @@ export default function Profile({ onBack, rmPhone, rmName }) {
             </a>
           </>
         ) : (
-          <div className="muted" style={{ fontSize: 13 }}>No RM assigned yet.</div>
+          <>
+            <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>No RM assigned yet.</div>
+            <button type="button" className="primary-btn prof-call" style={{ opacity: 0.45 }}
+              onClick={() => showToast('No RM Assigned, Cant Use this Feature', 'err')}>
+              <IconPhone size={18} /> Call RM
+            </button>
+          </>
         )}
       </div>
 

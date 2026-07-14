@@ -14,6 +14,7 @@ import BookVisitModal from './BookVisitModal';
 import MediaVisitActions from './MediaVisitActions';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { IconSearch } from '../components/icons.jsx';
+import { showToast } from '../components/Toast.jsx';
 
 // Real DB stages the accurate-count endpoint reports on (mirror of the backend
 // VALID_STAGES); summed for the "ALL" box so the count reflects the CP's full
@@ -368,8 +369,9 @@ export default function Dashboard({ rmPhone }) {
                     {formatPrice(s.counter_offer_price)}
                   </div>
 
-                  {/* Call RM — tel: link (WhatsApp removed, P6 Task 1) */}
-                  {rmPhone && (
+                  {/* Call RM — tel: link (WhatsApp removed, P6 Task 1). No RM →
+                      greyed but pressable, toast on tap. */}
+                  {rmPhone ? (
                     <a
                       href={`tel:${rmPhone.replace(/\D/g, '')}`}
                       onClick={(e) => e.stopPropagation()}
@@ -384,6 +386,22 @@ export default function Dashboard({ rmPhone }) {
                     >
                       📞 Call your RM
                     </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); showToast('No RM Assigned, Cant Use this Feature', 'err'); }}
+                      className="primary-btn"
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        marginTop: 10,
+                        textAlign: 'center',
+                        border: 'none',
+                        opacity: 0.45,
+                      }}
+                    >
+                      📞 Call your RM
+                    </button>
                   )}
 
                   <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>

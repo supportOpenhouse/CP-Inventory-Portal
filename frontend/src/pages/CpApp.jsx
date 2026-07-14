@@ -8,6 +8,9 @@ import Profile from '../cp/Profile.jsx';
 import Messages from '../cp/Messages.jsx';
 import { IconHome, IconPhone, IconPlus, IconChat, IconUsers } from '../components/icons.jsx';
 import { useUnreadChat } from '../hooks/useUnreadChat';
+import Toast, { showToast } from '../components/Toast.jsx';
+
+const NO_RM_MSG = 'No RM Assigned, Cant Use this Feature';
 
 export default function CpApp() {
   const { user } = useAuth();
@@ -60,10 +63,19 @@ export default function CpApp() {
           <span className="cp-nav-lbl">Home</span>
         </button>
 
-        <a className="cp-nav" href={rmPhone ? `tel:${rmPhone.replace(/\D/g, '')}` : undefined} title={`Call ${rmName || 'your RM'}`}>
-          <span className="cp-nav-ic"><IconPhone size={22} /></span>
-          <span className="cp-nav-lbl">Call</span>
-        </a>
+        {rmPhone ? (
+          <a className="cp-nav" href={`tel:${rmPhone.replace(/\D/g, '')}`} title={`Call ${rmName || 'your RM'}`}>
+            <span className="cp-nav-ic"><IconPhone size={22} /></span>
+            <span className="cp-nav-lbl">Call</span>
+          </a>
+        ) : (
+          // No RM yet — greyed out but still pressable, showing a toast on tap.
+          <button type="button" className="cp-nav" style={{ opacity: 0.45 }}
+            title="No RM assigned" onClick={() => showToast(NO_RM_MSG, 'err')}>
+            <span className="cp-nav-ic"><IconPhone size={22} /></span>
+            <span className="cp-nav-lbl">Call</span>
+          </button>
+        )}
 
         <button type="button" className="cp-nav-add" onClick={() => setScreen('addUnit')} title="Add Inventory" aria-label="Add Inventory">
           <IconPlus size={28} />
@@ -84,6 +96,8 @@ export default function CpApp() {
           <span className="cp-nav-lbl">Profile</span>
         </button>
       </nav>
+
+      <Toast />
     </div>
   );
 }

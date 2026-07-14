@@ -20,6 +20,8 @@
  *   onEdit       — called when user wants to go back and modify their entry
  *   onForceCreate — called when user wants to submit anyway
  */
+import { showToast } from '../../components/Toast.jsx';
+
 export default function DuplicateCard({ result, onEdit, onForceCreate }) {
   const d = result.details || {};
   const rmPhone = d.rm_phone;
@@ -82,11 +84,12 @@ export default function DuplicateCard({ result, onEdit, onForceCreate }) {
 
         <div className="dup-card-message">{result.message}</div>
 
-        {/* Contact RM row — only shown if we have an RM phone */}
-        {rmPhone && (
-          <div className="dup-card-rm">
-            <div className="dup-card-rm-label">Your Openhouse RM</div>
-            <div className="dup-card-rm-name">{rmName || '—'}</div>
+        {/* Contact RM row. With an RM phone it's a live tel: link; without one
+            it stays visible but greyed, toasting on tap. */}
+        <div className="dup-card-rm">
+          <div className="dup-card-rm-label">Your Openhouse RM</div>
+          <div className="dup-card-rm-name">{rmPhone ? (rmName || '—') : 'Not assigned'}</div>
+          {rmPhone ? (
             <a
               href={`tel:${rmPhone.replace(/\s/g, '')}`}
               className="primary-btn"
@@ -97,10 +100,26 @@ export default function DuplicateCard({ result, onEdit, onForceCreate }) {
                 marginTop: 10,
               }}
             >
-              📞 Contact RM {rmPhone ? `(${rmPhone})` : ''}
+              📞 Contact RM ({rmPhone})
             </a>
-          </div>
-        )}
+          ) : (
+            <button
+              type="button"
+              onClick={() => showToast('No RM Assigned, Cant Use this Feature', 'err')}
+              className="primary-btn"
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'center',
+                border: 'none',
+                marginTop: 10,
+                opacity: 0.45,
+              }}
+            >
+              📞 Contact RM
+            </button>
+          )}
+        </div>
 
         {!hideActionButtons && (
           <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>

@@ -241,9 +241,6 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .app-shell.collapsed .sidebar-collapse-btn .scb-label { display: none; }
 .app-shell.collapsed .sidebar-brand { justify-content: center; }
 .app-shell.collapsed .nav-item { justify-content: center; padding: 9px; }
-/* Bigger icons on the collapsed icon-only rail (18px → 24px). */
-.app-shell.collapsed .nav-item .nav-ic,
-.app-shell.collapsed .nav-item .nav-ic svg { width: 24px; height: 24px; }
 .app-shell.collapsed .sidebar-user { justify-content: center; }
 .app-shell.collapsed .sidebar-collapse-btn .scb-chev { transform: rotate(0deg); }
 
