@@ -235,6 +235,10 @@ export const api = {
   // Admin (staff only)
   adminListSubmissions: (filters = {}) =>
     request(`/admin/submissions${buildQuery(filters)}`),
+  // Daily submission counts for Home's trend chart. Always returns exactly
+  // `days` points (zero-filled server-side), oldest first.
+  adminSubmissionsByDate: (days = 30) =>
+    request(`/admin/submissions/by-date${buildQuery({ days })}`),
   adminGetSubmission: (id) => request(`/admin/submissions/${id}`),
   adminChangeStatus: (id, status, statusReason = null) =>
     request(`/admin/submissions/${id}/status`, {

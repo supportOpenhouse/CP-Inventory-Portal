@@ -131,20 +131,29 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             <div
               style={{
                 padding: '12px 14px',
-                background: rejectionSource.by === 'you' ? '#FFF3ED' : '#FEE2E2',
-                border: `1.5px solid ${rejectionSource.by === 'you' ? '#FF6B2B' : '#DC2626'}`,
+                // Token triples, not light hex: --*-bg is a pale tint in light
+                // and a dark tint in dark, so the banner stays a tinted panel
+                // with a matching outline in both. The old hardcoded #FEE2E2
+                // forced a pale-pink fill under dark mode's white body text.
+                background: rejectionSource.by === 'you' ? 'var(--brand-soft)' : 'var(--red-bg)',
+                border: `1.5px solid ${rejectionSource.by === 'you' ? 'var(--brand)' : 'var(--red)'}`,
                 borderRadius: 10,
                 marginBottom: 16,
               }}
             >
               <div style={{
                 fontSize: 10, fontWeight: 700,
-                color: rejectionSource.by === 'you' ? '#FF6B2B' : '#DC2626',
+                color: rejectionSource.by === 'you' ? 'var(--brand)' : 'var(--red-fg)',
                 letterSpacing: '0.5px', marginBottom: 4,
               }}>
                 REJECTED
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--oh-charcoal)' }}>
+              {/* Message takes the accent colour too — it must never fall back to
+                  body text, which is white in dark and vanished on the tint. */}
+              <div style={{
+                fontSize: 14, fontWeight: 600,
+                color: rejectionSource.by === 'you' ? 'var(--brand)' : 'var(--red-fg)',
+              }}>
                 {rejectionSource.label}
               </div>
               {s.counter_offer_response_text && (
@@ -161,7 +170,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
           {notRejected && (!hasMedia || s.status === 'Submitted') && (
             <div style={{
               border: '1px solid var(--oh-border)', borderRadius: 12,
-              padding: 14, marginBottom: 16, background: '#FAFAFA',
+              padding: 14, marginBottom: 16, background: 'var(--surface-2)',
             }}>
               <MediaVisitActions
                 submission={s}
@@ -197,11 +206,13 @@ export default function SubmissionDetailModal({ submission, onClose }) {
               <div
                 style={{
                   padding: '12px 14px',
-                  background: s.counter_offer_status === 'pending' ? '#FFF8EC' :
-                              s.counter_offer_status === 'accepted' ? '#ECFDF5' : '#FEE2E2',
+                  // Themed triples, not light hex — the old #FFF8EC/#ECFDF5/
+                  // #FEE2E2 fills stayed pale under dark mode's white text.
+                  background: s.counter_offer_status === 'pending' ? 'var(--amber-bg)' :
+                              s.counter_offer_status === 'accepted' ? 'var(--green-bg)' : 'var(--red-bg)',
                   border: `1px solid ${
-                    s.counter_offer_status === 'pending' ? '#E8A838' :
-                    s.counter_offer_status === 'accepted' ? '#10B981' : '#DC2626'
+                    s.counter_offer_status === 'pending' ? 'var(--amber)' :
+                    s.counter_offer_status === 'accepted' ? 'var(--green)' : 'var(--red)'
                   }`,
                   borderRadius: 10,
                 }}
@@ -217,8 +228,10 @@ export default function SubmissionDetailModal({ submission, onClose }) {
                     Sent {formatDateTime(s.counter_offer_at)}
                   </div>
                 )}
+                {/* Note panel lifts off the tint with the page colour at 60%, not
+                    white — a hardcoded white put white body text on white in dark. */}
                 {s.counter_offer_response_text && (
-                  <div style={{ marginTop: 8, padding: '8px 10px', background: 'rgba(255,255,255,0.6)', borderRadius: 6, fontSize: 13, color: 'var(--oh-charcoal)' }}>
+                  <div style={{ marginTop: 8, padding: '8px 10px', background: 'color-mix(in srgb, var(--surface) 60%, transparent)', borderRadius: 6, fontSize: 13, color: 'var(--oh-charcoal)' }}>
                     Your note: "{s.counter_offer_response_text}"
                   </div>
                 )}

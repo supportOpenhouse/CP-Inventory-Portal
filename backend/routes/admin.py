@@ -19,8 +19,9 @@ import io
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Blueprint, Response, g, jsonify, request
@@ -1098,6 +1099,67 @@ def list_submissions():
     if counts is not None:
         payload["counts"] = counts
     return jsonify(payload), 200
+
+
+# Home's submissions-trend chart. Max window it can request; the frontend's
+# 30d/90d toggle sits inside this.
+BY_DATE_MAX_DAYS = 90
+BY_DATE_DEFAULT_DAYS = 30
+# submitted_at is TIMESTAMPTZ and the DB session runs UTC, so a bare ::date
+# buckets by the UTC day — a 2am IST submission would land on the previous
+# point. Every city in this product is IST, so bucket in IST.
+REPORT_TZ = "Asia/Kolkata"
+
+
+@bp.get("/submissions/by-date")
+@require_staff
+def submissions_by_date():
+    """Daily submission counts for the Home trend chart.
+
+    Returns { "points": [ { "date": "YYYY-MM-DD", "count": N }, ... ] } — one
+    entry per day, oldest first, always exactly `days` long.
+
+    Counted by submitted_at (intake date), so a day's number is historical and
+    never changes. Scoped with _scoped_city_filter like every other count, so
+    this agrees with the Pipeline/Outcomes cards beside it.
+    """
+    try:
+        days = int(request.args.get("days", BY_DATE_DEFAULT_DAYS))
+    except (TypeError, ValueError):
+        days = BY_DATE_DEFAULT_DAYS
+    days = max(1, min(days, BY_DATE_MAX_DAYS))
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            scope_sql, scope_params = _scoped_city_filter(cur)
+            cur.execute(
+                f"""
+                SELECT (s.submitted_at AT TIME ZONE %s)::date AS d, COUNT(*) AS cnt
+                  FROM submissions s
+                  JOIN channel_partners cp ON s.cp_id = cp.id
+                 WHERE TRUE {scope_sql}
+                   AND (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn')
+                   AND (s.submitted_at AT TIME ZONE %s)::date
+                       > (NOW() AT TIME ZONE %s)::date - %s
+                 GROUP BY d
+                """,
+                [REPORT_TZ, *scope_params, REPORT_TZ, REPORT_TZ, days],
+            )
+            found = {r["d"]: r["cnt"] for r in cur.fetchall()}
+    finally:
+        put_app_conn(conn)
+
+    # Zero-fill: the aggregate only returns days that HAVE rows. Without this the
+    # polyline joins straight across a quiet stretch, rendering a gap as a smooth
+    # slope between two distant points — misleading, not merely incomplete.
+    today = datetime.now(ZoneInfo(REPORT_TZ)).date()
+    points = []
+    for i in range(days - 1, -1, -1):
+        d = today - timedelta(days=i)
+        points.append({"date": d.isoformat(), "count": found.get(d, 0)})
+
+    return jsonify({"points": points}), 200
 
 
 @bp.get("/submissions/<int:sid>")

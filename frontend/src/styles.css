@@ -434,6 +434,29 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 /* Outcomes — hero total + a segmented composition bar (2px surface gaps). */
 .oc-total { font-family: 'Fraunces', serif; font-size: 40px; font-weight: 700; line-height: 1; color: var(--text); }
 .oc-total-lbl { font-size: 12px; font-weight: 600; margin-top: 3px; }
+
+/* ── Submissions trend (Home → Summary, full width under the reports grid) ──
+   The card is sized to include the x-axis band, so the plot never gets its own
+   nested scrollbar. Tick text wears text tokens, never the series colour — the
+   brand hue is only 2.77:1 on the light surface and is illegible as text. */
+.trend-card { margin-top: 18px; }
+.trend-plot { position: relative; width: 100%; transition: opacity .15s; }
+.trend-plot svg { display: block; touch-action: none; }
+.trend-tick { fill: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.trend-empty { display: grid; place-items: center; height: 168px; font-size: 13px; }
+.trend-tip {
+  position: absolute; top: 0; transform: translateX(-50%);
+  display: flex; align-items: baseline; gap: 6px; pointer-events: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 3px 8px; box-shadow: var(--shadow-sm); white-space: nowrap;
+}
+.trend-tip-val { font-size: 13px; font-weight: 700; color: var(--text); }
+.trend-tip-day { font-size: 11px; }
+.trend-foot {
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin-top: 10px; font-size: 12px;
+}
+.trend-foot-n { color: var(--text); font-variant-numeric: tabular-nums; }
 .oc-bar { display: flex; gap: 2px; height: 16px; margin: 16px 0 14px; }
 .oc-seg { border-radius: 4px; min-width: 0; }
 .oc-legend { display: flex; flex-direction: column; gap: 8px; }
@@ -988,6 +1011,15 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 [data-theme='dark'] .board-chip-moved {
   background: color-mix(in srgb, #93c5fd 16%, transparent);
   color: #93c5fd; border-color: #93c5fd;
+}
+/* Perfect match is a solid red block with white text — the loudest chip on the
+   board, which is right on a white card but a glaring slab in dark. Invert it
+   like the rest, but keep the border at FULL strength (others sit at 55%) so it
+   still outranks the weak/collated chips it must not be confused with. */
+[data-theme='dark'] .board-chip-perfect {
+  background: color-mix(in srgb, var(--red) 20%, transparent);
+  color: var(--red);
+  border: 1px solid var(--red);
 }
 .inv-row.weak-match { background: var(--red-bg); }
 .inv-row.weak-match:hover { background: var(--red-bg); }

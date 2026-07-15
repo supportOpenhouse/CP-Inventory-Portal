@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useUnreadConversations } from '../hooks/useUnreadConversations';
 import SegToggle from '../components/SegToggle.jsx';
+import SubmissionsTrend from '../components/home/SubmissionsTrend.jsx';
 import { stageMeta, stageLabel } from '../format';
 
 // Pipeline order (funnel top → bottom, then the two terminal rejections). Each
@@ -236,6 +237,11 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      {/* Intake over time — closes the Summary section. Pipeline/Outcomes above
+          are lifetime totals; this is the only time-series here, which is why its
+          range toggle lives on the card rather than as a page-wide filter. */}
+      <SubmissionsTrend />
     </div>
   );
 }

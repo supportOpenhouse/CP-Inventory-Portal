@@ -303,6 +303,14 @@ export default function BoardView({
                         || s.status === 'Price Rejected'
                         || s.status === 'Rejected') && (() => {
                     const isOffer = s.status === 'Offer' || s.status === 'Closure';
+                    // Derive the whole chip from one themed accent instead of
+                    // light hex: the old #FFF3ED/#FEE2E2 fills were pale tints
+                    // that glared on the dark board. Same color-mix recipe the
+                    // .board-chip dark rule uses (styles.css) — a soft tint,
+                    // the saturated accent for text, and a matching border, so
+                    // it reads correctly in BOTH themes and follows --brand
+                    // orange→pink automatically.
+                    const accent = isOffer ? 'var(--brand)' : 'var(--red)';
                     return (
                       <span
                         style={{
@@ -314,9 +322,9 @@ export default function BoardView({
                           fontWeight: 600,
                           letterSpacing: 0.2,
                           lineHeight: 1.5,
-                          color:      isOffer ? '#FF6B2B' : '#B91C1C',
-                          background: isOffer ? '#FFF3ED' : '#FEE2E2',
-                          border:     `1px solid ${isOffer ? '#FED7AA' : '#FCA5A5'}`,
+                          color:      accent,
+                          background: `color-mix(in srgb, ${accent} 16%, transparent)`,
+                          border:     `1px solid color-mix(in srgb, ${accent} 55%, transparent)`,
                         }}
                         title="Sub-category — staff only, not shown to CPs"
                       >
