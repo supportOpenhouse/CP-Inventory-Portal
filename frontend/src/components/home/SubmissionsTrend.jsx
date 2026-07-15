@@ -14,7 +14,7 @@
  * they are what keeps every value readable without relying on the line's colour.
  * Text wears text tokens, never the series colour.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api } from '../../api';
 import SegToggle from '../SegToggle.jsx';
@@ -36,16 +36,25 @@ export default function SubmissionsTrend() {
   const [failed, setFailed] = useState(false);
   const [hover, setHover] = useState(null);     // index of the crosshair's point
 
-  const wrapRef = useRef(null);
   const [w, setW] = useState(0);
+  const roRef = useRef(null);
 
-  useLayoutEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return undefined;
+  // Callback ref, not useRef + useLayoutEffect([]): the plot div does not exist
+  // on first render (the skeleton returns before it), so a mount-time effect
+  // finds a null ref, bails, and — with empty deps — never retries. `w` would
+  // stay 0 and `{w > 0 && <svg/>}` would render an empty card forever. This
+  // fires whenever the node actually attaches.
+  const wrapRef = useCallback((node) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (!node) return;
+    setW(node.getBoundingClientRect().width);   // paint this frame, don't wait for the observer
     const ro = new ResizeObserver(([e]) => setW(e.contentRect.width));
-    ro.observe(el);
-    return () => ro.disconnect();
+    ro.observe(node);
+    roRef.current = ro;
   }, []);
+
+  useEffect(() => () => roRef.current?.disconnect(), []);
 
   useEffect(() => {
     let alive = true;
