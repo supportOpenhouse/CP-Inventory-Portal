@@ -14,7 +14,10 @@
  *   - Reassign RM    -> opens BulkReassignRmModal (ported from CP);
  *                       admin/manager only, gated by `canReassign`.
  *
- * Rendered only while `bulkMode` is on AND at least one row is selected.
+ * Rendered for the whole of `bulkMode`, including at zero selected — changing
+ * a filter clears the selection (it must: filters are client-side, so stale ids
+ * would target hidden rows), and unmounting the bar on that would yank the
+ * toolbar out from under the user mid-task. At zero it just disables Apply.
  * On any successful action (`adminBulkStatus`, or either modal's onSuccess)
  * this clears the selection, exits bulk mode, and tells the page to reload.
  *
@@ -71,7 +74,7 @@ export default function BulkBar({
     [submissions, selectedIds],
   );
 
-  if (!bulkMode || selectedIds.size === 0) return null;
+  if (!bulkMode) return null;
 
   function changeAction(next) {
     setAction(next);
@@ -115,7 +118,9 @@ export default function BulkBar({
   }
 
   const overScheduleCap = action === 'schedule' && selectedIds.size > SCHEDULE_VISIT_MAX;
-  const canApply = !submitting && (
+  // The bar now renders at zero selected, so Apply must gate on the selection
+  // itself — nothing below implies a non-empty set any more.
+  const canApply = !submitting && selectedIds.size > 0 && (
     (action === 'stage' && Boolean(stage) && (stage !== 'Rejected' || Boolean(rejectReason))) ||
     (action === 'schedule' && !overScheduleCap) ||
     action === 'reassign'
@@ -173,7 +178,14 @@ export default function BulkBar({
         <button type="button" className="btn-primary" onClick={handleApply} disabled={!canApply}>
           {submitting ? 'Applying…' : 'Apply'}
         </button>
-        <button type="button" className="btn-ghost" onClick={onClearSelection} disabled={submitting}>
+        <button
+          type="button"
+          className="btn-ghost"
+          // Clearing alone used to dismiss the bar (empty selection unmounted
+          // it). It stays mounted now, so Cancel has to leave bulk mode itself.
+          onClick={() => { changeAction(''); onClearSelection?.(); onExitBulkMode?.(); }}
+          disabled={submitting}
+        >
           Cancel
         </button>
         {error && <span className="bulk-error">{error}</span>}
