@@ -13,7 +13,10 @@ export default function NoUnitDetailsWarning({ onContinue, onBack }) {
         <div className="dup-card-banner" style={{ background: '#b8860b' }}>
           <span
             className="dup-card-badge dup-card-badge-exact"
-            style={{ background: '#fff', color: '#b8860b' }}
+            style={{
+              background: 'var(--oh-note-bg)', color: 'var(--oh-note-fg)',
+              border: '1px solid var(--oh-note-line)',
+            }}
           >
             PLEASE NOTE
           </span>

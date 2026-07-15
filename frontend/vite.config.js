@@ -9,7 +9,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       manifest: {
         name: 'CP OpenHouse', short_name: 'CP OpenHouse',
-        theme_color: '#FF6B2B', display: 'standalone', start_url: '/',
+        // Matches index.html's light --bg. The manifest colour is static (it
+        // dresses the install splash); the live browser strip is driven by
+        // ThemeContext rewriting the theme-color meta per theme.
+        theme_color: '#f6f5f3', display: 'standalone', start_url: '/',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },

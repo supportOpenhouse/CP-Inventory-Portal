@@ -100,7 +100,7 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
                 opacity: past ? 0.4 : 1,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2,
                 border: `1.5px solid ${slot === sl.key ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
-                background: slot === sl.key ? 'var(--oh-orange)' : '#fff',
+                background: slot === sl.key ? 'var(--oh-orange)' : 'var(--surface)',
                 color: slot === sl.key ? '#fff' : 'var(--oh-charcoal)',
               }}
             >

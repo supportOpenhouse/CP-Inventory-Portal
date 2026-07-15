@@ -11,7 +11,13 @@ export default function ForceCreateWarning({ onConfirm, onCancel }) {
     <div className="form-section">
       <div className="dup-card dup-card-exact">
         <div className="dup-card-banner" style={{ background: '#b8860b' }}>
-          <span className="dup-card-badge dup-card-badge-exact" style={{ background: '#fff', color: '#b8860b' }}>
+          <span
+            className="dup-card-badge dup-card-badge-exact"
+            style={{
+              background: 'var(--oh-note-bg)', color: 'var(--oh-note-fg)',
+              border: '1px solid var(--oh-note-line)',
+            }}
+          >
             ADMIN REVIEW REQUIRED
           </span>
           <div className="dup-card-banner-text" style={{ whiteSpace: 'pre-line' }}>

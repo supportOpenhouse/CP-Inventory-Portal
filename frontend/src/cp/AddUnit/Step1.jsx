@@ -358,7 +358,7 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
                       padding: '12px 14px',
                       borderRadius: 10,
                       border: `1.5px solid ${active ? 'var(--oh-orange)' : 'var(--oh-border)'}`,
-                      background: active ? 'var(--oh-orange-light)' : '#fff',
+                      background: active ? 'var(--oh-orange-light)' : 'var(--surface)',
                       color: active ? 'var(--oh-orange)' : 'var(--oh-charcoal)',
                       fontSize: 14,
                       fontWeight: 600,
