@@ -78,16 +78,6 @@ export default function Submissions() {
     });
   }, []);
 
-  // Table's header "select all" checkbox — toggles every currently-loaded
-  // (visible) row, matching CP's onToggleAll semantics.
-  const onToggleAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      const ids = submissions.map((s) => s.id);
-      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id));
-      return allSelected ? new Set() : new Set(ids);
-    });
-  }, [submissions]);
-
   // On-behalf "Add Inventory" flow — the trigger button lives in the topbar
   // (Layout) and fires this window event; the AddInventoryOnBehalf popup below
   // handles city → CP → form and posts via /admin/submissions/on-behalf.
@@ -187,6 +177,29 @@ export default function Submissions() {
       return true;
     });
   }, [submissions, statusFilter, clientFilterCount, matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons]);
+
+  // Table's header "select all" checkbox — toggles every currently-loaded
+  // *visible* row. Must read `clientFilteredSubmissions`, not `submissions`:
+  // the latter holds every stage's loaded rows, so selecting from it would
+  // grab rows the active filter is hiding. Defined after that memo (its deps
+  // reference it, which would hit the TDZ if this stayed above).
+  const onToggleAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const ids = clientFilteredSubmissions.map((s) => s.id);
+      const allSelected = ids.length > 0 && ids.every((id) => prev.has(id));
+      return allSelected ? new Set() : new Set(ids);
+    });
+  }, [clientFilteredSubmissions]);
+
+  // A selection must never outlive the filter it was made under. The stage and
+  // refinement filters are applied in-memory, so changing one silently swaps
+  // which rows are visible while `selectedIds` keeps the old ids — and bulk
+  // actions POST those ids verbatim. Clearing here is what stops a bulk action
+  // from mutating rows the user can no longer see.
+  const clientFilterKey = JSON.stringify([
+    statusFilter, matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons,
+  ]);
+  useEffect(() => { setSelectedIds(new Set()); }, [clientFilterKey]);
 
   // The stage filter is client-side for BOTH views now (multi-select union) —
   // reload always fetches every stage's first page and `clientFilteredSubmissions`
@@ -471,7 +484,7 @@ export default function Submissions() {
       <BulkBar
         bulkMode={bulkMode}
         selectedIds={selectedIds}
-        submissions={submissions}
+        submissions={clientFilteredSubmissions}
         setSelectedIds={setSelectedIds}
         onClearSelection={() => setSelectedIds(new Set())}
         onExitBulkMode={() => setBulkMode(false)}
