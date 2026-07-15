@@ -63,7 +63,7 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#fff', borderRadius: 16, padding: 22, maxWidth: 380, width: '100%',
+          background: 'var(--surface)', borderRadius: 16, padding: 22, maxWidth: 380, width: '100%',
           boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
         }}
       >
@@ -120,7 +120,7 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
             type="button" onClick={onClose} disabled={busy}
             style={{
               flex: 1, padding: 12, borderRadius: 10, border: '1.5px solid var(--oh-border)',
-              background: '#fff', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+              background: 'var(--surface)', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
             }}
           >
             Cancel

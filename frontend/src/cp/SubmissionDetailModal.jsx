@@ -97,7 +97,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
           style={{
             padding: '14px 20px', borderBottom: '1px solid var(--oh-border)',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            position: 'sticky', top: 0, background: '#fff', zIndex: 2,
+            position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 2,
           }}
         >
           <div>

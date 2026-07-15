@@ -414,7 +414,7 @@ export default function Dashboard({ rmPhone }) {
                         padding: '10px 12px',
                         borderRadius: 10,
                         border: '1.5px solid var(--oh-border)',
-                        background: '#fff',
+                        background: 'var(--surface)',
                         color: 'var(--oh-charcoal)',
                         fontSize: 13,
                         fontWeight: 600,

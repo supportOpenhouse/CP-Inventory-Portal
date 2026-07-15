@@ -90,7 +90,7 @@ export default function ShareMediaModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#fff', borderRadius: 16, padding: 22, maxWidth: 360, width: '100%',
+          background: 'var(--surface)', borderRadius: 16, padding: 22, maxWidth: 360, width: '100%',
           boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
         }}
       >
@@ -146,7 +146,7 @@ export default function ShareMediaModal({
           type="button" onClick={onClose} disabled={busy}
           style={{
             marginTop: 16, width: '100%', padding: 10, borderRadius: 10,
-            border: '1.5px solid var(--oh-border)', background: '#fff',
+            border: '1.5px solid var(--oh-border)', background: 'var(--surface)',
             fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
           }}
         >

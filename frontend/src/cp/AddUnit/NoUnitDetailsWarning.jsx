@@ -35,7 +35,7 @@ export default function NoUnitDetailsWarning({ onContinue, onBack }) {
                 padding: '14px 16px',
                 borderRadius: 12,
                 border: '1.5px solid var(--oh-orange)',
-                background: '#fff',
+                background: 'var(--surface)',
                 color: 'var(--oh-orange)',
                 fontSize: 14,
                 fontWeight: 600,
