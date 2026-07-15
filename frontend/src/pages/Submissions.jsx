@@ -11,11 +11,16 @@ import TableView from '../components/submissions/TableView.jsx';
 import CardDetailModal from '../components/submissions/CardDetailModal.jsx';
 import FilterModal from '../components/submissions/FilterModal.jsx';
 import BulkBar from '../components/submissions/BulkBar.jsx';
+import { matchesClientFilters } from '../components/submissions/clientFilters.js';
 import AddInventoryOnBehalf from '../components/submissions/AddInventoryOnBehalf.jsx';
 import SegToggle from '../components/SegToggle.jsx';
 import Loading from '../components/Loading.jsx';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
+
+// Server tops out at LIMIT 5000 in _list_submissions_core — the same number the
+// bulk-status cap uses. One source of truth; the label renders from it.
+const SELECT_ALL_CAP = 5000;
 
 export default function Submissions() {
   const { user } = useAuth();
@@ -61,10 +66,18 @@ export default function Submissions() {
   const [loadedByStage, setLoadedByStage] = useState({});
   const [loadingByStage, setLoadingByStage] = useState({});
   const reloadGen = useRef(0);
+  // Bumped on every filter change (server or client — see `filterKey` below)
+  // so an in-flight onSelectAll can detect that the filter moved under it.
+  // Must be a ref, not the filterKey string itself: a plain const is
+  // captured per-closure, so comparing it to itself inside one invocation
+  // always matches and guards nothing.
+  const clientFilterGen = useRef(0);
 
   // Bulk select state. BulkBar (P3.5) will render the actual action bar.
   const [bulkMode, setBulkMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectingAll, setSelectingAll] = useState(false);
+  const [selectAllNote, setSelectAllNote] = useState('');
 
   // Which submission's detail modal is open (board-card click). Table view
   // uses its own inline row-expand instead of this.
@@ -140,43 +153,19 @@ export default function Submissions() {
   ].filter(Boolean).length;
   const activeFilterCount = [bhk, dateFrom, dateTo, rmFilter].filter(Boolean).length + clientFilterCount;
 
+  // The client-only filter values, bundled once so both the memo below and
+  // onSelectAll (Task 4) feed the SAME object to the SAME predicate.
+  const clientFilters = useMemo(() => ({
+    statusFilter, matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons,
+  }), [statusFilter, matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons]);
+
   // Post-filter the loaded rows for the client-only refinements above. Runs
   // after every server reload/load-more, over whatever's currently in
   // `submissions` — cheap, since it's at most a few hundred rows in memory.
   const clientFilteredSubmissions = useMemo(() => {
-    const statusSet = statusFilter.length > 0 ? new Set(statusFilter) : null;
-    if (clientFilterCount === 0 && !statusSet) return submissions;
-    return submissions.filter((s) => {
-      // Stage filter is client-side now (multi-select union) — the backend
-      // `status` param only takes a single stage, so we post-filter instead.
-      if (statusSet && !statusSet.has(s.status)) return false;
-      if (matchTypes.length > 0) {
-        const flags = {
-          perfect: s.perfect_match_at_submit === true,
-          collated: s.collated_match === true,
-          submissions: s.submissions_match === true,
-          weak: s.weak_match === true,
-        };
-        if (!matchTypes.some((t) => flags[t])) return false;
-      }
-      if (missingInfo.length > 0) {
-        const flags = {
-          no_asking_price: !s.asking_price,
-          no_seller: !s.seller_name,
-        };
-        if (!missingInfo.some((t) => flags[t])) return false;
-      }
-      if (priceMin !== '' && (Number(s.asking_price) || 0) < Number(priceMin)) return false;
-      if (priceMax !== '' && (Number(s.asking_price) || 0) > Number(priceMax)) return false;
-      if (ohPriceFilter) {
-        const state = s.oh_state;
-        if (ohPriceFilter === 'has' && state !== 'match') return false;
-        if (ohPriceFilter === 'check' && !(state && state !== 'match')) return false;
-      }
-      if (rejectReasons.length > 0 && !rejectReasons.includes(s.status_reason)) return false;
-      return true;
-    });
-  }, [submissions, statusFilter, clientFilterCount, matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons]);
+    if (clientFilterCount === 0 && statusFilter.length === 0) return submissions;
+    return submissions.filter((s) => matchesClientFilters(s, clientFilters));
+  }, [submissions, clientFilterCount, statusFilter, clientFilters]);
 
   // Table's header "select all" checkbox — toggles every currently-loaded
   // *visible* row. Must read `clientFilteredSubmissions`, not `submissions`:
@@ -190,16 +179,6 @@ export default function Submissions() {
       return allSelected ? new Set() : new Set(ids);
     });
   }, [clientFilteredSubmissions]);
-
-  // A selection must never outlive the filter it was made under. The stage and
-  // refinement filters are applied in-memory, so changing one silently swaps
-  // which rows are visible while `selectedIds` keeps the old ids — and bulk
-  // actions POST those ids verbatim. Clearing here is what stops a bulk action
-  // from mutating rows the user can no longer see.
-  const clientFilterKey = JSON.stringify([
-    statusFilter, matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons,
-  ]);
-  useEffect(() => { setSelectedIds(new Set()); }, [clientFilterKey]);
 
   // The stage filter is client-side for BOTH views now (multi-select union) —
   // reload always fetches every stage's first page and `clientFilteredSubmissions`
@@ -216,6 +195,118 @@ export default function Submissions() {
     if (rmFilter) f.rm_id = rmFilter;
     return f;
   }, [city, search, bhk, dateFrom, dateTo, rmFilter]);
+
+  // A selection must never outlive the filter it was made under. BOTH the
+  // server-side filters (city/search/bhk/date range/RM — effectiveFilters)
+  // and the client-only refinements (stage/match-type/price/etc.) change
+  // which rows are visible; `selectedIds` must not survive either kind of
+  // change, since bulk actions POST those ids verbatim. Keying on
+  // `effectiveFilters` too — not just the client-side values — is what
+  // stops a bulk action from mutating rows that a server-filter change
+  // (e.g. switching the city tab) hid from view. `effectiveFilters` is a
+  // new object every render, but it's plain data, so JSON.stringify-ing it
+  // into the key is safe and gives the effect a stable primitive dep.
+  //
+  // Also clears any leftover Select-all note here: a stale "capped at 5000"
+  // or "Select all failed" message must not sit next to a selection that
+  // this same filter change just wiped.
+  //
+  // Defined below `effectiveFilters` (not up near the other filter state,
+  // despite that being the more natural home) — it closes over
+  // `effectiveFilters`, and that identifier is in the TDZ until its own
+  // `const` line runs earlier in this render. Same ordering constraint
+  // `onSelectAll` documents below.
+  //
+  // Bumps `clientFilterGen`, never `reloadGen` — this ref exists purely so
+  // `onSelectAll` can detect "the filter changed while my fetch was in
+  // flight" independently of `reload`'s own generation counter.
+  const filterKey = JSON.stringify([
+    effectiveFilters,
+    statusFilter, matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons,
+  ]);
+  useEffect(() => {
+    clientFilterGen.current += 1;
+    setSelectedIds(new Set());
+    setSelectAllNote('');
+  }, [filterKey]);
+
+  // "Select all": fetch EVERY row matching the server filters, then select the
+  // ones that also pass the client-only refinements.
+  //
+  // It filters `rows` directly rather than reading `clientFilteredSubmissions`:
+  // that memo has not recomputed yet at this point in the handler, so it still
+  // holds the pre-fetch page — selecting from it would silently select the old
+  // rows. Same predicate, so selection and view cannot disagree.
+  //
+  // Defined below `effectiveFilters` (not immediately after
+  // `clientFilteredSubmissions`, despite that being the more natural home) —
+  // it closes over `effectiveFilters`, and that identifier is in the TDZ until
+  // its own `const` line runs earlier in this render.
+  const onSelectAll = useCallback(async () => {
+    setSelectingAll(true);
+    setSelectAllNote('');
+    // Staleness guard, mirroring `reload` below — but unlike `reload`,
+    // Select-all also OWNS the generation: it bumps `reloadGen` itself
+    // (not just captures it), so any `reload`/`loadMoreStage` already in
+    // flight discards its result instead of racing the 5000-row fetch
+    // that's about to land and clobbering it with a smaller page.
+    // `myFilterGen` still just captures `clientFilterGen` (bumped only by
+    // the filterKey effect above, never by this handler) — a filter change,
+    // not a reload, is what should invalidate Select-all's own in-flight
+    // fetch. Both must be refs — a plain value closed over by this callback
+    // would just be compared to itself and never detect a change.
+    //
+    // Trap this creates: bumping `reloadGen` here means a `reload` that was
+    // already in flight when Select-all started will find its own guard
+    // (`myGen === reloadGen.current`) false when it lands, so ITS `finally`
+    // skips `setLoading(false)` — which would otherwise strand the board on
+    // `loading: true` forever. This handler's `finally` below compensates
+    // by owning that flag itself whenever it still holds the current
+    // generation (i.e. nothing newer superseded it in turn).
+    const myGen = ++reloadGen.current;
+    const myFilterGen = clientFilterGen.current;
+    try {
+      const data = await api.adminListSubmissions({ ...effectiveFilters, all: 'true' });
+      if (myGen !== reloadGen.current || myFilterGen !== clientFilterGen.current) return;
+      const rows = data.submissions || [];
+      setSubmissions(rows);
+      if (data.counts) setCounts(data.counts);
+      const loaded = {};
+      for (const s of rows) loaded[s.status] = (loaded[s.status] || 0) + 1;
+      setLoadedByStage(loaded);
+      setLoadingByStage({});
+      setSelectedIds(new Set(
+        rows.filter((s) => matchesClientFilters(s, clientFilters)).map((s) => s.id),
+      ));
+      // No silent caps: the server stops at 5000 rows. Say so whenever the
+      // fetch actually hit the cap — `rows.length >= SELECT_ALL_CAP` alone
+      // must drive this, not a comparison against `counts.Total`: that
+      // count is seeded from VALID_STAGES and excludes NULL-status rows
+      // (admin.py `_stage_counts`), so it can under-report and would let
+      // this note silently miss the exact truncation it exists to surface.
+      // When `Total` IS available and over the cap, it still adds a rough
+      // "+more" hint, but it only counts server-filter matches (it knows
+      // nothing about the client-only refinements below), so that part is
+      // phrased as an approximation.
+      if (rows.length >= SELECT_ALL_CAP) {
+        const total = data.counts?.Total ?? 0;
+        const more = total > SELECT_ALL_CAP
+          ? ` — ${total - SELECT_ALL_CAP}+ more matched before filtering`
+          : '';
+        setSelectAllNote(`capped at ${SELECT_ALL_CAP}${more}`);
+      }
+    } catch (err) {
+      if (myGen !== reloadGen.current || myFilterGen !== clientFilterGen.current) return;
+      setSelectAllNote(err.message || 'Select all failed');
+    } finally {
+      setSelectingAll(false);
+      // Compensates for the trap documented above: if this call still owns
+      // the generation it bumped, no other reload will ever clear `loading`
+      // on its behalf, so this must — otherwise a reload that was in
+      // flight when Select-all started leaves the board spinning forever.
+      if (myGen === reloadGen.current) setLoading(false);
+    }
+  }, [effectiveFilters, clientFilters]);
 
   const reload = useCallback(async () => {
     const myGen = ++reloadGen.current;
@@ -314,6 +405,7 @@ export default function Submissions() {
   const toggleBulkMode = () => {
     setBulkMode(!bulkMode);
     setSelectedIds(new Set());
+    setSelectAllNote('');
   };
 
   return (
@@ -485,7 +577,10 @@ export default function Submissions() {
         bulkMode={bulkMode}
         selectedIds={selectedIds}
         submissions={clientFilteredSubmissions}
-        setSelectedIds={setSelectedIds}
+        onSelectAll={onSelectAll}
+        selectingAll={selectingAll}
+        selectAllNote={selectAllNote}
+        selectAllCap={SELECT_ALL_CAP}
         onClearSelection={() => setSelectedIds(new Set())}
         onExitBulkMode={() => setBulkMode(false)}
         onChanged={reload}

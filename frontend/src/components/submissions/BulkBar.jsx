@@ -21,17 +21,12 @@
  * On any successful action (`adminBulkStatus`, or either modal's onSuccess)
  * this clears the selection, exits bulk mode, and tells the page to reload.
  *
- * "Select all matching": this app's admin list endpoint
- * (`GET /admin/submissions`) always paginates per stage (default 15,
- * capped at 500) — there is no ids-only/unlimited endpoint for it (only the
- * CSV export sweeps every matching row, and that's a separate file-download
- * codepath). Rather than add a new backend route for this task, "Select all"
- * here selects every row *already loaded* into the page (same rows
- * BoardView/TableView are currently rendering — identical semantics to
- * TableView's own header "select all" checkbox). If more rows exist below
- * what's loaded (further pages / more stage scroll), they are NOT included.
- * Needs `setSelectedIds` from the page to work; without it the control is
- * simply omitted.
+ * "Select all": `GET /admin/submissions?all=true` returns every row matching the
+ * current server filters (capped at 5000 by _list_submissions_core); the page
+ * then selects those that also pass the client-only refinements, using the same
+ * `matchesClientFilters` predicate the Board/Table render through. Rows the user
+ * unticks afterwards simply leave `selectedIds`. If the 5000 cap truncates, the
+ * page passes a `selectAllNote` and we render it — never a silent cap.
  */
 import { useMemo, useState } from 'react';
 
@@ -55,7 +50,10 @@ export default function BulkBar({
   bulkMode,
   selectedIds,
   submissions = [],
-  setSelectedIds,
+  onSelectAll,
+  selectingAll = false,
+  selectAllNote = '',
+  selectAllCap,
   onClearSelection,
   onExitBulkMode,
   onChanged,
@@ -90,10 +88,6 @@ export default function BulkBar({
     onChanged?.();
   }
 
-  function selectAllLoaded() {
-    setSelectedIds?.(new Set(submissions.map((s) => s.id)));
-  }
-
   async function applyStageChange() {
     setError('');
     setSubmitting(true);
@@ -119,8 +113,10 @@ export default function BulkBar({
 
   const overScheduleCap = action === 'schedule' && selectedIds.size > SCHEDULE_VISIT_MAX;
   // The bar now renders at zero selected, so Apply must gate on the selection
-  // itself — nothing below implies a non-empty set any more.
-  const canApply = !submitting && selectedIds.size > 0 && (
+  // itself — nothing below implies a non-empty set any more. Also gate on
+  // `selectingAll`: a Select-all fetch in flight means `selectedIds` is about
+  // to be replaced, so Apply must not fire against it in the meantime.
+  const canApply = !submitting && !selectingAll && selectedIds.size > 0 && (
     (action === 'stage' && Boolean(stage) && (stage !== 'Rejected' || Boolean(rejectReason))) ||
     (action === 'schedule' && !overScheduleCap) ||
     action === 'reassign'
@@ -131,17 +127,18 @@ export default function BulkBar({
       <div className="bulk-bar">
         <span className="bulk-count">{selectedIds.size} selected</span>
 
-        {setSelectedIds && (
+        {onSelectAll && (
           <button
             type="button"
             className="btn-link"
-            onClick={selectAllLoaded}
-            disabled={submitting || submissions.length === 0 || selectedIds.size === submissions.length}
-            title="Selects every row currently loaded on the page — doesn't reach further pages/stage scroll not yet loaded"
+            onClick={onSelectAll}
+            disabled={submitting || selectingAll}
+            title={`Selects every row matching the current filters (server cap: ${selectAllCap})`}
           >
-            Select all loaded ({submissions.length})
+            {selectingAll ? 'Selecting…' : `Select all (${selectAllCap} cap)`}
           </button>
         )}
+        {selectAllNote && <span className="bulk-error">{selectAllNote}</span>}
 
         <select value={action} onChange={(e) => changeAction(e.target.value)} disabled={submitting}>
           <option value="">— action —</option>

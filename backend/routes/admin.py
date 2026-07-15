@@ -1062,6 +1062,12 @@ def list_submissions():
         # (runs last so cp_status has final say). Best-effort; skips terminal cards.
         _sync_status_from_cp_inventory()
 
+    # `all=true` (BulkBar "Select all"): return every row matching the filters
+    # instead of the per-stage page, so the client can select the whole result
+    # set. Routes to the same unpaginated path the CSV export has always used
+    # (LIMIT 5000 inside _list_submissions_core). `limit`/`offset` are ignored.
+    select_all = request.args.get("all", "false").lower() == "true"
+
     # Pagination: default 15 per stage, capped at 500 for safety. Frontend
     # passes `offset` only when paginating a single stage (status filter is
     # set in the query string). Keeping the default small avoids fanning out
@@ -1080,7 +1086,10 @@ def list_submissions():
 
     # Slim payload: only the columns Board/Table cards (and bulk modals)
     # actually render. The side panel re-fetches the full row on click.
-    subs = _list_submissions_core(slim=True, limit_per_stage=limit, offset=offset)
+    if select_all:
+        subs = _list_submissions_core(slim=True, limit_per_stage=None)
+    else:
+        subs = _list_submissions_core(slim=True, limit_per_stage=limit, offset=offset)
 
     # skip_counts (parsed above) also skips the COUNT-per-stage aggregate on
     # load-more — counts only change when filters change (a fresh reload).
@@ -2843,7 +2852,7 @@ def bulk_status():
       - When status='Rejected', status_reason must be one of REJECTED_REASONS
         and is applied to every row. Otherwise status_reason is cleared.
       - Rows currently in AUTO_ONLY_STAGES are skipped.
-    Max 200 IDs per call.
+    Max 5000 IDs per call.
     """
     data = request.get_json(silent=True) or {}
     ids = data.get("ids") or []
@@ -2851,8 +2860,8 @@ def bulk_status():
 
     if not isinstance(ids, list) or not ids:
         return jsonify({"error": "ids must be a non-empty list"}), 400
-    if len(ids) > 200:
-        return jsonify({"error": "Max 200 IDs per bulk operation"}), 400
+    if len(ids) > 5000:
+        return jsonify({"error": "Max 5000 IDs per bulk operation"}), 400
     if not new_status or new_status not in VALID_STAGES:
         return jsonify({"error": f"Invalid status. Must be one of: {VALID_STAGES}"}), 400
     if new_status in AUTO_ONLY_STAGES:
@@ -2878,39 +2887,67 @@ def bulk_status():
         clean_ids.append(iv)
 
     conn = get_app_conn()
-    updated, skipped = 0, 0
     try:
         with conn.cursor() as cur:
             scope_sql, scope_params = _scoped_city_filter(cur)
-            # Pull in-scope, not-deleted, not-already-at-target
+
+            # Q1: in-scope ids (exists, not deleted, within the caller's city
+            # scope). Drives the skipped / out_of_scope arithmetic below —
+            # same meanings the per-row loop produced.
             cur.execute(f"""
-                SELECT s.id, s.status, s.status_reason FROM submissions s
+                SELECT s.id FROM submissions s
                 WHERE s.id = ANY(%s)
                   AND s.deleted_at IS NULL
                   {scope_sql}
             """, [clean_ids, *scope_params])
-            rows = cur.fetchall()
-            in_scope = {r["id"]: (r["status"], r.get("status_reason")) for r in rows}
+            in_scope_ids = [r["id"] for r in cur.fetchall()]
 
-            for sid, (old_status, old_reason) in in_scope.items():
-                if old_status in AUTO_ONLY_STAGES:
-                    skipped += 1
-                    continue
-                if old_status == new_status and old_reason == new_reason:
-                    skipped += 1
-                    continue
-                cur.execute(
-                    "UPDATE submissions SET status = %s, status_reason = %s WHERE id = %s",
-                    (new_status, new_reason, sid),
-                )
-                cur.execute("""
+            # Q2: snapshot, update, and log every row in ONE statement. This
+            # replaced a per-row loop (1 UPDATE + 1 INSERT each) that could not
+            # survive the 30s worker timeout at 5000 ids.
+            #
+            # `target` must read status BEFORE the UPDATE: Postgres'
+            # UPDATE ... RETURNING yields the NEW value, which would make
+            # from_status wrong on every event row.
+            #
+            # The `s.status IS NULL OR` guard matters: submissions.status is
+            # nullable, and `NULL <> ALL(...)` is NULL (row dropped), which
+            # would silently reclassify NULL-status rows as skipped — the loop
+            # updated them.
+            cur.execute(f"""
+                WITH target AS (
+                    SELECT s.id, s.status AS old_status
+                      FROM submissions s
+                     WHERE s.id = ANY(%s)
+                       AND s.deleted_at IS NULL
+                       {scope_sql}
+                       AND (s.status IS NULL OR s.status <> ALL(%s))
+                       AND (s.status IS DISTINCT FROM %s
+                            OR s.status_reason IS DISTINCT FROM %s)
+                     ORDER BY s.id
+                       FOR UPDATE
+                ), upd AS (
+                    UPDATE submissions SET status = %s, status_reason = %s
+                     WHERE id IN (SELECT id FROM target)
+                ), ev AS (
                     INSERT INTO submission_events
-                        (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status, text)
-                    VALUES (%s, %s, %s, 'status_change', %s, %s, 'Bulk action')
-                """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), old_status, new_status))
-                updated += 1
+                        (submission_id, actor_cp_id, actor_rm_id, kind,
+                         from_status, to_status, text)
+                    SELECT t.id, %s, %s, 'status_change', t.old_status, %s, 'Bulk action'
+                      FROM target t
+                )
+                SELECT count(*) AS updated FROM target
+            """, [
+                clean_ids, *scope_params, list(AUTO_ONLY_STAGES),
+                new_status, new_reason,
+                new_status, new_reason,
+                g.user.get("cp_id"), g.user.get("rm_id"), new_status,
+            ])
+            updated = cur.fetchone()["updated"]
 
-            out_of_scope = len(clean_ids) - len(in_scope)
+            skipped = len(in_scope_ids) - updated
+            out_of_scope = len(clean_ids) - len(in_scope_ids)
+
             log_activity(
                 cur, action="status_change_bulk", category="submission",
                 entity_type="submission_bulk",
@@ -2919,7 +2956,7 @@ def bulk_status():
                     "updated": updated,
                     "skipped_same_status": skipped,
                     "out_of_scope_or_deleted": out_of_scope,
-                    "ids": list(in_scope.keys())[:50],
+                    "ids": in_scope_ids[:50],
                 },
             )
             conn.commit()
