@@ -87,11 +87,13 @@ export default function Home() {
     <div className="home">
       <h2 className="home-sec">Updates</h2>
       <div className="home-updates">
-        {/* New Submissions (left, narrow = Outcomes width) — today's Unapproved
-            & Submitted counts + the latest of each. Whole card filters to both. */}
+        {/* New Unacted Submissions (left, narrow = Outcomes width) — today's
+            Unapproved & Submitted counts + the latest of each. "Unacted" is what
+            those two stages mean: nothing has moved them on yet. Whole card
+            filters to both. */}
         <Link to="/submissions?status=Unapproved,Submitted" className="report-card home-newsubs">
           <div className="report-head">
-            <h3>New Submissions</h3>
+            <h3>New Unacted Submissions</h3>
             {/* Range toggle (bare) — SegToggle stops the click bubbling to the card Link. */}
             <SegToggle
               bare

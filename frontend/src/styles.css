@@ -483,14 +483,14 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .home-sec { font-size: 24px; margin: 0 0 14px; }
 .home-sec:not(:first-child) { margin-top: 30px; }
 
-/* Updates row: narrow "New Submissions" (Outcomes width) + wide "Unread Chats"
+/* Updates row: narrow "New Unacted Submissions" (Outcomes width) + wide "Unread Chats"
    (Pipeline width). Mirror of the Summary grid; both cards equal, tall. */
 .home-updates { display: grid; grid-template-columns: 1fr 1.7fr; gap: 18px; align-items: stretch; margin-bottom: 4px; }
 .home-updates .report-card { min-height: 230px; }
 .home-newsubs, .home-unread { display: flex; flex-direction: column; text-decoration: none; color: inherit; transition: border-color .14s, box-shadow .14s; }
 .home-newsubs:hover, .home-unread:hover { border-color: var(--brand); box-shadow: var(--shadow-md); }
 
-/* New Submissions — two stage columns, each: count today + latest listing. */
+/* New Unacted Submissions — two stage columns, each: count today + latest listing. */
 .ns-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
 .ns-col { display: flex; flex-direction: column; gap: 3px; }
 .ns-stage { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
