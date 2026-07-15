@@ -29,6 +29,60 @@ function fmtDay(iso) {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
+// Round the y-axis top up to a clean number so ticks read 0/40/80, not 0/32.5/65.
+const NICE = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+function niceMax(v) {
+  if (v <= 4) return 4;
+  const pow = 10 ** Math.floor(Math.log10(v));
+  const n = v / pow;
+  return (NICE.find((s) => n <= s) ?? 10) * pow;
+}
+
+/**
+ * Monotone cubic (Fritsch–Carlson) through the points, as an SVG path.
+ *
+ * Deliberately NOT a plain Catmull-Rom/cardinal spline: those overshoot around
+ * a spike, so the curve would dip BELOW ZERO between two quiet days and draw
+ * negative submissions — inventing data the series doesn't contain. A monotone
+ * fit cannot overshoot: between two points it never leaves their value range,
+ * so a 0 day stays flat at 0.
+ */
+function monotonePath(pts) {
+  const n = pts.length;
+  if (n < 2) return n === 1 ? `M ${pts[0].x},${pts[0].y}` : '';
+
+  const dx = [];
+  const slope = [];
+  for (let i = 0; i < n - 1; i += 1) {
+    dx[i] = pts[i + 1].x - pts[i].x;
+    slope[i] = (pts[i + 1].y - pts[i].y) / dx[i];
+  }
+
+  // Tangents: zero at every local extremum (that's what kills the overshoot),
+  // weighted harmonic mean elsewhere.
+  const m = new Array(n);
+  m[0] = slope[0];
+  m[n - 1] = slope[n - 2];
+  for (let i = 1; i < n - 1; i += 1) {
+    if (slope[i - 1] * slope[i] <= 0) {
+      m[i] = 0;
+    } else {
+      const w1 = 2 * dx[i] + dx[i - 1];
+      const w2 = dx[i] + 2 * dx[i - 1];
+      m[i] = (w1 + w2) / (w1 / slope[i - 1] + w2 / slope[i]);
+    }
+  }
+
+  let d = `M ${pts[0].x},${pts[0].y}`;
+  for (let i = 0; i < n - 1; i += 1) {
+    const h = dx[i] / 3;
+    d += ` C ${pts[i].x + h},${pts[i].y + m[i] * h}`
+       + ` ${pts[i + 1].x - h},${pts[i + 1].y - m[i + 1] * h}`
+       + ` ${pts[i + 1].x},${pts[i + 1].y}`;
+  }
+  return d;
+}
+
 export default function SubmissionsTrend() {
   const [days, setDays] = useState(30);
   const [points, setPoints] = useState(null);   // null → never loaded yet
@@ -116,15 +170,18 @@ export default function SubmissionsTrend() {
   }
 
   const n = points.length;
-  const maxY = Math.max(1, ...points.map((p) => p.count));
+  const peak = Math.max(1, ...points.map((p) => p.count));
+  const maxY = niceMax(peak);
   const plotW = Math.max(1, w - PAD.l - PAD.r);
   const plotH = H - PAD.t - PAD.b;
   const x = (i) => PAD.l + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
   const y = (v) => PAD.t + plotH - (v / maxY) * plotH;
   const baseline = PAD.t + plotH;
 
-  const line = points.map((p, i) => `${x(i)},${y(p.count)}`).join(' ');
-  const area = `M ${x(0)},${baseline} L ${line.split(' ').join(' L ')} L ${x(n - 1)},${baseline} Z`;
+  const xy = points.map((p, i) => ({ x: x(i), y: y(p.count) }));
+  const line = monotonePath(xy);
+  const area = `${line} L ${x(n - 1)},${baseline} L ${x(0)},${baseline} Z`;
+  const ticks = [0, maxY / 2, maxY];
   const last = points[n - 1];
   const active = hover == null ? null : points[hover];
 
@@ -141,19 +198,37 @@ export default function SubmissionsTrend() {
             width={w}
             height={H}
             role="img"
-            aria-label={`Submissions per day for the last ${days} days. ${total} total, peaking at ${maxY} in a day.`}
+            aria-label={`Submissions per day for the last ${days} days. ${total} total, peaking at ${peak} in a day.`}
             onPointerMove={onMove}
             onPointerLeave={() => setHover(null)}
           >
-            {/* Area wash — the series hue at ~10%, never a saturated block. */}
-            <path d={area} fill="color-mix(in srgb, var(--brand) 10%, transparent)" />
+            <defs>
+              {/* Fade the wash out downwards so the curve reads as the mark and
+                  the fill stays a wash, never a block. */}
+              <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="var(--brand)" stopOpacity="0.20" />
+                <stop offset="1" stopColor="var(--brand)" stopOpacity="0" />
+              </linearGradient>
+            </defs>
 
-            {/* Axis: a solid hairline, one step off the surface. Never dashed. */}
-            <line x1={PAD.l} y1={baseline} x2={w - PAD.r} y2={baseline} stroke="var(--border)" strokeWidth="1" />
+            <path d={area} fill="url(#trend-fill)" />
 
-            {/* Y ticks carry the values that aren't directly labelled. */}
-            <text x={PAD.l - 6} y={baseline + 3} className="trend-tick" textAnchor="end">0</text>
-            <text x={PAD.l - 6} y={PAD.t + 8} className="trend-tick" textAnchor="end">{maxY}</text>
+            {/* Gridlines + axis: solid hairlines one step off the surface, never
+                dashed — dashing reads as "threshold" when it's just a grid. */}
+            {ticks.map((t) => (
+              <line
+                key={t}
+                x1={PAD.l} y1={y(t)} x2={w - PAD.r} y2={y(t)}
+                stroke="var(--border)" strokeWidth="1"
+                opacity={t === 0 ? 1 : 0.55}
+              />
+            ))}
+
+            {/* Y ticks carry the values that aren't directly labelled — load-bearing
+                here, since the brand hue is under 3:1 on the light surface. */}
+            {ticks.map((t) => (
+              <text key={t} x={PAD.l - 6} y={y(t) + 3} className="trend-tick" textAnchor="end">{t}</text>
+            ))}
 
             {/* X: first and last only — dense date ticks are unreadable at 90 points. */}
             <text x={PAD.l} y={H - 6} className="trend-tick">{fmtDay(points[0].date)}</text>
@@ -166,13 +241,29 @@ export default function SubmissionsTrend() {
               />
             )}
 
-            <polyline
-              points={line}
+            <path
+              d={line}
               fill="none"
               stroke="var(--brand)"
               strokeWidth="2"
               strokeLinejoin="round"
               strokeLinecap="round"
+            />
+
+            {/* The pulse: a short bright dash swept along the same curve.
+                pathLength="100" normalises the dash to percent, so one CSS
+                keyframe works for both 30 and 90 points and any card width.
+                Purely decorative — aria-hidden, and CSS drops it entirely under
+                prefers-reduced-motion. */}
+            <path
+              className="trend-pulse"
+              d={line}
+              pathLength="100"
+              fill="none"
+              stroke="var(--brand-strong)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              aria-hidden="true"
             />
 
             {/* End dot + the one direct label: the latest value. Labelling every

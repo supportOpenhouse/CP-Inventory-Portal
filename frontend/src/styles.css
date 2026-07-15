@@ -443,6 +443,18 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .trend-plot { position: relative; width: 100%; transition: opacity .15s; }
 .trend-plot svg { display: block; touch-action: none; }
 .trend-tick { fill: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+/* Pulse: an 8%-of-path bright dash swept end to end. pathLength="100" on the
+   element normalises the dash to percent, so this one keyframe is correct for
+   30 or 90 points at any card width. Decorative only — the chart reads fine
+   without it, which is why reduced-motion just removes it. */
+.trend-pulse {
+  stroke-dasharray: 8 92;
+  filter: drop-shadow(0 0 5px var(--brand-glow));
+  animation: trend-pulse 3.2s linear infinite;
+  pointer-events: none;
+}
+@keyframes trend-pulse { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .trend-pulse { display: none; } }
 .trend-empty { display: grid; place-items: center; height: 168px; font-size: 13px; }
 .trend-tip {
   position: absolute; top: 0; transform: translateX(-50%);
