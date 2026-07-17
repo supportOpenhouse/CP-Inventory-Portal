@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { formatBhk, formatPrice, formatOhPrice, formatDateOnly, formatTime12, STAGES, timeAgo } from '../../format';
 import MatchDetailsModal from '../MatchDetailsModal.jsx';
+import { matchTypeLabel } from '../../matchType';
 import Loading from '../Loading.jsx';
 import { IconCalendar } from '../icons.jsx';
 
@@ -239,10 +240,10 @@ export default function BoardView({
                       <span
                         className="board-chip board-chip-perfect"
                         style={{ cursor: 'pointer' }}
-                        title="Perfect match — click to see the matched record(s)"
+                        title={`${matchTypeLabel(s, 'perfect')} — click to see the matched record(s)`}
                         onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       >
-                        Perfect match
+                        {matchTypeLabel(s, 'perfect')}
                       </span>
                     )}
                     {isCollatedPartial && (
@@ -252,7 +253,7 @@ export default function BoardView({
                         title="Partial match from external inventory — click to see the matched listing(s)"
                         onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       >
-                        Collated match
+                        {matchTypeLabel(s, 'collated')}
                       </span>
                     )}
                     {isSubmissionsPartial && (
@@ -262,7 +263,7 @@ export default function BoardView({
                         title="Partial match from another CP's submission — click to see the matched record(s)"
                         onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}
                       >
-                        Submissions match
+                        {matchTypeLabel(s, 'submissions')}
                       </span>
                     )}
                     {movedFromStage && (

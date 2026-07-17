@@ -86,10 +86,16 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
                         <span
                           style={{
                             fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 8,
-                            background: it.match === 'exact' ? 'var(--red-bg)' : 'var(--amber-bg)',
-                            color: it.match === 'exact' ? 'var(--red-fg)' : 'var(--amber-fg)',
+                            // 'fuzzy' is a full 5-field hit reached via a
+                            // tower/unit near-miss — same strength as 'exact',
+                            // so same red. Only 'partial' is amber.
+                            background: it.match === 'partial' ? 'var(--amber-bg)' : 'var(--red-bg)',
+                            color: it.match === 'partial' ? 'var(--amber-fg)' : 'var(--red-fg)',
                             whiteSpace: 'nowrap', height: 'fit-content',
                           }}
+                          title={it.match === 'fuzzy'
+                            ? 'Tower/unit matched as a near-miss (likely typo), area corroborates'
+                            : undefined}
                         >
                           {it.match}
                         </span>

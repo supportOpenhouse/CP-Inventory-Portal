@@ -44,7 +44,7 @@ def main() -> None:
             # Backfill Unapproved + Rejected leads. Skip rows already scanned
             # (match_scanned_at set) so re-runs only process new/unscanned rows.
             cur.execute("""
-                SELECT id, cp_id, society, city, bhk, tower, unit_no, floor
+                SELECT id, cp_id, society, city, bhk, tower, unit_no, floor, sqft
                 FROM submissions
                 WHERE deleted_at IS NULL
                   AND status IN ('Unapproved', 'Rejected', 'Price Rejected')
@@ -69,6 +69,7 @@ def main() -> None:
                 tower=r["tower"],
                 unit_no=r["unit_no"],
                 floor=r["floor"],
+                sqft=r["sqft"],
                 cp_id=r["cp_id"],
                 exclude_submission_id=r["id"],
             )

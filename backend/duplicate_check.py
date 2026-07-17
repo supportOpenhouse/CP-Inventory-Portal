@@ -21,11 +21,21 @@ Decision table:
   CP inputs                                     Match found?        Result
   ────────────────────────────────────────────  ─────────────────   ─────────────────────────────
   society+bhk+floor+tower+unit                  full exact match    EXACT block (Rejected, reason='Duplicacy')
+  society+bhk+floor+tower+unit                  tower/unit typo     FUZZY (exact + fuzzy=True, no block -> Unapproved)
   society+bhk+floor+tower+unit                  soc+bhk+floor only  PARTIAL (informational, no block)
   society+bhk+floor+tower (no unit)             any match           PARTIAL (informational, no block)
   society+bhk+floor+unit (no tower)             any match           PARTIAL (informational, no block)
   society+bhk+floor (no tower/unit)             any match           PARTIAL (informational, no block)
   any input                                     no match            none
+
+Fuzzy ("Fuzzy Perfect Match"): a literal exact match is leading-zero- and
+case-insensitive but otherwise strict, so one typed character defeats it —
+tower "Tullip" sailed past a live "Tulip" listing. When the strict 5-field
+match misses, tower and unit_no are re-compared as near-misses and the area
+must corroborate (see the fuzzy helpers below). A hit keeps match_level
+'exact' and tags its match_details entries match='fuzzy', but sets block=False
+so it is NEVER auto-rejected — callers route it to 'Unapproved' for a human to
+confirm. That review step is what makes the loose thresholds safe.
 
 EXACT match (match_level='exact', block=True) requires the CP to supply
 BOTH tower AND unit_no AND for a matching row in properties or submissions
@@ -55,6 +65,7 @@ Inventory DB is configured (both fail open/closed independently).
 """
 
 import re
+from difflib import SequenceMatcher
 
 from db import (
     get_app_conn,
@@ -92,6 +103,114 @@ def _norm_floor(value):
         return None
     s = str(value).strip().lower()
     return s if s else None
+
+
+# --- fuzzy matching (tower / unit_no / area) --------------------------------
+#
+# Exact matching is leading-zero- and case-insensitive but otherwise literal, so
+# a one-character typo in the tower name defeats it entirely: OHLNC1245 was
+# submitted as tower "Tullip" against a live "Tulip" listing, missed the exact
+# block, and landed in Submitted. These helpers catch that class of typo.
+#
+# Fuzzy NEVER auto-rejects (block=False → the caller routes to Unapproved for a
+# human to confirm), so the cost of a false positive is one review click. That
+# is what lets the thresholds be loose enough to be useful.
+
+# Ratio floor for a near-miss. Calibrated against the real pairs:
+#   tulip/tullip .909 hit · 506/5066 .857 hit  (typos we want)
+#   towera/towerb .833 miss · 506/508 .667 miss · aster/astor .800 miss
+_FUZZY_THRESHOLD = 0.85
+
+
+# Leading zeros of any digit-run, not just the string's. Anchored on "not
+# preceded by a digit, followed by a digit" so it strips the 0 in "T05" (which a
+# plain lstrip misses, since the string starts with "T") without eating the
+# zeros inside "1000" or blanking a bare "T0".
+_LEADING_ZEROS_RE = re.compile(r"(?<![0-9])0+(?=[0-9])")
+
+
+def _norm_token(value) -> str:
+    """Upper-case, drop separators/spaces, strip leading zeros.
+
+    "T-05 " and "t05" and "T5" all collapse to "T5", so the fuzzy ratio only
+    ever sees differences that aren't already handled by exact matching.
+    """
+    if value is None:
+        return ""
+    return _LEADING_ZEROS_RE.sub("", re.sub(r"[^A-Z0-9]", "", str(value).upper()))
+
+
+def _ratio(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _fuzzy_tower_eq(a, b) -> bool:
+    """Near-miss compare for tower names.
+
+    Guard: if both sides carry digits and those digits differ, it's a different
+    tower, not a typo — "T1" vs "T2" scores .5 anyway, but "Tower 11" vs
+    "Tower 12" scores .875 and would otherwise sail through. Digits in a tower
+    name are an identity, never a spelling.
+    """
+    a, b = _norm_token(a), _norm_token(b)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    da, db = re.sub(r"\D", "", a), re.sub(r"\D", "", b)
+    if da != db:
+        return False
+    return _ratio(a, b) >= _FUZZY_THRESHOLD
+
+
+def _fuzzy_unit_eq(a, b) -> bool:
+    """Near-miss compare for unit numbers.
+
+    No digit guard here — for a unit number the digits ARE the content, so a
+    guard would reduce this to exact matching. The ratio alone separates typos
+    ("506"/"5066" .857) from genuinely different flats ("506"/"508" .667).
+    """
+    a, b = _norm_token(a), _norm_token(b)
+    if not a or not b:
+        return False
+    return a == b or _ratio(a, b) >= _FUZZY_THRESHOLD
+
+
+def _norm_area(value):
+    """Areas in this inventory are 3- or 4-digit, never more, so a longer value
+    is a fat-fingered extra digit: 15001 -> 1500. Returns None when unusable."""
+    d = re.sub(r"\D", "", str(value or "")).lstrip("0")
+    if not d:
+        return None
+    return int(d[:4])
+
+
+def _area_close(a, b) -> bool:
+    """True when two areas corroborate a fuzzy hit.
+
+    Missing on either side means we can't corroborate — return True rather than
+    veto, since area is a supporting signal here, not a required one. The 2%
+    band absorbs the same unit being quoted at 1650 vs 1655.
+    """
+    a, b = _norm_area(a), _norm_area(b)
+    if a is None or b is None:
+        return True
+    return abs(a - b) <= 0.02 * max(a, b)
+
+
+def _fuzzy_row_match(row: dict, source: str, tower, unit_no, sqft) -> bool:
+    """Does `row` (already an exact society+city+bhk+floor hit) fuzzy-match the
+    CP's tower + unit + area? All three must agree — tower and unit near-miss,
+    area corroborate."""
+    if source == "properties":
+        r_tower, r_unit, r_area = row.get("tower_no"), row.get("unit_no"), row.get("area_sqft")
+    else:
+        r_tower, r_unit, r_area = row.get("tower"), row.get("unit_no"), row.get("sqft")
+    return (
+        _fuzzy_tower_eq(tower, r_tower)
+        and _fuzzy_unit_eq(unit_no, r_unit)
+        and _area_close(sqft, r_area)
+    )
 
 
 def _fetch_rm(city_name: str, cp_id=None):
@@ -362,12 +481,13 @@ def _dedup_matches(items: list) -> list:
 
 def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
                     floor=None, city_hint=None, cp_id=None,
-                    exclude_submission_id=None):
+                    exclude_submission_id=None, sqft=None):
     """
     Returns:
         {
           "match_level": "exact" | "partial" | "none",
           "block": bool,               # True => hard-block (Contact RM/Edit), False => soft warning
+          "fuzzy": bool,               # exact hit reached only via a tower/unit near-miss
           "message": str,
           "details": { "society": str, "city": str },
           "collated_match": bool,
@@ -377,6 +497,9 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
 
     `exclude_submission_id` is forwarded to the submissions check so a row
     doesn't match itself (used by the historical backfill).
+
+    `sqft` is the CP's stated area. It is not a matching field on its own —
+    it only corroborates a fuzzy tower/unit hit (see _area_close).
     """
     # 1. Resolve society — use the passed-in text values directly.
     if not society:
@@ -442,7 +565,7 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
         }
 
     def _exact(submissions_match: bool, matches: list, block: bool = True,
-               matched_rejected: bool = False):
+               matched_rejected: bool = False, fuzzy: bool = False):
         """Build an exact-match response: a full 5-field hit.
 
         block=True  → the match is against a LIVE listing; drives 'Rejected'
@@ -451,27 +574,41 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
                       previously-REJECTED lead; the perfect-match badge is kept
                       (match_level stays 'exact') but the caller routes the new
                       submission to 'Unapproved' instead of auto-rejecting.
+        block=False + fuzzy=True → tower/unit matched only as a near-miss
+                      (typo). Surfaced as a "Fuzzy Perfect Match" — same red
+                      badge, same match_level — but never auto-rejects; the
+                      caller routes it to 'Unapproved' for a human to confirm.
         `submissions_match` records whether the hit came from the submissions
         table (True) or the properties table (False). `matches` is the list of
         matched records persisted as submissions.match_details.
         """
         rm_info = _fetch_rm(city, cp_id=cp_id)
         unit_label = f"{society_name}, Tower {tower}, Unit {unit_no}"
+        if fuzzy:
+            banner_title = "Possible duplicate —\npending review"
+            message = (
+                f"This unit ({unit_label}) closely matches a unit already with "
+                f"Openhouse and will be reviewed by the Openhouse team."
+            )
+        elif matched_rejected:
+            banner_title = "Previously listed unit —\npending review"
+            message = (
+                f"This unit ({unit_label}) matches a previously rejected listing "
+                f"and will be reviewed by the Openhouse team."
+            )
+        else:
+            banner_title = "This unit is already\nwith Openhouse"
+            message = (
+                f"This unit ({unit_label}) is already with Openhouse. "
+                f"Please contact your Openhouse representative."
+            )
         return {
             "match_level": "exact",
             "block": block,
             "matched_rejected": matched_rejected,
-            "banner_title": (
-                "Previously listed unit —\npending review" if matched_rejected
-                else "This unit is already\nwith Openhouse"
-            ),
-            "message": (
-                f"This unit ({unit_label}) matches a previously rejected listing "
-                f"and will be reviewed by the Openhouse team."
-                if matched_rejected else
-                f"This unit ({unit_label}) is already with Openhouse. "
-                f"Please contact your Openhouse representative."
-            ),
+            "fuzzy": fuzzy,
+            "banner_title": banner_title,
+            "message": message,
             "details": {**hard_block_details, **rm_info},
             "collated_match": collated_match_flag,
             "submissions_match": submissions_match,
@@ -539,7 +676,13 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
                 block=False,
                 matched_rejected=True,
             )
-        # Fall through: tower+unit given but no full match — may still be partial.
+        # Fall through: tower+unit given but no full match — may still be a
+        # fuzzy hit (checked below, over the partial candidates) or partial.
+        # ponytail: fuzzy is only checked against LIVE rows, because it reuses
+        # the partial queries' candidate rows and those filter to active
+        # statuses. A typo'd re-submit of a *rejected* lead still lands in
+        # Submitted. Add a fuzzy pass over _REJECTED_SUBMISSION_STATUSES if that
+        # shows up in practice.
 
     # ---------- PARTIAL: society+bhk+floor matches anywhere ----------
     # Reaching here means either the CP didn't supply both tower+unit, or they
@@ -564,6 +707,31 @@ def check_duplicate(society, city, bhk=None, tower=None, unit_no=None,
         society, city, bhk_n, floor_n, None, None, exclude_submission_id,
     )
     submissions_hit = bool(sub_partial_rows)
+
+    # ---------- FUZZY EXACT: tower/unit near-miss over the partial candidates ----------
+    # The rows just fetched are already exact on society+city+bhk+floor — i.e.
+    # exactly the pool a 5-field match must come from — so the fuzzy pass is a
+    # filter over them and costs no extra queries. Only reachable when the CP
+    # gave both tower and unit AND the literal exact match above missed.
+    if tower and unit_no:
+        fuzzy_prop = [
+            r for r in prop_partial_rows
+            if _fuzzy_row_match(r, "properties", tower, unit_no, sqft)
+        ]
+        fuzzy_sub = [
+            r for r in sub_partial_rows
+            if _fuzzy_row_match(r, "submissions", tower, unit_no, sqft)
+        ]
+        if fuzzy_prop or fuzzy_sub:
+            return _exact(
+                submissions_match=bool(fuzzy_sub) and not bool(fuzzy_prop),
+                matches=(
+                    [_match_item("properties", "fuzzy", r) for r in fuzzy_prop]
+                    + [_match_item("submissions", "fuzzy", r) for r in fuzzy_sub]
+                ),
+                block=False,
+                fuzzy=True,
+            )
 
     if prop_partial_rows or submissions_hit or collated_match_flag:
         matches = (

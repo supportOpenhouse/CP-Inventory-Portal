@@ -18,6 +18,7 @@
  */
 import { useState } from 'react';
 import { formatDateTime } from '../../format';
+import { isFuzzyMatch, matchTypeLabel } from '../../matchType';
 import { thumbnailUrl, previewUrl } from '../../cloudinary';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 
@@ -46,10 +47,14 @@ function Banners({ s }) {
           margin: '0 0 14px', padding: '10px 12px', background: '#fef2f2',
           border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 13, color: '#991b1b',
         }}>
-          <strong>⚠ Perfect match detected at submit time.</strong>
+          <strong>⚠ {matchTypeLabel(s)} detected at submit time.</strong>
           <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
-            Same society + BHK + floor + unit number was already in our system or properties DB
-            when the CP submitted this.
+            {isFuzzyMatch(s)
+              ? `Same society + BHK + floor, and the tower/unit are a near-miss (a likely
+                 typo) against a record already in our system or properties DB. Confirm it
+                 really is the same unit before rejecting — this was not auto-rejected.`
+              : `Same society + BHK + floor + unit number was already in our system or
+                 properties DB when the CP submitted this.`}
           </div>
         </div>
       )}
@@ -189,7 +194,8 @@ function MatchProperty({ s, onOpenSubmission }) {
   const chipClass = isPerfect ? 'board-chip-perfect'
     : isSubmissions ? 'board-chip-submissions'
       : 'board-chip-collated';
-  const typeLabel = isPerfect ? 'Perfect match' : isSubmissions ? 'Submissions match' : 'Collated match';
+  // "Perfect match" / "Fuzzy Perfect Match" — fuzzy keeps the category's colour.
+  const typeLabel = matchTypeLabel(s);
 
   // Top property: "Society · T13 U502". Falls back to the match-type name when
   // there are no stored match_details (older, un-backfilled rows).

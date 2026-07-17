@@ -48,22 +48,32 @@ def execute_on_behalf_submission(
         tower=None if skip_unit_details else to_str(data.get("tower")),
         unit_no=None if skip_unit_details else to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),
+        sqft=data.get("sqft"),
         cp_id=target_cp_id,
     )
 
+    # is_perfect_match drives the perfect-match badge, so it tracks match_level
+    # alone (mirrors routes/submissions.py). Whether it auto-rejects is a
+    # separate question: only a LIVE literal hit does. A rejected-lead hit or a
+    # tower/unit near-miss ("Fuzzy Perfect Match") keeps the badge but routes to
+    # Unapproved for a human to confirm.
     is_perfect_match = (
         not skip_unit_details
         and dup.get("match_level") == "exact"
-        and bool(dup.get("block"))
     )
+    matched_rejected = is_perfect_match and bool(dup.get("matched_rejected"))
+    fuzzy_match = is_perfect_match and bool(dup.get("fuzzy"))
     is_unit_less = skip_unit_details
     has_collated_match = bool(dup.get("collated_match"))
     has_submissions_match = bool(dup.get("submissions_match"))
     force_create = bool(data.get("force_create"))
 
-    if is_perfect_match:
+    if is_perfect_match and not (matched_rejected or fuzzy_match):
         initial_status = "Rejected"
         initial_status_reason = "Duplicacy"
+    elif matched_rejected or fuzzy_match:
+        initial_status = "Unapproved"
+        initial_status_reason = None
     elif is_unit_less:
         initial_status = "Unapproved"
         initial_status_reason = None
@@ -79,10 +89,10 @@ def execute_on_behalf_submission(
 
     log.info(
         "[submission/on-behalf] actor=%r target_cp_id=%s society=%r bhk=%r floor=%r "
-        "skip_unit=%s perfect=%s collated=%s submissions=%s force_create=%s -> status=%s",
+        "skip_unit=%s perfect=%s fuzzy=%s collated=%s submissions=%s force_create=%s -> status=%s",
         submitted_by_name, target_cp_id, society_name, data.get("bhk"), data.get("floor"),
-        skip_unit_details, is_perfect_match, has_collated_match, has_submissions_match,
-        force_create, initial_status,
+        skip_unit_details, is_perfect_match, fuzzy_match, has_collated_match,
+        has_submissions_match, force_create, initial_status,
     )
 
     conn = get_app_conn()

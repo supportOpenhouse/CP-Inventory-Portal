@@ -3421,14 +3421,18 @@ def create_submission_on_behalf():
         tower=None if skip_unit_details else to_str(data.get("tower")),
         unit_no=None if skip_unit_details else to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),
+        sqft=data.get("sqft"),
         cp_id=target_cp_id,
     )
 
+    # Tracks match_level alone so the perfect-match badge is set on every exact
+    # hit; auto-rejection is gated separately below (mirrors submissions.py).
     is_perfect_match = (
         not skip_unit_details
         and dup.get("match_level") == "exact"
-        and bool(dup.get("block"))
     )
+    matched_rejected = is_perfect_match and bool(dup.get("matched_rejected"))
+    fuzzy_match = is_perfect_match and bool(dup.get("fuzzy"))
     is_unit_less = skip_unit_details
     has_collated_match = bool(dup.get("collated_match"))
     has_submissions_match = bool(dup.get("submissions_match"))
@@ -3437,13 +3441,18 @@ def create_submission_on_behalf():
     # Status logic mirrors the CP-side flow in routes/submissions.py (applies to
     # every acting role — admin / manager / rm):
     #   - Perfect match  → Rejected (status_reason='Duplicacy')
+    #   - Fuzzy perfect / rejected-lead match → Unapproved (badge kept, but a
+    #                      near-miss or a re-submit of a dead lead gets a human)
     #   - Unit-less      → Unapproved (always; no tower/unit means admin must verify)
     #   - Collated match → Unapproved (inventory saw the same society+bhk+floor;
     #                      admin reviews even when full tower/unit was given)
     #   - Otherwise      → Submitted, unless force_create is set on a blocked dup
-    if is_perfect_match:
+    if is_perfect_match and not (matched_rejected or fuzzy_match):
         initial_status = "Rejected"
         initial_status_reason = "Duplicacy"
+    elif matched_rejected or fuzzy_match:
+        initial_status = "Unapproved"
+        initial_status_reason = None
     elif is_unit_less:
         initial_status = "Unapproved"
         initial_status_reason = None

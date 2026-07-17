@@ -13,6 +13,7 @@ import {
   stageLabel, stageMeta, timeAgo, STAGES,
 } from '../../format';
 import MatchDetailsModal from '../MatchDetailsModal.jsx';
+import { matchBadgeText, matchTypeLabel } from '../../matchType';
 import ExpandPanel from './ExpandPanel.jsx';
 import Loading from '../Loading.jsx';
 import DotLoader from '../DotLoader.jsx';
@@ -261,9 +262,9 @@ export default function TableView({
                         fontSize: 9, fontWeight: 700, color: '#991b1b',
                         background: '#fee2e2', borderRadius: 3, letterSpacing: 0.3,
                         cursor: 'pointer',
-                      }} title="Perfect match — click to see the matched record(s)"
+                      }} title={`${matchTypeLabel(s)} — click to see the matched record(s)`}
                         onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}>
-                        PERFECT
+                        {matchBadgeText(s)}
                       </span>
                     )}
                     {isWithdrawn && (

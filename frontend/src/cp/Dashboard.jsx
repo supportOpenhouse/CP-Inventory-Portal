@@ -5,6 +5,7 @@ import { clearSession } from '../auth';
 import { thumbnailUrl } from '../cloudinary';
 import { useAuth } from '../contexts/AuthContext';
 import { formatBhk, formatPrice, stageLabel } from '../format';
+import { isFuzzyMatch } from '../matchType';
 import { UnitCardSkeleton } from '../components/Skeleton';
 import SubmissionDetailModal from './SubmissionDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -34,11 +35,22 @@ const FILTER_BOXES = [
   { key: 'Closure',  label: 'CLOSURE',  color: '#16A34A' },
 ];
 
+// Was this auto-rejected as a duplicate at submit time?
+//
+// NOT just perfect_match_at_submit: a *fuzzy* perfect match (tower/unit
+// near-miss) also carries that flag but is deliberately NOT auto-rejected — it
+// sits in Unapproved until a human confirms it. Telling the CP "OH already has
+// this" about a listing nobody has confirmed yet would be a lie, and would send
+// them to their RM over a submission that may well be approved.
+function isDupRejected(s) {
+  return s.perfect_match_at_submit === true && !isFuzzyMatch(s);
+}
+
 function badgeClass(s) {
   // Perfect-match auto-created rows get a distinct red badge — these are
   // CP submissions that were rejected as duplicates at submit time. They're
   // not in the normal pipeline; CP can ignore them or follow up with their RM.
-  if (s.perfect_match_at_submit) return 'badge badge-rejected';
+  if (isDupRejected(s)) return 'badge badge-rejected';
   const status = s.status;
   if (status === 'Unapproved') return 'badge';
   if (status === 'Offer' || status === 'Closure' || status === 'Accepted') return 'badge badge-offer';
@@ -51,7 +63,7 @@ function badgeClass(s) {
 function badgeStyle(s) {
   // Token pairs / translucent tints so these read in BOTH light and dark
   // (the light-hex versions glared as white blobs in dark mode).
-  if (s.perfect_match_at_submit) {
+  if (isDupRejected(s)) {
     return { background: 'var(--red-bg)', color: 'var(--red-fg)', border: '1px solid var(--red)' };
   }
   if (s.status === 'Unapproved') {
@@ -67,7 +79,7 @@ function badgeStyle(s) {
 }
 
 function badgeLabel(s) {
-  if (s.perfect_match_at_submit) return 'OH already has this';
+  if (isDupRejected(s)) return 'OH already has this';
   if (s.status === 'Unapproved') return 'Pending Review';
   return stageLabel(s.status);
 }
@@ -274,7 +286,7 @@ export default function Dashboard({ rmPhone }) {
           const hasPendingCounter = s.counter_offer_status === 'pending' && s.counter_offer_price;
           const busy = counterBusy[s.id];
           // Dim rejected listings so they visually recede in the CP list.
-          const isRejected = s.status === 'Rejected' || s.status === 'Price Rejected' || s.perfect_match_at_submit;
+          const isRejected = s.status === 'Rejected' || s.status === 'Price Rejected' || isDupRejected(s);
           // Once both a photo AND a video exist, drop "Upload Media" from the card
           // (it lives at the bottom of the popup instead).
           const bothMedia = (Array.isArray(s.photos) && s.photos.length > 0)

@@ -235,6 +235,7 @@ def create_submission():
         tower=None if skip_unit_details else to_str(data.get("tower")),
         unit_no=None if skip_unit_details else to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),
+        sqft=data.get("sqft"),
         cp_id=g.user["cp_id"],
     )
 
@@ -245,11 +246,14 @@ def create_submission():
     # against a LIVE listing (auto-reject as Duplicacy). matched_rejected → the
     # only exact hit is a previously-REJECTED lead: keep the perfect-match badge
     # but route to Unapproved for admin review instead of auto-rejecting.
+    # fuzzy → the hit needed a tower/unit near-miss ("Fuzzy Perfect Match"):
+    # same badge, same Unapproved routing, because a typo is a guess.
     is_perfect_match = (
         not skip_unit_details
         and dup.get("match_level") == "exact"
     )
     matched_rejected = is_perfect_match and bool(dup.get("matched_rejected"))
+    fuzzy_match = is_perfect_match and bool(dup.get("fuzzy"))
     is_unit_less = skip_unit_details
     has_collated_match = bool(dup.get("collated_match"))
     has_submissions_match = bool(dup.get("submissions_match"))
@@ -259,6 +263,8 @@ def create_submission():
     #                      sees red card; CP saw 409 + Contact RM)
     #   - Perfect match (rejected lead) → Unapproved (badge kept, admin reviews
     #                      a re-submission of a previously-rejected unit)
+    #   - Fuzzy perfect match → Unapproved (tower/unit typo'd against a live
+    #                      listing; admin confirms it's really the same unit)
     #   - Unit-less      → Unapproved (CP didn't give tower/unit, admin must
     #                      verify before the listing enters the pipeline)
     #   - Collated match → Unapproved (scraper saw the same society+bhk+floor;
@@ -267,11 +273,12 @@ def create_submission():
     #                      dup (legacy "Add anyway" path) lands in Unapproved
     force_create = bool(data.get("force_create"))
     initial_status_reason = None
-    if is_perfect_match and not matched_rejected:
+    if is_perfect_match and not (matched_rejected or fuzzy_match):
         initial_status = "Rejected"
         initial_status_reason = "Duplicacy"
-    elif matched_rejected:
-        # Perfect match, but only against a rejected lead → admin review.
+    elif matched_rejected or fuzzy_match:
+        # Perfect match, but only against a rejected lead, or only via a
+        # tower/unit typo → admin review rather than an auto-reject.
         initial_status = "Unapproved"
     elif is_unit_less:
         initial_status = "Unapproved"
@@ -290,10 +297,10 @@ def create_submission():
     import logging
     logging.getLogger(__name__).info(
         "[submission] cp_id=%s society=%r bhk=%r floor=%r skip_unit=%s perfect=%s "
-        "collated=%s submissions=%s force_create=%s -> status=%s",
+        "fuzzy=%s collated=%s submissions=%s force_create=%s -> status=%s",
         g.user.get("cp_id"), society, data.get("bhk"), data.get("floor"),
-        skip_unit_details, is_perfect_match, has_collated_match, has_submissions_match,
-        force_create, initial_status,
+        skip_unit_details, is_perfect_match, fuzzy_match, has_collated_match,
+        has_submissions_match, force_create, initial_status,
     )
 
     conn = get_app_conn()
@@ -459,6 +466,7 @@ def check_duplicate_endpoint():
         tower=to_str(data.get("tower")),
         unit_no=to_str(data.get("unit_no")),
         floor=to_str(data.get("floor")),
+        sqft=data.get("sqft"),
         cp_id=g.user["cp_id"],
     )
     return jsonify(result), 200
