@@ -191,7 +191,7 @@ export default function MediaSection({ submission, canAct, onChanged, only }) {
           <img
             src={previewUrl(lightboxId)}
             alt=""
-            className={lightboxClosing ? 'is-closing-panel' : undefined}
+            className={lightboxClosing ? 'is-closing-panel' : 'is-open-panel'}
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 'var(--r)', boxShadow: 'var(--shadow-lg)' }}
           />

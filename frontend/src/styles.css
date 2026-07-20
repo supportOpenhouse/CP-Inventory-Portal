@@ -813,16 +813,29 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); width: 100%; max-width: 480px; padding: 24px; }
 .modal-wide { max-width: 720px; }
 
-/* Popup exit — the panel drops toward the bottom while the scrim fades out.
-   Applied via useModalClose(); the JS unmount delay (MODAL_EXIT_MS) must match
-   these durations. Standalone classes rather than `.modal.closing` so the
-   inline-styled CP overlays can opt in without inheriting .modal's box styling.
-   `forwards` holds the end frame so nothing flashes back before unmount. */
+/* Popup entrance — the panel pops up from below as the scrim fades in; the exit
+   mirrors it, dropping back toward the bottom. Entry rides on the base classes
+   so every .modal-backdrop / .modal gets it for free; the .is-open-* variants
+   are for popups that don't use those classes (image lightboxes, the
+   inline-styled CP overlays).
+
+   Exit is applied via useModalClose(), whose unmount delay (MODAL_EXIT_MS) must
+   match the durations here. Standalone classes rather than `.modal.closing` so
+   the inline-styled overlays can opt in without inheriting .modal's box
+   styling. `forwards` holds the end frame so nothing flashes back before
+   unmount. These rules must stay AFTER the base ones: same specificity, so the
+   later declaration is what lets the exit override the entrance. */
+.modal-backdrop, .is-open-scrim { animation: pop-scrim-in .18s ease; }
+.modal, .is-open-panel { animation: pop-panel-in .24s cubic-bezier(.22, .61, .36, 1); }
 .is-closing-scrim { animation: pop-scrim-out .22s ease forwards; pointer-events: none; }
 .is-closing-panel { animation: pop-panel-out .22s cubic-bezier(.4, 0, 1, 1) forwards; }
+@keyframes pop-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+/* Slight scale gives it the "pop"; the lift ties it to the downward exit. */
+@keyframes pop-panel-in { from { opacity: 0; transform: translateY(28px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes pop-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes pop-panel-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(64px); } }
 @media (prefers-reduced-motion: reduce) {
+  .modal-backdrop, .modal, .is-open-scrim, .is-open-panel,
   .is-closing-scrim, .is-closing-panel { animation-duration: .01ms; }
 }
 

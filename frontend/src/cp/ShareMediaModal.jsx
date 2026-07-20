@@ -84,7 +84,7 @@ export default function ShareMediaModal({
 
   return (
     <div
-      className={closing ? 'is-closing-scrim' : undefined}
+      className={closing ? 'is-closing-scrim' : 'is-open-scrim'}
       onClick={close}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)',
@@ -93,7 +93,7 @@ export default function ShareMediaModal({
       }}
     >
       <div
-        className={closing ? 'is-closing-panel' : undefined}
+        className={closing ? 'is-closing-panel' : 'is-open-panel'}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: 'var(--surface)', borderRadius: 16, padding: 22, maxWidth: 360, width: '100%',
