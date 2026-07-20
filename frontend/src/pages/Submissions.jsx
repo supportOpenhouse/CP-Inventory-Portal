@@ -11,6 +11,7 @@ import TableView from '../components/submissions/TableView.jsx';
 import CardDetailModal from '../components/submissions/CardDetailModal.jsx';
 import FilterModal from '../components/submissions/FilterModal.jsx';
 import BulkBar from '../components/submissions/BulkBar.jsx';
+import SegmentedTabs from '../components/SegmentedTabs.jsx';
 import { matchesClientFilters } from '../components/submissions/clientFilters.js';
 import AddInventoryOnBehalf from '../components/submissions/AddInventoryOnBehalf.jsx';
 import SegToggle from '../components/SegToggle.jsx';
@@ -417,18 +418,12 @@ export default function Submissions() {
       {/* Toolbar */}
       <div className="toolbar">
         {isStaff ? (
-          <div className="city-tabs">
-            {CITY_TABS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className={`tab${city === c ? ' tab-active' : ''}`}
-                onClick={() => setCity(c)}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
+          <SegmentedTabs
+            options={CITY_TABS}
+            value={city}
+            onChange={setCity}
+            ariaLabel="Filter by city"
+          />
         ) : (
           <div className="muted">Showing {user.city} only</div>
         )}

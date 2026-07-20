@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import Step1 from '../../cp/AddUnit/Step1';
 import CpSelector from '../CpSelector.jsx';
+import SegmentedTabs from '../SegmentedTabs.jsx';
 import { IconClose } from '../icons.jsx';
 import { useModalClose } from '../../hooks/useModalClose';
 
@@ -87,18 +88,12 @@ export default function AddInventoryOnBehalf({ onClose, onCreated }) {
           <>
             {/* Step 1: city */}
             <div className="field-lbl" style={{ marginBottom: 6 }}>City</div>
-            <div className="city-tabs">
-              {CITIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={`tab${city === c ? ' tab-active' : ''}`}
-                  onClick={() => changeCity(c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
+            <SegmentedTabs
+              options={CITIES}
+              value={city}
+              onChange={changeCity}
+              ariaLabel="City"
+            />
             {!city && (
               <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
                 Pick the city first — the CP search will only show CPs from that city.

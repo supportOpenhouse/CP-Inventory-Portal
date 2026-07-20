@@ -71,11 +71,14 @@ export default function SearchableMultiSelect({
       if (menuRef.current?.contains(e.target)) return;
       setOpen(false); setQuery('');
     }
-    function onKey(e) { if (e.key === 'Escape') { setOpen(false); setQuery(''); } }
     document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+    return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
+
+  // Escape goes through the shared layer stack, not a private listener: this
+  // dropdown is often open inside a modal, and two independent listeners would
+  // close the dropdown AND the modal behind it on a single press.
+  useEscapeLayer(() => { setOpen(false); setQuery(''); }, { enabled: open });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -77,8 +77,12 @@ export default function CpSelector({ onSelect, city = '' }) {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, results.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)); }
     else if (e.key === 'Enter')   { e.preventDefault(); if (results[activeIdx]) pick(results[activeIdx]); }
-    else if (e.key === 'Escape')  { setResults([]); }
   };
+
+  // Escape via the shared layer stack rather than the keydown above: this
+  // selector lives inside the Add-Inventory modal, and a local handler would
+  // clear the results AND let the same press close the modal.
+  useEscapeLayer(() => setResults([]), { enabled: results.length > 0 });
 
   return (
     <div>

@@ -530,9 +530,20 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 
 /* ── toolbar (board / table view) ────────────────────────────────────── */
 .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-.city-tabs { display: inline-flex; gap: 4px; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px; }
-.city-tabs .tab { border: 0; background: transparent; color: var(--text-2); font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--r-pill); }
-.city-tabs .tab-active { background: var(--surface); color: var(--brand-strong); box-shadow: var(--shadow-sm); }
+.city-tabs { position: relative; display: inline-flex; gap: 4px; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--r-pill); padding: 3px; }
+.city-tabs .tab { position: relative; z-index: 1; border: 0; background: transparent; color: var(--text-2); font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: var(--r-pill); transition: color .18s ease; }
+/* The highlight is the sliding thumb below, not a background on the button —
+   a background can only crossfade between segments, it can't travel. */
+.city-tabs .tab-active { color: var(--brand-strong); }
+/* Inset by the container's 3px padding; positioned from the padding box, which
+   is also what offsetLeft is measured against, so translateX(left) lines up. */
+.city-tabs-thumb {
+  position: absolute; top: 3px; bottom: 3px; left: 0;
+  background: var(--surface); border-radius: var(--r-pill); box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  transition: transform .3s cubic-bezier(.22, .61, .36, 1), width .3s cubic-bezier(.22, .61, .36, 1);
+}
+@media (prefers-reduced-motion: reduce) { .city-tabs-thumb { transition-duration: .01ms; } }
 /* flex:1 with no max cap → the search box fills the toolbar (elongated) and
    follows the content width as the sidebar collapses/expands (the .app-shell
    grid transition animates it smoothly). */
