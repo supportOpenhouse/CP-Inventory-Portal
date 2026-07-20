@@ -396,7 +396,20 @@ def create_submission():
     # Perfect match: respond 409 so CP sees the "This unit is already with Openhouse"
     # page (with Contact RM only, no Edit/Add anyway). The DB row is still created
     # above so admin sees it as a red card in Unapproved column.
-    if is_perfect_match:
+    #
+    # force_create means the CP already saw that page and chose "Add anyway".
+    # Re-serving it strands them behind the same card with no way forward — and
+    # because the row is committed ABOVE this return, every retry filed another
+    # duplicate (that is how OHLNC1241-1245 piled up). So on a forced retry fall
+    # through to the normal 201 and let them land on the success screen.
+    #
+    # Gated on the row not being auto-rejected: a 'Rejected' row must never
+    # report success. In practice only non-blocking matches (fuzzy, or a
+    # previously-rejected lead) reach here forced, since those are the only ones
+    # whose card offers an "Add anyway" button at all.
+    forced_through = force_create and initial_status != "Rejected"
+
+    if is_perfect_match and not forced_through:
         return jsonify({
             "error": "Duplicate",
             "duplicate": dup,

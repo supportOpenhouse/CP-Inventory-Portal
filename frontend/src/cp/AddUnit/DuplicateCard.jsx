@@ -19,10 +19,12 @@
  *   result       — { match_level, block, message, details, unit_less_collated? }
  *   onEdit       — called when user wants to go back and modify their entry
  *   onForceCreate — called when user wants to submit anyway
+ *   onDone       — leaves the flow. Only rendered on the variants that have no
+ *                  Edit/Add-anyway buttons, which would otherwise be dead ends.
  */
 import { showToast } from '../../components/Toast.jsx';
 
-export default function DuplicateCard({ result, onEdit, onForceCreate }) {
+export default function DuplicateCard({ result, onEdit, onForceCreate, onDone }) {
   const d = result.details || {};
   const rmPhone = d.rm_phone;
   const rmName = d.rm_name;
@@ -120,6 +122,20 @@ export default function DuplicateCard({ result, onEdit, onForceCreate }) {
             </button>
           )}
         </div>
+
+        {/* No Edit/Add-anyway path means this card is terminal — the row is
+            already created, so give an explicit way out rather than leaving the
+            CP stranded on it with only the header's back arrow. */}
+        {hideActionButtons && onDone && (
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={onDone}
+            style={{ width: '100%', marginTop: 12 }}
+          >
+            Back to Dashboard
+          </button>
+        )}
 
         {!hideActionButtons && (
           <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>

@@ -3580,7 +3580,14 @@ def create_submission_on_behalf():
     if initial_status == "Submitted":
         send_new_submission_alert_async(new_id)
 
-    if is_perfect_match:
+    # A forced retry ("Add anyway") must not re-serve the duplicate page the
+    # user just clicked past — the row is already committed above, so bouncing
+    # them back files another duplicate on every press. Mirrors routes/
+    # submissions.py; gated on the row not being auto-rejected so a 'Rejected'
+    # row never reports success.
+    forced_through = force_create and initial_status != "Rejected"
+
+    if is_perfect_match and not forced_through:
         return jsonify({
             "error": "Duplicate",
             "duplicate": dup,

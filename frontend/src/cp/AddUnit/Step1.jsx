@@ -182,7 +182,12 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
   if (dupResult) {
     return (
       <div className="form-section">
-        <DuplicateCard result={dupResult} onEdit={handleEdit} onForceCreate={handleForceCreateClick} />
+        <DuplicateCard
+          result={dupResult}
+          onEdit={handleEdit}
+          onForceCreate={handleForceCreateClick}
+          onDone={onAbandon}
+        />
       </div>
     );
   }
