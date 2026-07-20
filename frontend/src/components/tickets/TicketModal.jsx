@@ -16,6 +16,7 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import { formatDateTime, timeAgo } from '../../format';
 import { ticketBadge } from './ticketStatus.js';
 import { IconClose } from '../icons.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 function initialsOf(name) {
   const s = (name || '').trim();
@@ -58,13 +59,8 @@ export default function TicketModal({ id, onChanged, onClose }) {
     return () => { alive = false; };
   }, [id]);
 
-  // Esc closes, same as the other detail modals in this app (CardDetailModal).
-  useEffect(() => {
-    if (id == null) return undefined;
-    function onKey(e) { if (e.key === 'Escape') onClose?.(); }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [id, onClose]);
+  // Escape + the slide-down exit, shared with every other popup.
+  const { closing, close } = useModalClose(onClose, { enabled: id != null });
 
   if (id == null) return null;
 
@@ -133,14 +129,14 @@ export default function TicketModal({ id, onChanged, onClose }) {
   const badge = t ? ticketBadge(t) : null;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`} onClick={close}>
+      <div className={`modal${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>
             {t ? t.title : <span className="inv-skel" style={{ display: 'inline-block', width: 160 }} />}
           </h3>
           {badge && <span className={`tk-badge ${badge.cls}`}>{badge.label}</span>}
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+          <button type="button" className="modal-close" onClick={close} aria-label="Close"><IconClose /></button>
         </div>
 
         {loadError ? (
@@ -205,7 +201,7 @@ export default function TicketModal({ id, onChanged, onClose }) {
               <span style={{ flex: 1 }} />
               {isOpen && canClose && <button type="button" className="btn-soft" onClick={doClose} disabled={busy}>Close ticket</button>}
               {!isOpen && canClose && <button type="button" className="btn-soft" onClick={doReopen} disabled={busy}>Reopen</button>}
-              <button type="button" className="btn-ghost" onClick={onClose} disabled={busy}>Done</button>
+              <button type="button" className="btn-ghost" onClick={close} disabled={busy}>Done</button>
             </div>
           </>
         )}

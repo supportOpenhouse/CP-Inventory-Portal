@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTheme } from '../contexts/ThemeContext.jsx';
+import { useModalClose } from '../hooks/useModalClose';
 import BusyOverlay from './BusyOverlay.jsx';
 import PageTransition from './PageTransition.jsx';
 import Toast from './Toast.jsx';
@@ -32,6 +33,11 @@ export default function Layout() {
   const nav = useNavigate();
   const loc = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Escape closes the mobile nav. Only the scrim fades — the drawer itself
+  // slides in from the left, so the drop-to-bottom panel exit is wrong for it.
+  const { closing: navClosing, close: closeNav } = useModalClose(
+    () => setMobileOpen(false), { enabled: mobileOpen },
+  );
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('oh_sidebar_collapsed') === '1');
   const [ticketDot, setTicketDot] = useState(0);
 
@@ -126,7 +132,13 @@ export default function Layout() {
         </div>
       </aside>
 
-      {mobileOpen && <div className="modal-backdrop" style={{ zIndex: 400 }} onClick={() => setMobileOpen(false)} />}
+      {mobileOpen && (
+        <div
+          className={`modal-backdrop${navClosing ? ' is-closing-scrim' : ''}`}
+          style={{ zIndex: 400 }}
+          onClick={closeNav}
+        />
+      )}
       <div className="main-col">
         <header className="topbar">
           <button className="icon-btn topbar-menu" onClick={() => setMobileOpen(true)} aria-label="Menu"><IconMenu /></button>

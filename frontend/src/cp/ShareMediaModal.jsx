@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 
 import { api, ApiError } from '../api';
 import { uploadToCloudinary, validateFile, validateVideo } from '../cloudinary';
+import { useModalClose } from '../hooks/useModalClose';
 
 /**
  * CP "Share media" popup — two buttons (Photo / Video). Each opens the device
@@ -78,9 +79,13 @@ export default function ShareMediaModal({
     }
   };
 
+  // Escape + slide-down exit; inert while an upload is in flight.
+  const { closing, close } = useModalClose(onClose, { disabled: busy });
+
   return (
     <div
-      onClick={busy ? undefined : onClose}
+      className={closing ? 'is-closing-scrim' : undefined}
+      onClick={close}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)',
         zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -88,6 +93,7 @@ export default function ShareMediaModal({
       }}
     >
       <div
+        className={closing ? 'is-closing-panel' : undefined}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: 'var(--surface)', borderRadius: 16, padding: 22, maxWidth: 360, width: '100%',

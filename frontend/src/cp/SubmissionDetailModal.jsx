@@ -6,6 +6,7 @@ import { formatBhk, formatDateTime, formatPrice } from '../format';
 import ShareMediaModal from './ShareMediaModal';
 import BookVisitModal from './BookVisitModal';
 import MediaVisitActions from './MediaVisitActions';
+import { useModalClose, MODAL_EXIT_MS } from '../hooks/useModalClose';
 
 /**
  * Full-screen modal showing all details of a CP's submission:
@@ -17,10 +18,10 @@ import MediaVisitActions from './MediaVisitActions';
  */
 export default function SubmissionDetailModal({ submission, onClose }) {
   const s = submission;
-  // Play the slide-down exit before actually unmounting (keep in sync with the
-  // .cp-sheet.closing animation duration in styles.css).
-  const [closing, setClosing] = useState(false);
-  const close = () => { if (closing) return; setClosing(true); setTimeout(onClose, 250); };
+  // Escape + the slide-down exit, shared with every other popup. This one keeps
+  // its own .cp-sheet.closing animation (a full bottom-sheet slide) rather than
+  // the .is-closing-panel drift — same hook, sheet-specific motion.
+  const { closing, close } = useModalClose(onClose);
   const [events, setEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [showAllEvents, setShowAllEvents] = useState(false);

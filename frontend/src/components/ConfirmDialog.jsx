@@ -12,8 +12,10 @@
  *   destructive — if true, confirm button is red; if false, orange primary
  *   busy        — disables buttons while the async action is in flight
  *   onConfirm   — fires when user taps confirm
- *   onCancel    — fires when user taps cancel or backdrop
+ *   onCancel    — fires when user taps cancel, backdrop, or Escape
  */
+import { useModalClose } from '../hooks/useModalClose';
+
 export default function ConfirmDialog({
   open,
   title,
@@ -25,16 +27,19 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
 }) {
+  // busy => a confirmed action is in flight; swallow Escape rather than let it
+  // dismiss this dialog (or the layer beneath) mid-write.
+  const { closing, close } = useModalClose(onCancel, { enabled: open, disabled: busy });
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`} onClick={close}>
+      <div className={`modal${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <h3>{title}</h3>
         {message && <p className="modal-sub">{message}</p>}
         <div className="modal-actions">
           <span style={{ flex: 1 }} />
-          <button type="button" className="btn-ghost" onClick={onCancel} disabled={busy}>
+          <button type="button" className="btn-ghost" onClick={close} disabled={busy}>
             {cancelLabel}
           </button>
           <button

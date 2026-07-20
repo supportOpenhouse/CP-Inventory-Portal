@@ -27,6 +27,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../api';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { IconClose } from '../icons.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 export default function CreateTicketModal({ onClose, onCreated }) {
   const { user } = useAuth();
@@ -116,18 +117,16 @@ export default function CreateTicketModal({ onClose, onCreated }) {
     }
   }
 
-  useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape' && !submitting) onClose?.(); }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, submitting]);
+  // Escape + slide-down exit. Disabled while submitting so an in-flight create
+  // can't be abandoned by a stray keypress (matches the backdrop-click guard).
+  const { closing, close } = useModalClose(onClose, { disabled: submitting });
 
   return (
-    <div className="modal-backdrop" onClick={() => { if (!submitting) onClose?.(); }}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`} onClick={close}>
+      <div className={`modal${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>New Ticket</h3>
-          <button type="button" className="modal-close" onClick={onClose} disabled={submitting} aria-label="Close"><IconClose /></button>
+          <button type="button" className="modal-close" onClick={close} disabled={submitting} aria-label="Close"><IconClose /></button>
         </div>
 
         <div className="tk-mode-toggle">
@@ -217,7 +216,7 @@ export default function CreateTicketModal({ onClose, onCreated }) {
 
         <div className="modal-actions">
           <span style={{ flex: 1 }} />
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button type="button" className="btn-ghost" onClick={close} disabled={submitting}>Cancel</button>
           <button type="button" className="btn-primary" onClick={submit} disabled={!canSubmit}>
             {submitting ? 'Creating…' : 'Create Ticket'}
           </button>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { IconClose } from '../icons.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 /**
  * Admin-only chat user management modal. Two sections:
@@ -100,12 +101,18 @@ export default function ChatUserManager({ onClose, onStartChat }) {
     }
   };
 
+  // Escape + the slide-down exit, shared with every other popup.
+  const { closing, close } = useModalClose(onClose);
+
   return (
-    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`}
+      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+    >
+      <div className={`modal modal-wide${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>Manage chat users</h3>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+          <button type="button" className="modal-close" onClick={close} aria-label="Close"><IconClose /></button>
         </div>
 
         {/* Pending requests */}
@@ -175,7 +182,7 @@ export default function ChatUserManager({ onClose, onStartChat }) {
         </div>
 
         <div className="modal-actions" style={{ marginTop: 18 }}>
-          <button type="button" className="btn-ghost" onClick={onClose}>Close</button>
+          <button type="button" className="btn-ghost" onClick={close}>Close</button>
         </div>
       </div>
     </div>

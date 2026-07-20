@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { IconClose } from '../icons.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 
@@ -86,12 +87,19 @@ export default function BroadcastModal({ onClose }) {
 
   const sent = result !== null;
 
+  // Escape + slide-down exit; disabled mid-send so a broadcast in flight
+  // can't be abandoned by a stray keypress.
+  const { closing, close } = useModalClose(onClose, { disabled: submitting });
+
   return (
-    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`}
+      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+    >
+      <div className={`modal modal-wide${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>Broadcast message</h3>
-          <button type="button" className="modal-close" onClick={() => (submitting ? null : onClose())} disabled={submitting} aria-label="Close"><IconClose /></button>
+          <button type="button" className="modal-close" onClick={close} disabled={submitting} aria-label="Close"><IconClose /></button>
         </div>
 
         {error && <div className="modal-error" style={{ marginBottom: 12 }}>{error}</div>}
@@ -173,7 +181,7 @@ export default function BroadcastModal({ onClose }) {
         )}
 
         <div className="modal-actions" style={{ marginTop: 18 }}>
-          <button type="button" className="btn-ghost" onClick={onClose} disabled={submitting}>{sent ? 'Close' : 'Cancel'}</button>
+          <button type="button" className="btn-ghost" onClick={close} disabled={submitting}>{sent ? 'Close' : 'Cancel'}</button>
           {!sent && (
             <button type="button" className="btn-primary" onClick={handleSend} disabled={!canSubmit}>
               {submitting ? 'Sending…' : 'Send'}

@@ -45,11 +45,11 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
     .filter((g) => g.rows.length > 0);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`} onClick={close}>
+      <div className={`modal${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>{title}</h3>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close">×</button>
+          <button type="button" className="modal-close" onClick={close} aria-label="Close">×</button>
         </div>
 
         {list.length === 0 ? (
@@ -68,7 +68,7 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
                 return (
                   <div
                     key={`${src}-${it.id || idx}`}
-                    onClick={clickable ? () => { onClose?.(); onOpenSubmission(it.ref_id); } : undefined}
+                    onClick={clickable ? () => { close(); onOpenSubmission(it.ref_id); } : undefined}
                     title={clickable ? 'Open this listing' : undefined}
                     style={{
                       border: `1px solid ${clickable ? 'var(--purple)' : 'var(--border)'}`,

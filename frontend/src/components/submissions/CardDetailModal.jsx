@@ -15,6 +15,7 @@ import SubmissionSections from './SubmissionSections.jsx';
 import SectionsSkeleton from './SectionsSkeleton.jsx';
 import { detailStore } from './submissionDetailStore.js';
 import { showToast } from '../Toast.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 export default function CardDetailModal({ id, canAct, onClose }) {
   // Shared persisted store (with ExpandPanel) — reopening a submission shows the
@@ -45,18 +46,14 @@ export default function CardDetailModal({ id, canAct, onClose }) {
     showToast('Changes saved');
   };
 
-  useEffect(() => {
-    if (!id) return undefined;
-    function onKey(e) { if (e.key === 'Escape') onClose?.(); }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [id, onClose]);
+  // Escape + the slide-down exit, shared with every other popup.
+  const { closing, close } = useModalClose(onClose, { enabled: !!id });
 
   if (!id) return null;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`} onClick={close}>
+      <div className={`modal modal-wide${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>
             {data ? data.society_name : <span className="inv-skel" style={{ display: 'inline-block', width: 160 }} />}
@@ -71,7 +68,7 @@ export default function CardDetailModal({ id, canAct, onClose }) {
           ) : (
             <span className="inv-skel" style={{ display: 'inline-block', width: 90 }} />
           )}
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+          <button type="button" className="modal-close" onClick={close} aria-label="Close"><IconClose /></button>
         </div>
 
         {error ? (

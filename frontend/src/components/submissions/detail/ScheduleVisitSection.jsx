@@ -22,6 +22,7 @@ import {
   formatDateOnly, formatTime12, todayInIST, nowTimeIST, VISIT_TIME_SLOTS,
 } from '../../../format';
 import { getUser } from '../../../auth';
+import { useModalClose } from '../../../hooks/useModalClose';
 
 // Forms-app suggested_times come back 12-hour ("1:00 PM"); <input type="time">
 // needs 24-hour "HH:MM". Returns null if the string isn't a time we recognise.
@@ -210,6 +211,18 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
     setExistingUnits(null);
   };
 
+  // Two popups, one hook each. The warning only joins the Escape stack while
+  // it is open, so it sits above the schedule modal and Escape peels one layer
+  // at a time. Both are inert mid-submit (closeModal/cancelExistingWarning
+  // already no-op then; `disabled` also stops Escape falling through).
+  const warningOpen = !!existingUnits && existingUnits.length > 0;
+  const { closing: modalClosing, close: closeScheduleModal } = useModalClose(
+    closeModal, { enabled: modalOpen, disabled: submitting },
+  );
+  const { closing: warnClosing, close: closeWarning } = useModalClose(
+    cancelExistingWarning, { enabled: warningOpen, disabled: submitting },
+  );
+
   return (
     <div className="card-block">
       <h3>Visit Schedule</h3>
@@ -238,11 +251,11 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
       )}
 
       {modalOpen && (
-        <div className="modal-backdrop" onClick={closeModal}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className={`modal-backdrop${modalClosing ? ' is-closing-scrim' : ''}`} onClick={closeScheduleModal}>
+          <div className={`modal${modalClosing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="modal-head-row">
               <h3 style={{ marginBottom: 0 }}>Schedule Visit</h3>
-              <button type="button" className="modal-close" onClick={closeModal} aria-label="Close">×</button>
+              <button type="button" className="modal-close" onClick={closeScheduleModal} aria-label="Close">×</button>
             </div>
             <div className="modal-sub">{s.public_id} · {s.society_name}</div>
 
@@ -325,7 +338,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
             </div>
 
             <div className="modal-actions">
-              <button type="button" className="btn-ghost" onClick={closeModal} disabled={submitting} style={{ flex: 1, justifyContent: 'center' }}>
+              <button type="button" className="btn-ghost" onClick={closeScheduleModal} disabled={submitting} style={{ flex: 1, justifyContent: 'center' }}>
                 Cancel
               </button>
               <button
@@ -343,9 +356,9 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
       )}
 
       {existingUnits && existingUnits.length > 0 && (
-        <div className="modal-backdrop" onClick={cancelExistingWarning}>
+        <div className={`modal-backdrop${warnClosing ? ' is-closing-scrim' : ''}`} onClick={closeWarning}>
           <div
-            className="modal modal-wide"
+            className={`modal modal-wide${warnClosing ? ' is-closing-panel' : ''}`}
             onClick={(e) => e.stopPropagation()}
             style={{ display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}
           >
@@ -380,7 +393,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
               </table>
             </div>
             <div className="modal-actions">
-              <button type="button" className="btn-ghost" onClick={cancelExistingWarning} disabled={submitting} style={{ flex: 1, justifyContent: 'center' }}>
+              <button type="button" className="btn-ghost" onClick={closeWarning} disabled={submitting} style={{ flex: 1, justifyContent: 'center' }}>
                 Cancel
               </button>
               <button type="button" className="btn-primary" onClick={confirmExistingAndSchedule} disabled={submitting} style={{ flex: 1, justifyContent: 'center' }}>

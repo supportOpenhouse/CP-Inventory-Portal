@@ -8,6 +8,7 @@
  */
 import { useRef, useState } from 'react';
 import { api } from '../../../api';
+import { useModalClose } from '../../../hooks/useModalClose';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
 } from '../../../cloudinary';
@@ -18,6 +19,10 @@ export default function MediaSection({ submission, canAct, onChanged, only }) {
   const [busy, setBusy] = useState(false);
   const [uploadingPct, setUploadingPct] = useState(null);
   const [lightboxId, setLightboxId] = useState(null);
+  // Escape + slide-down exit for the image lightbox.
+  const { closing: lightboxClosing, close: closeLightbox } = useModalClose(
+    () => setLightboxId(null), { enabled: !!lightboxId },
+  );
   const fileInputRef = useRef(null);
 
   if (!submission) return null;
@@ -179,17 +184,21 @@ export default function MediaSection({ submission, canAct, onChanged, only }) {
       )}
 
       {lightboxId && (
-        <div className="modal-backdrop" onClick={() => setLightboxId(null)}>
+        <div
+          className={`modal-backdrop${lightboxClosing ? ' is-closing-scrim' : ''}`}
+          onClick={closeLightbox}
+        >
           <img
             src={previewUrl(lightboxId)}
             alt=""
+            className={lightboxClosing ? 'is-closing-panel' : undefined}
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 'var(--r)', boxShadow: 'var(--shadow-lg)' }}
           />
           <button
             type="button"
             className="modal-close"
-            onClick={() => setLightboxId(null)}
+            onClick={closeLightbox}
             style={{ position: 'fixed', top: 24, right: 28, fontSize: 30, color: '#fff' }}
           >✕</button>
         </div>

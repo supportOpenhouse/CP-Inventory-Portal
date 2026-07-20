@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useEscapeLayer } from '../hooks/useModalClose';
 
 const MENU_MIN_WIDTH = 320;
 const LIST_CAP = 200;

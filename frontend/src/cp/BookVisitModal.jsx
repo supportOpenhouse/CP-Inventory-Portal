@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { api, ApiError } from '../api';
 import { todayInIST, nowTimeIST } from '../format';
+import { useModalClose } from '../hooks/useModalClose';
 
 /**
  * CP "Book visit slot" popup — pick a date (no past dates) and a time-of-day
@@ -23,6 +24,9 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
   const [slot, setSlot] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  // Escape + slide-down exit; inert while the booking request is in flight.
+  const { closing, close } = useModalClose(onClose, { enabled: open, disabled: busy });
 
   if (!open) return null;
 
@@ -53,7 +57,8 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
 
   return (
     <div
-      onClick={busy ? undefined : onClose}
+      className={closing ? 'is-closing-scrim' : undefined}
+      onClick={close}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)',
         zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -61,6 +66,7 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
       }}
     >
       <div
+        className={closing ? 'is-closing-panel' : undefined}
         onClick={(e) => e.stopPropagation()}
         style={{
           background: 'var(--surface)', borderRadius: 16, padding: 22, maxWidth: 380, width: '100%',
@@ -117,7 +123,7 @@ export default function BookVisitModal({ open, submissionId, onClose, onBooked }
 
         <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
           <button
-            type="button" onClick={onClose} disabled={busy}
+            type="button" onClick={close} disabled={busy}
             style={{
               flex: 1, padding: 12, borderRadius: 10, border: '1.5px solid var(--oh-border)',
               background: 'var(--surface)', fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',

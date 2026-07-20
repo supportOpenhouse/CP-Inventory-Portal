@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 import { STAGES, REJECTED_REASONS } from '../../format';
 import { IconClose } from '../icons.jsx';
 import SearchableMultiSelect from '../SearchableMultiSelect.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 // Standard BHK configurations offered as single-select pills. CP stores `bhk`
 // as free-text ("2 BHK", "2.5 BHK", …) and the backend filter matches on the
@@ -111,6 +112,10 @@ export default function FilterModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Escape + the slide-down exit. Stays mounted while closed, so `enabled`
+  // keeps it off the Escape stack until it is actually on screen.
+  const { closing, close } = useModalClose(onClose, { enabled: open });
+
   if (!open) return null;
 
   function set(k, v) { setF((p) => ({ ...p, [k]: v })); }
@@ -169,11 +174,11 @@ export default function FilterModal({
   const showRejectReasons = f.statusFilter.includes('Rejected');
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal filter-modal" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`} onClick={close}>
+      <div className={`modal filter-modal${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3>Filters</h3>
-          <button className="modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+          <button className="modal-close" onClick={close} aria-label="Close"><IconClose /></button>
         </div>
 
         <div className="filter-grid">
@@ -283,7 +288,7 @@ export default function FilterModal({
         <div className="modal-actions">
           <button className="btn-ghost" onClick={reset}>Reset</button>
           <span style={{ flex: 1 }} />
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn-ghost" onClick={close}>Cancel</button>
           <button className="btn-primary" onClick={apply}>Apply</button>
         </div>
       </div>

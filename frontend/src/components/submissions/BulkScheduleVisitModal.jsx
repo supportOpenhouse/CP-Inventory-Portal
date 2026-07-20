@@ -26,6 +26,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError, api } from '../../api';
 import { todayInIST, nowTimeIST, VISIT_TIME_SLOTS } from '../../format';
 import { IconClose } from '../icons.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, onSuccess }) {
   const [fieldExecs, setFieldExecs] = useState([]);
@@ -249,10 +250,28 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
   };
 
   const submitted = resultsBySid !== null;
+  const warningOpen = !!existingBySociety && Object.keys(existingBySociety).length > 0;
+
+  // Two stacked popups, one hook each. The warning registers on the Escape
+  // stack only while it is open, and since that happens after the main modal
+  // mounted it sits on top — so Escape dismisses the warning first, then this.
+  // Dismissing after a successful run routes through handleCloseAfterSuccess so
+  // backdrop/Escape refresh the list too, not just the footer button.
+  const { closing, close } = useModalClose(
+    submitted ? handleCloseAfterSuccess : onClose,
+    { disabled: submitting },
+  );
+  const { closing: warnClosing, close: closeWarning } = useModalClose(
+    cancelExistingWarning,
+    { enabled: warningOpen, disabled: submitting },
+  );
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
-      <div className="modal modal-wide" style={{ maxWidth: 880, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`}
+      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+    >
+      <div className={`modal modal-wide${closing ? ' is-closing-panel' : ''}`} style={{ maxWidth: 880, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0, flex: 1 }}>
             {submitted ? 'Bulk schedule — results' : `Schedule visits for ${sortedSubs.length} listing${sortedSubs.length === 1 ? '' : 's'}`}
@@ -260,7 +279,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
           <button
             type="button"
             className="modal-close"
-            onClick={() => (submitting ? null : onClose())}
+            onClick={close}
             disabled={submitting}
             aria-label="Close"
           ><IconClose /></button>
@@ -443,7 +462,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
           {!submitted ? (
             <>
               <span style={{ flex: 1 }} />
-              <button type="button" className="btn-ghost" onClick={onClose} disabled={submitting}>
+              <button type="button" className="btn-ghost" onClick={close} disabled={submitting}>
                 Cancel
               </button>
               <button type="button" className="btn-primary" onClick={handleSubmit} disabled={!canSubmit}>
@@ -455,7 +474,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
           ) : (
             <>
               <span style={{ flex: 1 }} />
-              <button type="button" className="btn-primary" onClick={handleCloseAfterSuccess}>
+              <button type="button" className="btn-primary" onClick={close}>
                 Close
               </button>
             </>
@@ -465,12 +484,12 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
 
       {existingBySociety && Object.keys(existingBySociety).length > 0 && (
         <div
-          className="modal-backdrop"
+          className={`modal-backdrop${warnClosing ? ' is-closing-scrim' : ''}`}
           style={{ zIndex: 1100 }}
-          onClick={cancelExistingWarning}
+          onClick={closeWarning}
         >
           <div
-            className="modal"
+            className={`modal${warnClosing ? ' is-closing-panel' : ''}`}
             style={{ maxWidth: 760, maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -516,7 +535,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
               ))}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-              <button type="button" className="btn-ghost" onClick={cancelExistingWarning} disabled={submitting}>
+              <button type="button" className="btn-ghost" onClick={closeWarning} disabled={submitting}>
                 Cancel
               </button>
               <button type="button" className="btn-primary" onClick={confirmExistingAndBulkSchedule} disabled={submitting}>

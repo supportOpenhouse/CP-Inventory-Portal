@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../../api';
 import { IconClose } from '../icons.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSuccess }) {
   const [mode, setMode] = useState('listings');  // 'listings' (default) | 'societies'
@@ -104,9 +105,16 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
 
   const submitted = resultSummary !== null;
 
+  // Every dismiss path routes through handleClose so a backdrop click or Escape
+  // after a successful reassign still refreshes the list (it fires onSuccess).
+  const { closing, close } = useModalClose(handleClose, { disabled: submitting });
+
   return (
-    <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
-      <div className="modal modal-wide" style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`}
+      onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+    >
+      <div className={`modal modal-wide${closing ? ' is-closing-panel' : ''}`} style={{ maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0, flex: 1 }}>
             {submitted
@@ -116,7 +124,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
           <button
             type="button"
             className="modal-close"
-            onClick={() => (submitting ? null : (submitted ? handleClose() : onClose()))}
+            onClick={close}
             disabled={submitting}
             aria-label="Close"
           ><IconClose /></button>
@@ -268,7 +276,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
           {!submitted ? (
             <>
               <span style={{ flex: 1 }} />
-              <button type="button" className="btn-ghost" onClick={onClose} disabled={submitting}>
+              <button type="button" className="btn-ghost" onClick={close} disabled={submitting}>
                 Cancel
               </button>
               <button type="button" className="btn-primary" onClick={handleSubmit} disabled={!canSubmit}>
@@ -280,7 +288,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
           ) : (
             <>
               <span style={{ flex: 1 }} />
-              <button type="button" className="btn-primary" onClick={handleClose}>
+              <button type="button" className="btn-primary" onClick={close}>
                 Close
               </button>
             </>

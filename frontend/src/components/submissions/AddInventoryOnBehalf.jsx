@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import Step1 from '../../cp/AddUnit/Step1';
 import CpSelector from '../CpSelector.jsx';
 import { IconClose } from '../icons.jsx';
+import { useModalClose } from '../../hooks/useModalClose';
 
 /**
  * Popup for RM/Manager/Admin to submit a listing on behalf of a CP.
@@ -34,11 +35,8 @@ export default function AddInventoryOnBehalf({ onClose, onCreated }) {
   const [result, setResult] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
-  useEffect(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose?.(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Escape + the slide-down exit, shared with every other popup.
+  const { closing, close } = useModalClose(onClose);
 
   // Switching city resets the picked CP — they could be from a different city,
   // so force a re-pick rather than leave the form pointed at a mismatched CP.
@@ -54,14 +52,14 @@ export default function AddInventoryOnBehalf({ onClose, onCreated }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' is-closing-scrim' : ''}`} onClick={close}>
+      <div className={`modal modal-wide${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>
             Add Inventory{' '}
             <span className="muted" style={{ fontWeight: 400 }}>(on behalf of CP)</span>
           </h3>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+          <button type="button" className="modal-close" onClick={close} aria-label="Close"><IconClose /></button>
         </div>
 
         {result ? (
@@ -82,7 +80,7 @@ export default function AddInventoryOnBehalf({ onClose, onCreated }) {
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 22 }}>
               <button type="button" className="btn-ghost" onClick={addAnother}>Add another</button>
-              <button type="button" className="btn-primary" onClick={onClose}>Done</button>
+              <button type="button" className="btn-primary" onClick={close}>Done</button>
             </div>
           </div>
         ) : (

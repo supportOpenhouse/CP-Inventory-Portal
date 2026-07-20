@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { ApiError, api } from '../api';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useEscapeLayer } from '../hooks/useModalClose';
 
 /**
  * CP search + select widget — type-ahead by phone or name.

@@ -20,6 +20,7 @@ import { useState } from 'react';
 import { formatDateTime } from '../../format';
 import { isFuzzyMatch, matchTypeLabel } from '../../matchType';
 import { thumbnailUrl, previewUrl } from '../../cloudinary';
+import { useModalClose } from '../../hooks/useModalClose';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 
 import UnitDetailsSection from './detail/UnitDetailsSection.jsx';
@@ -96,6 +97,10 @@ function Banners({ s }) {
 // "each section independently mountable" convention).
 function ActivityTimeline({ s }) {
   const [lightboxId, setLightboxId] = useState(null);
+  // Escape + slide-down exit for the image lightbox.
+  const { closing: lightboxClosing, close: closeLightbox } = useModalClose(
+    () => setLightboxId(null), { enabled: !!lightboxId },
+  );
   const [showAll, setShowAll] = useState(false);
   // Newest first; show the latest 2, then a "+N" button to reveal the rest.
   const events = (s.events || [])
@@ -165,10 +170,14 @@ function ActivityTimeline({ s }) {
       )}
 
       {lightboxId && (
-        <div className="modal-backdrop" onClick={() => setLightboxId(null)}>
+        <div
+          className={`modal-backdrop${lightboxClosing ? ' is-closing-scrim' : ''}`}
+          onClick={closeLightbox}
+        >
           <img
             src={previewUrl(lightboxId)}
             alt=""
+            className={lightboxClosing ? 'is-closing-panel' : undefined}
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 'var(--r)', boxShadow: 'var(--shadow-lg)' }}
           />

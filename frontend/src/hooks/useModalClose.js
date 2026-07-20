@@ -24,22 +24,33 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 // it waits too long the popup sits frozen at the end of its animation.
 export const MODAL_EXIT_MS = 220;
 
-// Mounted popups, oldest first. Only the last entry answers Escape.
+// Mounted dismissible layers, oldest first. Only the last one answers Escape.
 const stack = [];
 let listening = false;
 
+/** Dismiss the topmost layer. Exported (with pushEntry/removeEntry/layerCount)
+ *  so the ordering invariant can be tested without a DOM. Returns whether a
+ *  layer handled the key. */
+export function dispatchEscape() {
+  const top = stack[stack.length - 1];
+  if (!top) return false;
+  top.current();
+  return true;
+}
+
+export { pushEntry as _pushLayer, removeEntry as _removeLayer };
+export const _layerCount = () => stack.length;
+
 function handleKeyDown(e) {
   if (e.key !== 'Escape') return;
-  const top = stack[stack.length - 1];
-  if (!top) return;
   // Stop the key reaching other handlers so one press dismisses one layer.
-  e.stopPropagation();
-  top.current();
+  if (dispatchEscape()) e.stopPropagation();
 }
 
 function pushEntry(entry) {
   stack.push(entry);
-  if (!listening) {
+  // Guarded so this module stays importable without a DOM (tests, SSR).
+  if (!listening && typeof document !== 'undefined') {
     document.addEventListener('keydown', handleKeyDown);
     listening = true;
   }
@@ -48,10 +59,35 @@ function pushEntry(entry) {
 function removeEntry(entry) {
   const i = stack.indexOf(entry);
   if (i >= 0) stack.splice(i, 1);
-  if (stack.length === 0 && listening) {
+  if (stack.length === 0 && listening && typeof document !== 'undefined') {
     document.removeEventListener('keydown', handleKeyDown);
     listening = false;
   }
+}
+
+/**
+ * Join the Escape stack without any animation — for dismissible layers that
+ * aren't popups, like an open dropdown menu.
+ *
+ * Anything that swallows Escape MUST register here rather than adding its own
+ * document listener. A private listener fires independently of this one, so a
+ * dropdown open inside a modal would clear itself AND close the modal on a
+ * single keypress. Registering instead puts the dropdown on top of the stack
+ * (it opened last), so Escape peels exactly one layer.
+ *
+ * @param onEscape  called when Escape is pressed and this is the top layer.
+ * @param options.enabled  whether the layer is currently open/visible.
+ */
+export function useEscapeLayer(onEscape, { enabled = true } = {}) {
+  const onEscapeRef = useRef(onEscape);
+  onEscapeRef.current = onEscape;
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const entry = { current: () => onEscapeRef.current?.() };
+    pushEntry(entry);
+    return () => removeEntry(entry);
+  }, [enabled]);
 }
 
 /**
@@ -82,12 +118,7 @@ export function useModalClose(onClose, { disabled = false, enabled = true } = {}
     setTimeout(() => onCloseRef.current?.(), MODAL_EXIT_MS);
   }, []);
 
-  useEffect(() => {
-    if (!enabled) return undefined;
-    const entry = { current: close };
-    pushEntry(entry);
-    return () => removeEntry(entry);
-  }, [close, enabled]);
+  useEscapeLayer(close, { enabled });
 
   // Reset when the popup is reopened through the same mounted component, so the
   // second open isn't stuck holding the previous exit's end frame.

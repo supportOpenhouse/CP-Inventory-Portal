@@ -1684,13 +1684,13 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
   display: flex; align-items: flex-end; justify-content: center;
   backdrop-filter: blur(2px); animation: cp-overlay-in .2s ease;
 }
-.cp-sheet-overlay.closing { animation: cp-overlay-out .25s ease forwards; }
+.cp-sheet-overlay.closing { animation: cp-overlay-out .22s ease forwards; }
 .cp-sheet {
   background: var(--surface); width: 100%; max-width: 560px; max-height: 60vh;
   border-radius: 16px 16px 0 0; overflow: auto; display: flex; flex-direction: column;
   animation: cp-sheet-up .28s cubic-bezier(.22, .61, .36, 1);
 }
-.cp-sheet.closing { animation: cp-sheet-down .25s ease forwards; }
+.cp-sheet.closing { animation: cp-sheet-down .22s ease forwards; }
 @keyframes cp-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes cp-sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
 @keyframes cp-overlay-in { from { opacity: 0; } to { opacity: 1; } }
