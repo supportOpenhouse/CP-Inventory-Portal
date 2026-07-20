@@ -17,6 +17,7 @@
  */
 
 import { formatBhk } from '../format';
+import { useModalClose } from '../hooks/useModalClose';
 
 const SOURCE_LABELS = {
   inventory: 'External inventory',
@@ -35,6 +36,7 @@ function unitLabel(it) {
 }
 
 export default function MatchDetailsModal({ open, onClose, title = 'Matched with', items, onOpenSubmission }) {
+  const { closing, close } = useModalClose(onClose, { enabled: open });
   if (!open) return null;
 
   const list = Array.isArray(items) ? items : [];
