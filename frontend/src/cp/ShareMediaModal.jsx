@@ -26,6 +26,11 @@ export default function ShareMediaModal({
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
 
+  // Escape + slide-down exit; inert while an upload is in flight. Must stay
+  // above the `open` guard below — a hook that only runs on some renders is
+  // React error #310.
+  const { closing, close } = useModalClose(onClose, { enabled: open, disabled: busy });
+
   if (!open) return null;
 
   const handleFiles = async (fileList, kind) => {
@@ -78,9 +83,6 @@ export default function ShareMediaModal({
       if (videoInputRef.current) videoInputRef.current.value = '';
     }
   };
-
-  // Escape + slide-down exit; inert while an upload is in flight.
-  const { closing, close } = useModalClose(onClose, { disabled: busy });
 
   return (
     <div

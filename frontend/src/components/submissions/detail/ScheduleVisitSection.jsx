@@ -62,6 +62,22 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
     return () => clearTimeout(t);
   }, [toast]);
 
+  // Two popups, one hook each. The warning only joins the Escape stack while
+  // it is open, so it sits above the schedule modal and Escape peels one layer
+  // at a time. Both are inert mid-submit.
+  //
+  // These MUST stay above the early returns below: this component bails out for
+  // some statuses, and a hook reached on only some renders is React error #310.
+  // The arrows defer reading closeModal / cancelExistingWarning (defined further
+  // down) until they are actually invoked, which is always after render.
+  const warningOpen = !!existingUnits && existingUnits.length > 0;
+  const { closing: modalClosing, close: closeScheduleModal } = useModalClose(
+    () => closeModal(), { enabled: modalOpen, disabled: submitting },
+  );
+  const { closing: warnClosing, close: closeWarning } = useModalClose(
+    () => cancelExistingWarning(), { enabled: warningOpen, disabled: submitting },
+  );
+
   if (!submission) return null;
   const s = submission;
   if (!(s.status === 'Submitted' || s.status === 'Visit Requested' || s.status === 'Visit Scheduled')) return null;
@@ -210,18 +226,6 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
     if (submitting) return;
     setExistingUnits(null);
   };
-
-  // Two popups, one hook each. The warning only joins the Escape stack while
-  // it is open, so it sits above the schedule modal and Escape peels one layer
-  // at a time. Both are inert mid-submit (closeModal/cancelExistingWarning
-  // already no-op then; `disabled` also stops Escape falling through).
-  const warningOpen = !!existingUnits && existingUnits.length > 0;
-  const { closing: modalClosing, close: closeScheduleModal } = useModalClose(
-    closeModal, { enabled: modalOpen, disabled: submitting },
-  );
-  const { closing: warnClosing, close: closeWarning } = useModalClose(
-    cancelExistingWarning, { enabled: warningOpen, disabled: submitting },
-  );
 
   return (
     <div className="card-block">
