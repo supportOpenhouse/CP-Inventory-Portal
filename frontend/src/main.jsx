@@ -23,6 +23,27 @@ if (import.meta.env.DEV) {
   registerSW({ immediate: true });
 }
 
+// A deploy while the tab is open orphans the hashed route chunks it already
+// knows about (Tickets-ChEkZUuC.js), so the next lazy navigation 404s and the
+// error boundary shows a crash for an app that isn't actually broken. Vite
+// fires this for exactly that failure; the page just needs a fresh index.html.
+//
+// The guard matters more than the reload: if the chunk is missing for a REAL
+// reason, reloading would loop forever and the user could never see the error.
+// A second failure within the window falls through to the boundary, whose
+// "Reload app" button does the heavier service-worker + cache teardown.
+window.addEventListener('vite:preloadError', (e) => {
+  const KEY = 'oh:chunk-reload-at';
+  try {
+    if (Date.now() - Number(sessionStorage.getItem(KEY) || 0) < 10_000) return;
+    sessionStorage.setItem(KEY, String(Date.now()));
+  } catch {
+    return; // storage blocked (private mode) — can't guard, so don't reload
+  }
+  e.preventDefault();
+  window.location.reload();
+});
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
