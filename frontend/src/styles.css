@@ -931,6 +931,38 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 }
 .toast-err { background: var(--red); color: #fff; }
 
+/* "New version available" bar. Bottom-center like .toast, but lifted clear of
+   the CP bottom nav (62px + safe area) so it never covers the tab bar. Above
+   modals (z 1000) since an update can land while a popup is open, but below
+   toasts (2000), which are transient and more urgent. */
+.update-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 1500;
+  bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 12px;
+  max-width: calc(100vw - 32px);
+  background: var(--text); color: var(--surface);
+  padding: 10px 12px 10px 18px; border-radius: 999px;
+  font-size: 13.5px; font-weight: 600; box-shadow: var(--shadow-lg);
+  animation: toast-in .28s cubic-bezier(.22, .61, .36, 1);
+}
+/* min-width:0 is required — a flex item defaults to min-width:auto, whose
+   min-content floor overrides the bar's max-width and lets it overflow a narrow
+   phone screen instead of ellipsising. */
+.update-bar-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.update-bar-btn {
+  flex: none; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--brand); color: #fff;
+  padding: 6px 16px; font-size: 13px; font-weight: 700; font-family: inherit;
+}
+.update-bar-btn:disabled { opacity: .6; cursor: default; }
+.update-bar-x {
+  flex: none; border: 0; background: transparent; color: var(--surface);
+  font-size: 19px; line-height: 1; padding: 0 6px 2px; cursor: pointer; opacity: .65;
+}
+.update-bar-x:hover { opacity: 1; }
+/* Staff layout has no bottom nav — sit closer to the edge, like .toast. */
+@media (min-width: 861px) { .update-bar { bottom: 28px; } }
+
 /* Bouncing-dots loader — three pink dots doing a staggered mirror "jump". */
 .dot-loader { --dl-size: 20px; --dl-jump: 30px; display: inline-flex; align-items: flex-end; justify-content: center; gap: 10px; height: calc(var(--dl-size) + var(--dl-jump)); }
 .dot-loader .dl-dot { width: var(--dl-size); height: var(--dl-size); border-radius: 50%; background: var(--brand); will-change: transform; animation: dl-jump .8s ease-in-out infinite alternate; }

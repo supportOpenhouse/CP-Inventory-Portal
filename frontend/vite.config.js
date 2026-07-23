@@ -6,7 +6,13 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt', not 'autoUpdate': the new worker WAITS instead of calling
+      // skipWaiting. That keeps the currently-loaded build's precached chunks
+      // intact, so an open tab stays healthy until the user accepts the update
+      // via <UpdateBanner />. With autoUpdate the new worker takes over
+      // immediately and evicts the old chunks, leaving the still-running page
+      // one lazy navigation away from a "failed to fetch module" crash.
+      registerType: 'prompt',
       manifest: {
         name: 'CP OpenHouse', short_name: 'CP OpenHouse',
         // Matches index.html's light --bg. The manifest colour is static (it

@@ -6,6 +6,8 @@ import App from './App.jsx';
 import { AuthProvider } from './contexts/AuthContext.jsx';
 import { ThemeProvider } from './contexts/ThemeContext.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
+import UpdateBanner from './components/UpdateBanner.jsx';
+import { setUpdateReady } from './swUpdate.js';
 import './styles.css';
 
 if (import.meta.env.DEV) {
@@ -20,7 +22,33 @@ if (import.meta.env.DEV) {
     caches.keys().then((ks) => ks.forEach((k) => caches.delete(k))).catch(() => {});
   }
 } else {
-  registerSW({ immediate: true });
+  // The browser only re-checks the SW script on a real document navigation (or
+  // when its cached copy is >24h old). SPA route changes are NOT navigations,
+  // so a tab left open all day would never notice a deploy and would keep
+  // running stale code. Poll explicitly instead, and surface the result as a
+  // banner rather than a surprise reload — see UpdateBanner.
+  const UPDATE_CHECK_MS = 15 * 60 * 1000;
+
+  const updateSW = registerSW({
+    immediate: true,
+    // Fires when a new build is installed and waiting to take over.
+    onNeedRefresh() {
+      setUpdateReady(() => updateSW());
+    },
+    onRegisteredSW(_swUrl, registration) {
+      if (!registration) return;
+      const check = () => {
+        // Skip while hidden: a background tab's check can't be acted on anyway,
+        // and waking every tab on a schedule is wasted requests.
+        if (document.visibilityState !== 'visible') return;
+        registration.update().catch(() => {}); // offline / transient — try later
+      };
+      setInterval(check, UPDATE_CHECK_MS);
+      // Coming back to the tab is the moment a stale build is most likely, and
+      // the moment the user is most able to act on the banner.
+      document.addEventListener('visibilitychange', check);
+    },
+  });
 }
 
 // A deploy while the tab is open orphans the hashed route chunks it already
@@ -47,6 +75,7 @@ window.addEventListener('vite:preloadError', (e) => {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
+      <UpdateBanner />
       <BrowserRouter>
         <AuthProvider>
           <ErrorBoundary>
