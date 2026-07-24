@@ -88,9 +88,8 @@ export default function StatusSection({ submission, canAct, onChanged }) {
           {s.status}{s.status_reason ? ` (${s.status_reason})` : ''}
           {linked && (
             <div className="muted" style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>
-              SET AUTOMATICALLY
-              Not manually changeable from here
-              PLEASE CHANGE FROM SUPPLY TRACKER
+              Set automatically — not manually changeable from here.
+              Please change from the supply tracker.
             </div>
           )}
         </div>
