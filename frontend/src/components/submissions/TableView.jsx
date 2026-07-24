@@ -81,6 +81,7 @@ const COL_COUNT = 10; // data columns (+1 more when bulkMode adds the checkbox c
 export default function TableView({
   submissions, loading,
   counts = {}, loadedByStage = {}, loadingByStage = {}, onLoadMore,
+  onLoadAll, loadingAll = false,
   canAct = false,
   bulkMode = false, selectedIds = new Set(), onToggleSelect, onToggleAll,
   statusFilter = [],
@@ -105,9 +106,12 @@ export default function TableView({
 
   const toggleSort = (key) => {
     setSort((s) => {
-      if (s.key !== key) return { key, dir: 'asc' };
-      if (s.dir === 'asc') return { key, dir: 'desc' };
-      return { key: 'submitted', dir: 'desc' };
+      // New column: 'submitted' opens newest-first (desc), everything else A→Z
+      // (asc). Clicking the active column just flips direction — a plain
+      // two-state toggle so every header (including 'submitted', which is the
+      // default sort) reliably reverses on the next click.
+      if (s.key !== key) return { key, dir: key === 'submitted' ? 'desc' : 'asc' };
+      return { key, dir: s.dir === 'asc' ? 'desc' : 'asc' };
     });
   };
 
@@ -376,11 +380,22 @@ export default function TableView({
         </tbody>
       </table>
 
-      {/* Infinite scroll. Paginate the selected stages (multi-select), or fan
-          out across every stage that still has rows when nothing is selected. */}
+      {/* Infinite scroll. With a status filter active, paginate the selected
+          stages. With no filter ("All"), a per-stage fan-out would fire one
+          request per stage — instead pull the whole remaining result set in a
+          single `all` request. */}
       {(() => {
-        const candidates = statusFilter.length > 0 ? statusFilter : Object.keys(hasMoreByStage);
-        const stagesWithMore = candidates.filter((k) => hasMoreByStage[k]);
+        if (statusFilter.length === 0) {
+          const anyMore = STAGES.some((st) => hasMoreByStage[st.key]);
+          return (
+            <TableLoadMoreSentinel
+              hasMore={anyMore}
+              loading={loadingAll}
+              onVisible={() => onLoadAll?.()}
+            />
+          );
+        }
+        const stagesWithMore = statusFilter.filter((k) => hasMoreByStage[k]);
         const anyLoading = stagesWithMore.some((k) => loadingByStage[k]);
         return (
           <TableLoadMoreSentinel

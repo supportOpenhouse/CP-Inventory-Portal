@@ -1261,13 +1261,10 @@ def change_status(sid: int):
     if not new_status or new_status not in VALID_STAGES:
         return jsonify({"error": f"Invalid status. Must be one of: {VALID_STAGES}"}), 400
 
-    if new_status in AUTO_ONLY_STAGES:
-        return jsonify({
-            "error": (
-                f"'{new_status}' is set automatically, not manually. "
-                f"Use Schedule Visit / Counter Offer / the visit-completion flow."
-            )
-        }), 400
+    # AUTO_ONLY guards are enforced below, AFTER we've loaded the row — they
+    # only apply to submissions with a linked property (forms_uid). Unlinked
+    # rows aren't driven by the forms/visit automation, so every stage is a
+    # valid manual destination for them.
 
     new_reason = to_str(data.get("status_reason")) or None
     if new_status == "Rejected":
@@ -1283,7 +1280,7 @@ def change_status(sid: int):
         with conn.cursor() as cur:
             scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(f"""
-                SELECT s.id, s.public_id, s.status, s.status_reason FROM submissions s
+                SELECT s.id, s.public_id, s.status, s.status_reason, s.forms_uid FROM submissions s
                 WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}
                 FOR UPDATE OF s
             """, [sid, *scope_params])
@@ -1293,8 +1290,20 @@ def change_status(sid: int):
 
             old_status = existing["status"]
             old_reason = existing.get("status_reason")
+            # Linked to a property → the forms/visit automation owns the
+            # AUTO_ONLY stages, so manual moves in/out of them are refused.
+            # Unlinked rows are fully manual.
+            linked = existing.get("forms_uid") is not None
 
-            if old_status in AUTO_ONLY_STAGES:
+            if linked and new_status in AUTO_ONLY_STAGES:
+                return jsonify({
+                    "error": (
+                        f"'{new_status}' is set automatically, not manually. "
+                        f"Use Schedule Visit / Counter Offer / the visit-completion flow."
+                    )
+                }), 400
+
+            if linked and old_status in AUTO_ONLY_STAGES:
                 return jsonify({
                     "error": (
                         f"Cannot manually change status from '{old_status}'. "

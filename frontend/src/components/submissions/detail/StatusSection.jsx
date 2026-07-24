@@ -34,7 +34,11 @@ export default function StatusSection({ submission, canAct, onChanged }) {
     }
   };
 
-  const canEdit = canAct && !AUTO_ONLY_STAGES.has(s.status);
+  // A submission with no linked property (forms_uid) isn't driven by the
+  // forms/visit automation, so every stage is a valid manual destination —
+  // including the AUTO_ONLY ones. Linked rows keep the auto-only lock.
+  const unlinked = !s.forms_uid;
+  const canEdit = canAct && (unlinked || !AUTO_ONLY_STAGES.has(s.status));
 
   return (
     <div className="card-block">
@@ -56,11 +60,14 @@ export default function StatusSection({ submission, canAct, onChanged }) {
             }}
             disabled={busy}
           >
-            {STAGES.map((st) => (
-              <option key={st.key} value={st.key} disabled={AUTO_ONLY_STAGES.has(st.key)}>
-                {(st.label || st.key)}{AUTO_ONLY_STAGES.has(st.key) ? ' (auto)' : ''}
-              </option>
-            ))}
+            {STAGES.map((st) => {
+              const locked = !unlinked && AUTO_ONLY_STAGES.has(st.key);
+              return (
+                <option key={st.key} value={st.key} disabled={locked}>
+                  {(st.label || st.key)}{locked ? ' (auto)' : ''}
+                </option>
+              );
+            })}
           </select>
           {(s.status === 'Rejected' || pendingRejected) && (
             <select

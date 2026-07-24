@@ -309,6 +309,36 @@ export default function Submissions() {
     }
   }, [effectiveFilters, clientFilters]);
 
+  // "All" filter: load-more in the table pulls the full remaining set in ONE
+  // request (all: 'true') instead of fanning out a per-stage request per stage.
+  // Deferred until the scroll sentinel fires, so the default All view still
+  // opens with reload()'s cheap first-page-per-stage payload. A ref guards
+  // against the sentinel double-firing a second 5000-row fetch mid-flight.
+  const [loadingAll, setLoadingAll] = useState(false);
+  const loadingAllRef = useRef(false);
+  const loadAll = useCallback(async () => {
+    if (loadingAllRef.current) return;
+    loadingAllRef.current = true;
+    const myGen = ++reloadGen.current;
+    setLoadingAll(true);
+    try {
+      const data = await api.adminListSubmissions({ ...effectiveFilters, all: 'true' });
+      if (myGen !== reloadGen.current) return;
+      const rows = data.submissions || [];
+      setSubmissions(rows);
+      if (data.counts) setCounts(data.counts);
+      const loaded = {};
+      for (const s of rows) loaded[s.status] = (loaded[s.status] || 0) + 1;
+      setLoadedByStage(loaded);
+      setLoadingByStage({});
+    } catch {
+      // Best-effort: leave the loaded page in place; scrolling retries.
+    } finally {
+      loadingAllRef.current = false;
+      if (myGen === reloadGen.current) setLoadingAll(false);
+    }
+  }, [effectiveFilters]);
+
   const reload = useCallback(async () => {
     const myGen = ++reloadGen.current;
     setLoading(true);
@@ -609,6 +639,8 @@ export default function Submissions() {
           loadedByStage={loadedByStage}
           loadingByStage={loadingByStage}
           onLoadMore={loadMoreStage}
+          onLoadAll={loadAll}
+          loadingAll={loadingAll}
           canAct={canAct}
           bulkMode={bulkMode}
           selectedIds={selectedIds}
