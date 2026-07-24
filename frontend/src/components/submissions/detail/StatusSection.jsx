@@ -1,14 +1,14 @@
 /**
  * Status — editable stage dropdown (or read-only label) + Rejected-reason
  * sub-dropdown. Ported from CP DetailPanel.jsx (top-level status block +
- * handleStatusChange). AUTO_ONLY_STAGES (Visit Scheduled / Visit Completed /
- * Offer) are never manual destinations, and the dropdown is hidden entirely
- * while the row is already in one of them — those transitions happen via
- * the dedicated Schedule Visit / Counter Offer flows instead.
+ * handleStatusChange). Gating is by forms_uid: a submission LINKED to a
+ * property (forms_uid set) has its stage driven by the cp_inventory_status
+ * sync, so it's fully read-only here; an UNLINKED submission has no
+ * automation, so every stage is a valid manual destination.
  */
 import { useState } from 'react';
 import { api } from '../../../api';
-import { STAGES, AUTO_ONLY_STAGES, REJECTED_REASONS, stageMeta } from '../../../format';
+import { STAGES, REJECTED_REASONS, stageMeta } from '../../../format';
 
 export default function StatusSection({ submission, canAct, onChanged }) {
   const [busy, setBusy] = useState(false);
@@ -34,11 +34,11 @@ export default function StatusSection({ submission, canAct, onChanged }) {
     }
   };
 
-  // A submission with no linked property (forms_uid) isn't driven by the
-  // forms/visit automation, so every stage is a valid manual destination —
-  // including the AUTO_ONLY ones. Linked rows keep the auto-only lock.
-  const unlinked = !s.forms_uid;
-  const canEdit = canAct && (unlinked || !AUTO_ONLY_STAGES.has(s.status));
+  // forms_uid present → linked to a property; the cp_inventory_status sync owns
+  // the stage, so it's fully read-only at every stage. Absent → no automation,
+  // so the stage is fully manual (including the otherwise-auto stages).
+  const linked = !!s.forms_uid;
+  const canEdit = canAct && !linked;
 
   return (
     <div className="card-block">
@@ -60,14 +60,9 @@ export default function StatusSection({ submission, canAct, onChanged }) {
             }}
             disabled={busy}
           >
-            {STAGES.map((st) => {
-              const locked = !unlinked && AUTO_ONLY_STAGES.has(st.key);
-              return (
-                <option key={st.key} value={st.key} disabled={locked}>
-                  {(st.label || st.key)}{locked ? ' (auto)' : ''}
-                </option>
-              );
-            })}
+            {STAGES.map((st) => (
+              <option key={st.key} value={st.key}>{st.label || st.key}</option>
+            ))}
           </select>
           {(s.status === 'Rejected' || pendingRejected) && (
             <select
@@ -91,9 +86,11 @@ export default function StatusSection({ submission, canAct, onChanged }) {
         <div className="field-val" style={{ fontWeight: 500 }}>
           <span className="stage-dot" style={{ background: stageMeta(s.status).color }} />
           {s.status}{s.status_reason ? ` (${s.status_reason})` : ''}
-          {AUTO_ONLY_STAGES.has(s.status) && (
+          {linked && (
             <div className="muted" style={{ fontSize: 11, fontWeight: 400, marginTop: 2 }}>
-              Set automatically — not manually changeable from here.
+              SET AUTOMATICALLY
+              Not manually changeable from here
+              PLEASE CHANGE FROM SUPPLY TRACKER
             </div>
           )}
         </div>

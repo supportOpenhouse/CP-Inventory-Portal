@@ -1290,24 +1290,15 @@ def change_status(sid: int):
 
             old_status = existing["status"]
             old_reason = existing.get("status_reason")
-            # Linked to a property → the forms/visit automation owns the
-            # AUTO_ONLY stages, so manual moves in/out of them are refused.
-            # Unlinked rows are fully manual.
+            # Linked to a property → its stage is owned by the
+            # cp_inventory_status sync; no manual change at any stage. Unlinked
+            # rows have no automation, so every stage is a valid manual move.
             linked = existing.get("forms_uid") is not None
-
-            if linked and new_status in AUTO_ONLY_STAGES:
+            if linked:
                 return jsonify({
                     "error": (
-                        f"'{new_status}' is set automatically, not manually. "
-                        f"Use Schedule Visit / Counter Offer / the visit-completion flow."
-                    )
-                }), 400
-
-            if linked and old_status in AUTO_ONLY_STAGES:
-                return jsonify({
-                    "error": (
-                        f"Cannot manually change status from '{old_status}'. "
-                        f"Use the dedicated flow (Counter Offer / re-schedule)."
+                        "This submission is linked to a property; its status is "
+                        "set automatically. Change it from the supply tracker."
                     )
                 }), 400
 
@@ -2919,10 +2910,11 @@ def bulk_status():
     Body: { "ids": [1, 2, 3], "status": "Submitted", "status_reason": "Hold" }
 
     Same restrictions as POST /submissions/<id>/status:
-      - new_status must NOT be in AUTO_ONLY_STAGES.
       - When status='Rejected', status_reason must be one of REJECTED_REASONS
         and is applied to every row. Otherwise status_reason is cleared.
-      - Rows currently in AUTO_ONLY_STAGES are skipped.
+      - Rows LINKED to a property (forms_uid set) are skipped — their stage is
+        owned by the cp_inventory_status sync. Unlinked rows can be moved to
+        any stage.
     Max 5000 IDs per call.
     """
     data = request.get_json(silent=True) or {}
@@ -2935,10 +2927,6 @@ def bulk_status():
         return jsonify({"error": "Max 5000 IDs per bulk operation"}), 400
     if not new_status or new_status not in VALID_STAGES:
         return jsonify({"error": f"Invalid status. Must be one of: {VALID_STAGES}"}), 400
-    if new_status in AUTO_ONLY_STAGES:
-        return jsonify({
-            "error": f"'{new_status}' is set automatically, not manually."
-        }), 400
 
     new_reason = to_str(data.get("status_reason")) or None
     if new_status == "Rejected":
@@ -2981,10 +2969,9 @@ def bulk_status():
             # UPDATE ... RETURNING yields the NEW value, which would make
             # from_status wrong on every event row.
             #
-            # The `s.status IS NULL OR` guard matters: submissions.status is
-            # nullable, and `NULL <> ALL(...)` is NULL (row dropped), which
-            # would silently reclassify NULL-status rows as skipped — the loop
-            # updated them.
+            # `forms_uid IS NULL` skips rows linked to a property — their stage
+            # is owned by the cp_inventory_status sync and must not be moved
+            # manually. Unlinked rows are updated at any stage.
             cur.execute(f"""
                 WITH target AS (
                     SELECT s.id, s.status AS old_status
@@ -2992,7 +2979,7 @@ def bulk_status():
                      WHERE s.id = ANY(%s)
                        AND s.deleted_at IS NULL
                        {scope_sql}
-                       AND (s.status IS NULL OR s.status <> ALL(%s))
+                       AND s.forms_uid IS NULL
                        AND (s.status IS DISTINCT FROM %s
                             OR s.status_reason IS DISTINCT FROM %s)
                      ORDER BY s.id
@@ -3009,7 +2996,7 @@ def bulk_status():
                 )
                 SELECT count(*) AS updated FROM target
             """, [
-                clean_ids, *scope_params, list(AUTO_ONLY_STAGES),
+                clean_ids, *scope_params,
                 new_status, new_reason,
                 new_status, new_reason,
                 g.user.get("cp_id"), g.user.get("rm_id"), new_status,
