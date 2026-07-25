@@ -390,7 +390,11 @@ export default function TableView({
           return (
             <TableLoadMoreSentinel
               hasMore={anyMore}
-              loading={loadingAll}
+              // Also gate on the main `loading`: otherwise the sentinel fires
+              // onLoadAll() off stale counts DURING a reload, bumping reloadGen
+              // and making that reload's stale-guard skip setLoading(false) —
+              // a permanently-stuck spinner (e.g. right after a search).
+              loading={loading || loadingAll}
               onVisible={() => onLoadAll?.()}
             />
           );
