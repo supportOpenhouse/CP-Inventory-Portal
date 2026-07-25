@@ -6,7 +6,7 @@ import App from './App.jsx';
 import { AuthProvider } from './contexts/AuthContext.jsx';
 import { ThemeProvider } from './contexts/ThemeContext.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
-import UpdateBanner from './components/UpdateBanner.jsx';
+import AutoUpdater from './components/AutoUpdater.jsx';
 import { setUpdateReady } from './swUpdate.js';
 import './styles.css';
 
@@ -25,8 +25,8 @@ if (import.meta.env.DEV) {
   // The browser only re-checks the SW script on a real document navigation (or
   // when its cached copy is >24h old). SPA route changes are NOT navigations,
   // so a tab left open all day would never notice a deploy and would keep
-  // running stale code. Poll explicitly instead, and surface the result as a
-  // banner rather than a surprise reload — see UpdateBanner.
+  // running stale code. Poll explicitly instead; when a new build is waiting,
+  // it's applied silently on the next route navigation — see AutoUpdater.
   const UPDATE_CHECK_MS = 15 * 60 * 1000;
 
   const updateSW = registerSW({
@@ -75,8 +75,8 @@ window.addEventListener('vite:preloadError', (e) => {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ThemeProvider>
-      <UpdateBanner />
       <BrowserRouter>
+        <AutoUpdater />
         <AuthProvider>
           <ErrorBoundary>
             <App />

@@ -1,6 +1,6 @@
 /**
  * Bridge between the service-worker registration (module scope, outside React)
- * and the <UpdateBanner /> that offers the reload.
+ * and <AutoUpdater />, which applies the waiting update on the next navigation.
  *
  * A tiny external store rather than context: registerSW() runs in main.jsx
  * before React mounts, so there is no provider to write into at that point.
