@@ -8,6 +8,7 @@ import { ThemeProvider } from './contexts/ThemeContext.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import AutoUpdater from './components/AutoUpdater.jsx';
 import { setUpdateReady } from './swUpdate.js';
+import { initVersionGuard } from './versionGuard.js';
 import './styles.css';
 
 if (import.meta.env.DEV) {
@@ -26,7 +27,9 @@ if (import.meta.env.DEV) {
   // when its cached copy is >24h old). SPA route changes are NOT navigations,
   // so a tab left open all day would never notice a deploy and would keep
   // running stale code. Poll explicitly instead; when a new build is waiting,
-  // it's applied silently on the next route navigation — see AutoUpdater.
+  // it's applied silently on the next route navigation (AutoUpdater), or forced
+  // for a never-navigating tab by initVersionGuard (idle auto-force + the
+  // server force_reload_after kill-switch).
   const UPDATE_CHECK_MS = 15 * 60 * 1000;
 
   const updateSW = registerSW({
@@ -44,9 +47,11 @@ if (import.meta.env.DEV) {
         registration.update().catch(() => {}); // offline / transient — try later
       };
       setInterval(check, UPDATE_CHECK_MS);
-      // Coming back to the tab is the moment a stale build is most likely, and
-      // the moment the user is most able to act on the banner.
+      // Coming back to the tab is the moment a stale build is most likely.
       document.addEventListener('visibilitychange', check);
+      // Force-update levers for a tab that never navigates (AutoUpdater's only
+      // trigger): idle auto-force after a grace period + server kill-switch.
+      initVersionGuard(registration);
     },
   });
 }

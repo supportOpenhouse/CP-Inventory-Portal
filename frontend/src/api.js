@@ -47,6 +47,7 @@ const TTL_RULES = [
   ['/tickets', 30],
   ['/me', 0],                        // identity — always fresh
   ['/health', 0],
+  ['/version', 0],                   // update gate — always fresh
   ['/comet/', 20],                   // chat state (requests / access / history)
   ['/submissions/stats', 120],
   ['/', 1800],                       // everything else (most reads) — 30 min
@@ -396,6 +397,8 @@ export const api = {
 
   // Health
   health: () => request('/health', { auth: false }),
+  // Update gate — returns { force_reload_after }. Public; polled by versionGuard.
+  version: () => request('/version', { auth: false }),
 
   // Cache controls: invalidate(prefix) drops matching cached GETs (for changes
   // caught by polling, not your own writes); resetCache() wipes all (auth

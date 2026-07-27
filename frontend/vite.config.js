@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // Build identity, stamped at build time (epoch ms). The version guard
+  // compares it to the server's force_reload_after threshold to decide whether
+  // this build is stale enough to force-reload. Replaced inline at build.
+  define: {
+    __BUILD_TIME__: JSON.stringify(Date.now()),
+  },
   plugins: [
     react(),
     VitePWA({
