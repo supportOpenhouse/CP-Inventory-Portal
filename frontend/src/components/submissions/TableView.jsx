@@ -105,6 +105,12 @@ export default function TableView({
   }
 
   const toggleSort = (key) => {
+    // A sort must order the ENTIRE result set, not just the loaded page —
+    // pagination loads newest-first, so the true tail (e.g. the oldest-
+    // submitted lead) isn't in memory and would never surface. Pull the full
+    // set fresh from the DB first; onLoadAll no-ops once everything's loaded,
+    // and the sort re-runs automatically when the rows land.
+    if (STAGES.some((st) => hasMoreByStage[st.key])) onLoadAll?.();
     setSort((s) => {
       // New column: 'submitted' opens newest-first (desc), everything else A→Z
       // (asc). Clicking the active column just flips direction — a plain

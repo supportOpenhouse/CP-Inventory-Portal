@@ -322,7 +322,9 @@ export default function Submissions() {
     const myGen = ++reloadGen.current;
     setLoadingAll(true);
     try {
-      const data = await api.adminListSubmissions({ ...effectiveFilters, all: 'true' });
+      // fresh: bypass the 30-min GET cache — the full set backs table sorting,
+      // which must reflect the real current DB order, not a stale page.
+      const data = await api.adminListSubmissions({ ...effectiveFilters, all: 'true' }, { fresh: true });
       if (myGen !== reloadGen.current) return;
       const rows = data.submissions || [];
       setSubmissions(rows);

@@ -234,8 +234,8 @@ export const api = {
     request(`/submissions/${submissionId}/book-visit`, { method: 'POST', body: payload }),
 
   // Admin (staff only)
-  adminListSubmissions: (filters = {}) =>
-    request(`/admin/submissions${buildQuery(filters)}`),
+  adminListSubmissions: (filters = {}, opts = {}) =>
+    request(`/admin/submissions${buildQuery(filters)}`, opts),
   // Daily submission counts for Home's trend chart. Always returns exactly
   // `days` points (zero-filled server-side), oldest first.
   adminSubmissionsByDate: (days = 30) =>
