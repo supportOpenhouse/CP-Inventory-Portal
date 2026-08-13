@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
-VALID_STAGES = ["Unapproved", "Submitted", "Visit Requested", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Price Rejected", "Rejected"]
+VALID_STAGES = ["Unapproved", "Submitted", "Visit Requested", "Offer", "Closure", "Visit Scheduled", "Visit Completed", "Visit Cancelled", "Price Rejected", "Rejected"]
 
 # Stages that are set automatically by other flows (visit scheduling, visit
 # completion cron, counter-offer endpoint). The /status endpoint refuses
@@ -471,7 +471,7 @@ def _sync_status_from_cp_inventory() -> int:
         #      - status_reason: a raw mirror of supply_status, applied to ALL
         #        matched cards incl. terminal (Rejected) ones. Overwrites when
         #        supply_status is non-empty; never clears on empty.
-        TERMINAL = {"Price Rejected", "Rejected"}
+        TERMINAL = {"Price Rejected", "Rejected", "Visit Cancelled"}
         to_update = []  # (submission_id, old_status, new_status|None, new_reason|None)
         for r in rows:
             pubid = r["cp_id"]
@@ -485,9 +485,9 @@ def _sync_status_from_cp_inventory() -> int:
             cp_status = (r["cp_status"] or "").strip()
             if cp_status:
                 # Properties DB may still use the legacy stage name — treat it
-                # as an alias of the renamed 'Rejected' stage. A cancelled visit
-                # is a rejection too, so it also lands in 'Rejected'.
-                mapped = "Rejected" if cp_status in ("Duplicate Rejected", "Visit Cancelled") else cp_status
+                # as an alias of the renamed 'Rejected' stage. 'Visit Cancelled'
+                # is now its own board stage, so it maps through as-is.
+                mapped = "Rejected" if cp_status == "Duplicate Rejected" else cp_status
                 if old_status in TERMINAL:
                     pass  # never override a final human rejection
                 elif mapped not in VALID_STAGES:
@@ -504,12 +504,6 @@ def _sync_status_from_cp_inventory() -> int:
             supply = (r["supply_status"] or "").strip()
             if supply and supply != (old_reason or ""):
                 new_reason = supply
-
-            # 'Visit Cancelled' is itself a rejection reason: when the source
-            # flags it via cp_status, stamp the reason too — unless supply_status
-            # already supplied a more specific one above.
-            if cp_status == "Visit Cancelled" and new_reason is None and old_reason != "Visit Cancelled":
-                new_reason = "Visit Cancelled"
 
             if new_status is None and new_reason is None:
                 continue
@@ -1883,8 +1877,10 @@ def schedule_visit(sid: int):
     if not sub:
         return jsonify({"error": "Submission not found"}), 404
 
-    # Idempotency on our side: already scheduled?
-    if sub.get("forms_uid"):
+    # Idempotency on our side: already scheduled? Skip the short-circuit for a
+    # cancelled visit — "Schedule Revisit" deliberately re-runs the schedule
+    # flow to book a fresh visit, overwriting the stale forms_uid.
+    if sub.get("forms_uid") and sub.get("status") != "Visit Cancelled":
         return jsonify({
             "ok": True,
             "uid": sub["forms_uid"],
@@ -2088,7 +2084,9 @@ def schedule_visit(sid: int):
     # Persist on our side + auto-promote status to 'Visit Scheduled' from either
     # 'Submitted' or 'Visit Requested' (the CP-booked stage).
     old_status = sub.get("status")
-    promote_status = old_status in ("Submitted", "Visit Requested")
+    # Promote to 'Visit Scheduled' from the CP-booked stages, or when re-booking
+    # a previously cancelled visit ("Schedule Revisit").
+    promote_status = old_status in ("Submitted", "Visit Requested", "Visit Cancelled")
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
@@ -2154,6 +2152,235 @@ def schedule_visit(sid: int):
         "scheduled_time": schedule_time,
         "field_exec_name": field_exec_name,
         "status_promoted": promote_status,
+    }), 200
+
+
+def _call_forms(subpath: str, payload: dict):
+    """POST to the Forms app external API with the shared internal key.
+
+    Returns (result_dict, None) on success, or (None, (response, status)) on
+    failure. Network errors map to 502/504; the Forms app's own 4xx (past date,
+    already cancelled, visit completed, no visit for lead) are forwarded verbatim
+    so the UI shows the exact reason.
+    """
+    forms_url = Config.FORMS_APP_URL.rstrip("/") + subpath
+    try:
+        resp = requests.post(
+            forms_url, json=payload,
+            headers={"X-Internal-Key": Config.INTERNAL_API_KEY, "Content-Type": "application/json"},
+            timeout=Config.FORMS_APP_TIMEOUT_SECONDS,
+        )
+    except requests.exceptions.Timeout:
+        return None, (jsonify({"error": "Forms app did not respond in time. Please try again."}), 504)
+    except requests.exceptions.RequestException as e:
+        return None, (jsonify({"error": f"Could not reach Forms app: {e}"}), 502)
+
+    try:
+        result = resp.json()
+    except ValueError:
+        result = {}
+    if resp.status_code >= 400 or not result.get("success"):
+        status = resp.status_code if 400 <= resp.status_code < 500 else 502
+        return None, (jsonify({
+            "error": result.get("error") or f"Forms app error (HTTP {resp.status_code})",
+            "details": result,
+        }), status)
+    return result, None
+
+
+def _load_scheduled_submission(sid: int):
+    """Fetch a live submission (not deleted). Returns the row dict or None."""
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, public_id, forms_uid, status, status_reason,
+                       scheduled_date, scheduled_time, field_exec_name
+                FROM submissions
+                WHERE id = %s AND deleted_at IS NULL
+            """, (sid,))
+            return cur.fetchone()
+    finally:
+        put_app_conn(conn)
+
+
+@bp.post("/submissions/<int:sid>/reschedule-visit")
+@require_staff
+@require_acting_staff
+def reschedule_visit(sid: int):
+    """Reschedule (and optionally reassign) an existing visit via the Forms app.
+
+    Body: { schedule_date (REQUIRED, YYYY-MM-DD, not past),
+            schedule_time (REQUIRED, HH:MM 24h),
+            field_exec_id (OPTIONAL — reassign to this /admin/field-execs id) }
+    Proxies to FORMS_APP_URL + /api/external/reschedule (source_app
+    'CP Inventory App'). On success, updates the stored schedule fields.
+    """
+    if not Config.FORMS_APP_URL or not Config.INTERNAL_API_KEY:
+        return jsonify({"error": "Forms app integration not configured."}), 503
+
+    data = request.get_json(silent=True) or {}
+    schedule_date = to_str(data.get("schedule_date"))
+    schedule_time = to_str(data.get("schedule_time"))
+    field_exec_id = to_int(data.get("field_exec_id"))
+
+    body_errors = []
+    if not schedule_date or not re.match(r"^\d{4}-\d{2}-\d{2}$", schedule_date):
+        body_errors.append("schedule_date must be YYYY-MM-DD")
+    else:
+        try:
+            if datetime.strptime(schedule_date, "%Y-%m-%d").date() < datetime.now().date():
+                body_errors.append("schedule_date cannot be in the past")
+        except ValueError:
+            body_errors.append("schedule_date is not a valid date")
+    tm = re.match(r"^(\d{1,2}):(\d{2})$", schedule_time or "")
+    if not tm:
+        body_errors.append("schedule_time must be HH:MM (24-hr)")
+    else:
+        hh, mm = int(tm.group(1)), int(tm.group(2))
+        if hh > 23 or mm > 59:
+            body_errors.append("schedule_time has out-of-range values")
+        else:
+            schedule_time = f"{hh:02d}:{mm:02d}"
+    if body_errors:
+        return jsonify({"error": "Invalid request", "details": body_errors}), 400
+
+    sub = _load_scheduled_submission(sid)
+    if not sub:
+        return jsonify({"error": "Submission not found"}), 404
+    if not sub.get("forms_uid"):
+        return jsonify({"error": "No visit scheduled for this submission."}), 400
+
+    # Optional reassign: resolve the field-exec name from the properties users
+    # table (same rule as scheduling — must be can_visit).
+    field_exec_name = None
+    if field_exec_id:
+        if not properties_configured():
+            return jsonify({"error": "Properties DB not configured for field execs."}), 503
+        pconn = get_props_conn()
+        try:
+            with pconn.cursor() as cur:
+                cur.execute("SELECT name FROM users WHERE id = %s AND can_visit = TRUE", (field_exec_id,))
+                row = cur.fetchone()
+        finally:
+            put_props_conn(pconn)
+        if not row:
+            return jsonify({"error": "Selected field exec is not authorized for visits."}), 400
+        field_exec_name = row["name"]
+
+    lead_id = sub.get("public_id") or str(sub["id"])
+    actor_name = _resolve_admin_name_for_forms(g.user.get("phone") or "")
+    payload = {
+        "lead_id": lead_id,
+        "schedule_date": schedule_date,
+        "schedule_time": schedule_time,
+        "source_app": "CP Inventory App",
+    }
+    if field_exec_name:
+        payload["field_exec"] = field_exec_name
+    if actor_name:
+        payload["actor_name"] = actor_name
+
+    result, err = _call_forms("/api/external/reschedule", payload)
+    if err:
+        return err
+
+    reassigned = bool(field_exec_name) and field_exec_name != sub.get("field_exec_name")
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            if field_exec_name:
+                cur.execute(
+                    "UPDATE submissions SET scheduled_date=%s, scheduled_time=%s, field_exec_name=%s WHERE id=%s",
+                    (schedule_date, schedule_time, field_exec_name, sid),
+                )
+            else:
+                cur.execute(
+                    "UPDATE submissions SET scheduled_date=%s, scheduled_time=%s WHERE id=%s",
+                    (schedule_date, schedule_time, sid),
+                )
+            note = (f"Visit rescheduled to {schedule_date} {schedule_time}"
+                    + (f", reassigned to {field_exec_name}" if reassigned else "") + ".")
+            cur.execute("""
+                INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'system', %s)
+            """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), note))
+            log_activity(
+                cur, action="visit_rescheduled", category="submission",
+                entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"schedule_date": schedule_date, "schedule_time": schedule_time,
+                         "field_exec_name": field_exec_name, "reassigned": reassigned},
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "scheduled_date": schedule_date,
+        "scheduled_time": schedule_time,
+        "field_exec_name": field_exec_name or sub.get("field_exec_name"),
+    }), 200
+
+
+@bp.post("/submissions/<int:sid>/cancel-visit")
+@require_staff
+@require_acting_staff
+def cancel_visit(sid: int):
+    """Cancel an existing visit via the Forms app and move the submission to the
+    'Visit Cancelled' stage. Body: { reason (OPTIONAL) }. Proxies to
+    FORMS_APP_URL + /api/external/cancel (source_app 'CP Inventory App')."""
+    if not Config.FORMS_APP_URL or not Config.INTERNAL_API_KEY:
+        return jsonify({"error": "Forms app integration not configured."}), 503
+
+    data = request.get_json(silent=True) or {}
+    reason = to_str(data.get("reason")) or None
+
+    sub = _load_scheduled_submission(sid)
+    if not sub:
+        return jsonify({"error": "Submission not found"}), 404
+    if not sub.get("forms_uid"):
+        return jsonify({"error": "No visit scheduled for this submission."}), 400
+
+    lead_id = sub.get("public_id") or str(sub["id"])
+    actor_name = _resolve_admin_name_for_forms(g.user.get("phone") or "")
+    payload = {"lead_id": lead_id, "source_app": "CP Inventory App"}
+    if reason:
+        payload["reason"] = reason
+    if actor_name:
+        payload["actor_name"] = actor_name
+
+    result, err = _call_forms("/api/external/cancel", payload)
+    if err:
+        return err
+
+    old_status = sub.get("status")
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE submissions SET status='Visit Cancelled' WHERE id=%s", (sid,))
+            if old_status != "Visit Cancelled":
+                cur.execute("""
+                    INSERT INTO submission_events
+                        (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status, text)
+                    VALUES (%s, %s, %s, 'status_change', %s, 'Visit Cancelled', %s)
+                """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), old_status,
+                      f"Visit cancelled{f' — {reason}' if reason else ''}."))
+            log_activity(
+                cur, action="visit_cancelled", category="submission",
+                entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
+                details={"reason": reason,
+                         "already_cancelled": bool(result.get("already_cancelled")),
+                         "from_status": old_status},
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "ok": True,
+        "status": "Visit Cancelled",
+        "already_cancelled": bool(result.get("already_cancelled")),
     }), 200
 
 

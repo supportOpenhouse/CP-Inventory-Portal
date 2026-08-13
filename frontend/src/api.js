@@ -291,6 +291,18 @@ export const api = {
     request(`/admin/submissions/${submissionId}/schedule-visit`, {
       method: 'POST', body: payload,
     }),
+  // Reschedule / reassign an existing visit. payload = { schedule_date,
+  // schedule_time, field_exec_id? } — field_exec_id optional (reassign).
+  adminRescheduleVisit: (submissionId, payload) =>
+    request(`/admin/submissions/${submissionId}/reschedule-visit`, {
+      method: 'POST', body: payload,
+    }),
+  // Cancel an existing visit → moves the submission to 'Visit Cancelled'.
+  // payload = { reason? }.
+  adminCancelVisit: (submissionId, payload = {}) =>
+    request(`/admin/submissions/${submissionId}/cancel-visit`, {
+      method: 'POST', body: payload,
+    }),
   // Bulk variant: payload = { schedule_date, schedule_time, items: [{id, field_exec_id}, ...] }
   // Cap of 20 items per request enforced server-side.
   adminBulkScheduleVisit: (payload) =>

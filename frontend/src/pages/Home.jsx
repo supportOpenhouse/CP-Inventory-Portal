@@ -13,7 +13,7 @@ import { stageMeta, stageLabel } from '../format';
 // (they FAIL CVD adjacency, which is legal only with that secondary encoding).
 const PIPELINE = [
   'Unapproved', 'Submitted', 'Visit Requested', 'Visit Scheduled',
-  'Visit Completed', 'Offer', 'Closure', 'Price Rejected', 'Rejected',
+  'Visit Completed', 'Offer', 'Closure', 'Visit Cancelled', 'Price Rejected', 'Rejected',
 ];
 
 export default function Home() {

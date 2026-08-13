@@ -171,6 +171,7 @@ export const STAGES = [
   { key: 'Visit Completed',    color: '#10B981', bg: '#D1FAE5' },   // green = success
   { key: 'Offer',              label: 'Offer Given', color: '#FF6B2B', bg: '#FFF3ED' },
   { key: 'Closure',            color: '#FF6B2B', bg: '#FFF3ED' },
+  { key: 'Visit Cancelled',    color: '#C2410C', bg: '#FBEAE2' },   // rust — dead visit
   { key: 'Price Rejected',     color: '#DC2626', bg: '#FEE2E2' },
   { key: 'Rejected',           color: '#DC2626', bg: '#FEE2E2' },
 ];

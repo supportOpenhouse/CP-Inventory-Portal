@@ -46,6 +46,7 @@ VALID_STAGES = {
     "Submitted",
     "Visit Scheduled",
     "Visit Completed",
+    "Visit Cancelled",
     "Offer",
     "Price Rejected",
     "Rejected",
