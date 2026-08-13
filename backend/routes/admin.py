@@ -396,6 +396,11 @@ def _sync_visit_completed_from_properties() -> int:
         return 0
 
 
+# Sentinel: a computed status_reason of _CLEAR_REASON means "set it to NULL"
+# (the normal reason flow only ever overwrites with a value, never clears).
+_CLEAR_REASON = object()
+
+
 def _sync_status_from_cp_inventory() -> int:
     """Sync submission status from the Properties DB `cp_inventory_status` table.
 
@@ -482,6 +487,7 @@ def _sync_status_from_cp_inventory() -> int:
 
             # --- status (cp_status → submissions.status) ---
             new_status = None
+            new_reason = None
             cp_status = (r["cp_status"] or "").strip()
             if cp_status:
                 # Properties DB may still use the legacy stage name — treat it
@@ -489,7 +495,13 @@ def _sync_status_from_cp_inventory() -> int:
                 # is now its own board stage, so it maps through as-is.
                 mapped = "Rejected" if cp_status == "Duplicate Rejected" else cp_status
                 if old_status in TERMINAL:
-                    pass  # never override a final human rejection
+                    # Never override a final human rejection — with ONE exception:
+                    # a lead parked in 'Rejected' by the OLD cancellation behaviour
+                    # (status_reason='Visit Cancelled') is reclassified into the new
+                    # 'Visit Cancelled' stage, clearing the now-redundant reason.
+                    if old_status == "Rejected" and (old_reason or "") == "Visit Cancelled":
+                        new_status = "Visit Cancelled"
+                        new_reason = _CLEAR_REASON
                 elif mapped not in VALID_STAGES:
                     log.warning(
                         "[sync_cp_status] public_id=%s — ignoring unrecognised "
@@ -500,10 +512,11 @@ def _sync_status_from_cp_inventory() -> int:
 
             # --- status_reason (supply_status → submissions.status_reason) ---
             # Raw passthrough; overwrite when source has a value; never clear.
-            new_reason = None
-            supply = (r["supply_status"] or "").strip()
-            if supply and supply != (old_reason or ""):
-                new_reason = supply
+            # Skipped when the reclassification above already decided the reason.
+            if new_reason is None:
+                supply = (r["supply_status"] or "").strip()
+                if supply and supply != (old_reason or ""):
+                    new_reason = supply
 
             if new_status is None and new_reason is None:
                 continue
@@ -524,7 +537,9 @@ def _sync_status_from_cp_inventory() -> int:
                     if new_status is not None:
                         sets.append("status = %s")
                         params.append(new_status)
-                    if new_reason is not None:
+                    if new_reason is _CLEAR_REASON:
+                        sets.append("status_reason = NULL")
+                    elif new_reason is not None:
                         sets.append("status_reason = %s")
                         params.append(new_reason)
                     params += [sub_id, old_status]

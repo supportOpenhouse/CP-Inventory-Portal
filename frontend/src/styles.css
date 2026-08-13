@@ -563,7 +563,7 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 /* Explicit token color so the "All" pill's number (which has no inline stage
    color) stays legible — it was the button default (near-black) in dark mode. */
 .count-pill .num { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 700; line-height: 1; color: var(--text); }
-.count-pill .lbl { font-size: 10px; font-weight: 700; letter-spacing: .04em; color: var(--text-muted); }
+.count-pill .lbl { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
 
 .filtered-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 13px; }
 .page-num { display: flex; align-items: center; gap: 10px; color: var(--text-2); white-space: nowrap; }
