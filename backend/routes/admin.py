@@ -416,11 +416,13 @@ def _sync_status_from_cp_inventory() -> int:
       3. status: for a recognised pipeline stage that differs from the current
          status, UPDATE submissions.status and seed a 'status_change' event so
          the timeline, reminder timers and activity log stay consistent.
-         Terminal cards (Price Rejected / Rejected) are skipped — a rejection is
-         a final human decision the status sync must not override.
-      4. status_reason: a raw mirror of supply_status, applied to ALL matched
-         cards (including terminal ones). Overwrites the existing reason when
-         supply_status is non-empty; never clears it when supply_status is blank.
+         cp_status is the source of truth for the stage — it can move a lead out
+         of Price Rejected / Rejected back into the pipeline. Only 'Visit
+         Cancelled' is final and never revived by the sync.
+      4. status_reason: mirrors supply_status. On a stage change the reason is
+         re-derived (mirror supply_status, or clear it) so a stale rejection
+         sub-reason doesn't cling to the new stage; with no stage change it's a
+         plain overwrite-when-present, never-clear-on-blank mirror.
 
     Idempotent (only rows whose status/reason differ are touched). Read-only on
     the Properties DB (we only fetch from cp_inventory_status, never write back).
@@ -476,7 +478,11 @@ def _sync_status_from_cp_inventory() -> int:
         #      - status_reason: a raw mirror of supply_status, applied to ALL
         #        matched cards incl. terminal (Rejected) ones. Overwrites when
         #        supply_status is non-empty; never clears on empty.
-        TERMINAL = {"Price Rejected", "Rejected", "Visit Cancelled"}
+        # cp_status is the source of truth for the stage: it moves a lead into
+        # any valid, different stage — including out of Price Rejected / Rejected
+        # back into the pipeline. Only 'Visit Cancelled' is treated as final
+        # (a cancelled visit is dead; the sync won't revive it).
+        TERMINAL = {"Visit Cancelled"}
         to_update = []  # (submission_id, old_status, new_status|None, new_reason|None)
         for r in rows:
             pubid = r["cp_id"]
@@ -489,19 +495,14 @@ def _sync_status_from_cp_inventory() -> int:
             new_status = None
             new_reason = None
             cp_status = (r["cp_status"] or "").strip()
+            supply = (r["supply_status"] or "").strip()
             if cp_status:
                 # Properties DB may still use the legacy stage name — treat it
                 # as an alias of the renamed 'Rejected' stage. 'Visit Cancelled'
-                # is now its own board stage, so it maps through as-is.
+                # maps through as its own board stage.
                 mapped = "Rejected" if cp_status == "Duplicate Rejected" else cp_status
                 if old_status in TERMINAL:
-                    # Never override a final human rejection — with ONE exception:
-                    # a lead parked in 'Rejected' by the OLD cancellation behaviour
-                    # (status_reason='Visit Cancelled') is reclassified into the new
-                    # 'Visit Cancelled' stage, clearing the now-redundant reason.
-                    if old_status == "Rejected" and (old_reason or "") == "Visit Cancelled":
-                        new_status = "Visit Cancelled"
-                        new_reason = _CLEAR_REASON
+                    pass  # cancelled visits are final — never revived by the sync
                 elif mapped not in VALID_STAGES:
                     log.warning(
                         "[sync_cp_status] public_id=%s — ignoring unrecognised "
@@ -511,12 +512,18 @@ def _sync_status_from_cp_inventory() -> int:
                     new_status = mapped
 
             # --- status_reason (supply_status → submissions.status_reason) ---
-            # Raw passthrough; overwrite when source has a value; never clear.
-            # Skipped when the reclassification above already decided the reason.
-            if new_reason is None:
-                supply = (r["supply_status"] or "").strip()
+            # On a STAGE CHANGE, re-derive the reason from the source so a stale
+            # rejection sub-reason (e.g. 'OH Rejected') doesn't cling to the new
+            # stage: mirror supply_status, or clear it if the source has none.
+            # With NO stage change, keep the plain mirror: overwrite when the
+            # source has a value, never clear on a blank.
+            if new_status is not None:
                 if supply and supply != (old_reason or ""):
                     new_reason = supply
+                elif not supply and old_reason:
+                    new_reason = _CLEAR_REASON
+            elif supply and supply != (old_reason or ""):
+                new_reason = supply
 
             if new_status is None and new_reason is None:
                 continue
