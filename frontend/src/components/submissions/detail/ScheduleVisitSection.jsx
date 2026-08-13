@@ -285,11 +285,11 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
         </div>
 
         {canAct && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button type="button" className="btn-ghost" onClick={openReschedule} style={{ flex: 1, justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-ghost" onClick={openReschedule} style={{ flex: '1 1 auto', justifyContent: 'center' }}>
               <IconCalendar size={14} /> Reschedule / Reassign
             </button>
-            <button type="button" className="btn-ghost" onClick={openCancel} style={{ flex: 1, justifyContent: 'center', color: 'var(--red-fg)' }}>
+            <button type="button" className="btn-ghost" onClick={openCancel} style={{ flex: '1 1 auto', justifyContent: 'center', color: 'var(--red-fg)' }}>
               ✕ Cancel visit
             </button>
           </div>
