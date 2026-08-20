@@ -22,6 +22,16 @@ def test_rm_sees_only_own_manager_sees_team_other_rm_blind(client, graph):
 
 
 @requires_db
+def test_rm_with_two_managers_visible_to_both(client, graph):
+    # graph gives rm manager_ids = [manager, manager2] — each manager's team
+    # CTE must independently include rm, so both see rm's ticket.
+    client.post("/api/tickets", headers=graph["headers"]["admin"],
+                json={"submission_id": graph["submission"], "title": "T-dual"})
+    assert len(client.get("/api/tickets", headers=graph["headers"]["manager"]).get_json()["items"]) == 1
+    assert len(client.get("/api/tickets", headers=graph["headers"]["manager2"]).get_json()["items"]) == 1
+
+
+@requires_db
 def test_reply_flips_awaiting_and_pending_count(client, graph):
     tid = client.post("/api/tickets", headers=graph["headers"]["admin"],
                       json={"submission_id": graph["submission"], "title": "T"}).get_json()["id"]

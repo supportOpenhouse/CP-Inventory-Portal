@@ -102,16 +102,17 @@ def require_admin_or_manager(f):
 # ---- helpers ----
 
 # SQL fragment producing the set of rms.id values "in my team" — me plus every
-# RM transitively beneath me via rms.manager_id. Walks the full subtree so a
-# manager-of-managers sees their indirect reports' data, not just their direct
-# reports'. UNION (not UNION ALL) defends against accidental cycles in the
-# manager_id graph. One %s placeholder for the root rm_id; wrap the call site
-# in `... IN { _TEAM_RM_IDS_SQL }`.
+# RM transitively beneath me via rms.manager_ids. manager_ids is an integer[]:
+# an RM with several managers belongs to each of their teams. Walks the full
+# subtree so a manager-of-managers sees their indirect reports' data, not just
+# their direct reports'. UNION (not UNION ALL) defends against accidental
+# cycles in the manager_ids graph. One %s placeholder for the root rm_id; wrap
+# the call site in `... IN { _TEAM_RM_IDS_SQL }`.
 _TEAM_RM_IDS_SQL = (
     "(WITH RECURSIVE my_team(id) AS ("
     " SELECT id FROM rms WHERE id = %s"
     " UNION"
-    " SELECT r.id FROM rms r JOIN my_team t ON r.manager_id = t.id"
+    " SELECT r.id FROM rms r JOIN my_team t ON t.id = ANY(r.manager_ids)"
     ") SELECT id FROM my_team)"
 )
 
@@ -130,7 +131,7 @@ def _scoped_city_filter(cur):
       - Non-manager : s.cp_id IN (CPs where cp.rm_id = me)
       - Manager     : s.cp_id IN (CPs where cp.rm_id IN my team subtree),
                       where "my team subtree" = me + every RM transitively
-                      under me via rms.manager_id. So a manager whose direct
+                      under me via rms.manager_ids. So a manager whose direct
                       reports are themselves managers also sees their reports.
       Unapproved is hidden either way.
 
@@ -166,7 +167,7 @@ def _scoped_city_filter(cur):
         if is_manager:
             # "Me + my team" applies to BOTH the override match and the
             # permanent-RM fallback. Team = the full subtree below me in the
-            # rms.manager_id hierarchy (recursive — a manager-of-managers
+            # rms.manager_ids hierarchy (recursive — a manager-of-managers
             # sees indirect reports too).
             clause = (
                 "("
@@ -3041,7 +3042,8 @@ def export_csv():
 def list_rms():
     """RMs from the `rms` table — used for the admin's CP\u2194RM assignment dropdown.
 
-    Returns: { rms: [ {id, name, phone, email, city, is_manager}, ... ] }
+    Returns: { rms: [ {id, name, phone, email, city, is_manager, manager_ids}, ... ] }
+    manager_ids is a list (possibly empty) — an RM can report to several managers.
     Active only, ordered by name.
     Defensive: falls back gracefully if city/is_manager columns aren't there yet.
     """
@@ -3051,9 +3053,8 @@ def list_rms():
             try:
                 cur.execute("""
                     SELECT r.id, r.name, r.phone, r.email,
-                           r.city AS city, r.manager_id,
-                           COALESCE(r.is_manager, FALSE) AS is_manager,
-                           r.manager_id
+                           r.city AS city, r.manager_ids,
+                           COALESCE(r.is_manager, FALSE) AS is_manager
                     FROM rms r
                     WHERE COALESCE(r.is_active, TRUE) = TRUE
                     ORDER BY r.name ASC, r.id ASC
@@ -3061,12 +3062,12 @@ def list_rms():
                 rows = cur.fetchall()
             except Exception:
                 conn.rollback()
-                # Fallback for schemas missing city / is_manager / manager_id
+                # Fallback for schemas missing city / is_manager / manager_ids
                 cur.execute("""
                     SELECT r.id, r.name, r.phone, r.email,
                            NULL::varchar AS city,
                            FALSE AS is_manager,
-                           NULL::integer AS manager_id
+                           NULL::integer[] AS manager_ids
                     FROM rms r
                     WHERE COALESCE(r.is_active, TRUE) = TRUE
                     ORDER BY r.name ASC, r.id ASC
@@ -3074,6 +3075,8 @@ def list_rms():
                 rows = cur.fetchall()
     finally:
         put_app_conn(conn)
+    for r in rows:
+        r["manager_ids"] = r.get("manager_ids") or []
     return jsonify({"rms": rows}), 200
 
 
@@ -4377,7 +4380,7 @@ def list_staff_users():
                     "name":     r.get("name") or "",
                     "phone":    r.get("phone") or "",
                     "email":    r.get("email"),
-                    "manager_id": None,
+                    "manager_ids": [],
                     "role":     "admin",
                     "is_active": bool(r.get("is_active")),
                     "force_logout_at": (
@@ -4393,7 +4396,7 @@ def list_staff_users():
                            COALESCE(r.is_active, TRUE) AS is_active,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            COALESCE(r.is_viewer, FALSE)  AS is_viewer,
-                           r.city AS city, r.manager_id,
+                           r.city AS city, r.manager_ids,
                            r.force_logout_at, r.created_at
                     FROM rms r
                     ORDER BY r.id
@@ -4406,7 +4409,7 @@ def list_staff_users():
                            COALESCE(r.is_active, TRUE) AS is_active,
                            COALESCE(r.is_manager, FALSE) AS is_manager,
                            FALSE AS is_viewer,
-                           r.city AS city, r.manager_id,
+                           r.city AS city, r.manager_ids,
                            r.force_logout_at, r.created_at
                     FROM rms r
                     ORDER BY r.id
@@ -4427,7 +4430,7 @@ def list_staff_users():
                     "email":    r.get("email"),
                     "role":     role_name,
                     "city":     r.get("city"),
-                    "manager_id": r.get("manager_id"),
+                    "manager_ids": r.get("manager_ids") or [],
                     "is_active": bool(r.get("is_active")),
                     "force_logout_at": (
                         r["force_logout_at"].isoformat()
@@ -4580,8 +4583,12 @@ def patch_staff_user(source, user_id):
       name                   -> str (non-empty)
       phone                  -> str (normalised to 10 digits; must be unique)
       email                  -> str | null
-      manager_id             -> int | null (rms only) — the manager this user
-                                reports to. Must reference an is_manager row.
+      manager_ids            -> [int, ...] | null (rms only) — the managers
+                                this user reports to (an RM can have several).
+                                Every id must reference an is_manager row.
+                                null / [] clears them. Legacy alias:
+                                manager_id -> int | null (treated as a
+                                one-element list).
       is_active              -> bool
     """
     try:
@@ -4620,37 +4627,50 @@ def patch_staff_user(source, user_id):
     if "email" in data:
         sets.append("email = %s")
         params.append(to_str(data.get("email"), 200) or None)
-    if source == "rm" and "manager_id" in data:
-        mid = data["manager_id"]
-        if mid in (None, "", 0, "0"):
-            sets.append("manager_id = %s")
-            params.append(None)
+    if source == "rm" and ("manager_ids" in data or "manager_id" in data):
+        if "manager_ids" in data:
+            raw = data["manager_ids"]
+            if raw in (None, ""):
+                raw = []
         else:
+            # Legacy single-manager alias — normalise to a one-element list.
+            legacy = data["manager_id"]
+            raw = [] if legacy in (None, "", 0, "0") else [legacy]
+        if not isinstance(raw, list):
+            return jsonify({"error": "manager_ids must be a list of integers or null"}), 400
+        mids = []
+        for mid in raw:
             try:
                 mid = int(mid)
             except (TypeError, ValueError):
-                return jsonify({"error": "manager_id must be an integer or null"}), 400
+                return jsonify({"error": "manager_ids must be a list of integers or null"}), 400
             if mid == user_id:
                 return jsonify({"error": "a user can't be their own manager"}), 400
+            if mid not in mids:   # dedupe, preserving order
+                mids.append(mid)
+        if mids:
             conn_m = get_app_conn()
             try:
                 with conn_m.cursor() as cur_m:
                     cur_m.execute(
-                        "SELECT COALESCE(is_manager, FALSE) AS is_manager FROM rms WHERE id = %s",
-                        (mid,),
+                        "SELECT id FROM rms WHERE id = ANY(%s)"
+                        " AND COALESCE(is_manager, FALSE) = TRUE",
+                        (mids,),
                     )
-                    row_m = cur_m.fetchone()
+                    found = {row["id"] for row in cur_m.fetchall()}
             finally:
                 put_app_conn(conn_m)
-            if not row_m:
-                return jsonify({"error": "manager not found"}), 400
-            if not row_m.get("is_manager"):
-                return jsonify({"error": "that user is not a manager"}), 400
-            # ponytail: blocks only the direct self-loop; deeper cycles (A→B→A) are
-            # tolerated — the team CTE (routes/tickets.py) already UNION-guards
-            # traversal, so a cycle can't hang a query.
-            sets.append("manager_id = %s")
-            params.append(mid)
+            bad = [m for m in mids if m not in found]
+            if bad:
+                return jsonify({
+                    "error": "not a manager (or not found): "
+                             + ", ".join(str(m) for m in bad),
+                }), 400
+        # ponytail: blocks only the direct self-loop; deeper cycles (A→B→A) are
+        # tolerated — the team CTE (routes/tickets.py) already UNION-guards
+        # traversal, so a cycle can't hang a query.
+        sets.append("manager_ids = %s")
+        params.append(mids or None)   # empty -> NULL, same as "no managers"
     if "is_active" in data:
         sets.append("is_active = %s")
         params.append(bool(data["is_active"]))
@@ -4716,7 +4736,8 @@ def patch_staff_user(source, user_id):
                 cur, action="staff_user_updated", category="staff_user",
                 entity_type=("channel_partner" if source == "cp" else "rm"), entity_id=user_id,
                 details={k: v for k, v in data.items()
-                         if k in ("role", "is_active", "name", "phone", "email", "manager_id")},
+                         if k in ("role", "is_active", "name", "phone", "email",
+                                  "manager_id", "manager_ids")},
             )
             conn.commit()
     finally:

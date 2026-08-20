@@ -10,7 +10,7 @@ CP adaptations vs Direct_Inventory:
     tables can collide.
   - No `inventory` table: a ticket links to a `submissions` row; the assigned RM
     is the submission's effective RM = COALESCE(listing_rm_id, cp.rm_id).
-  - Manager "team" = the recursive rms.manager_id subtree (same CTE the board
+  - Manager "team" = the recursive rms.manager_ids subtree (same CTE the board
     scoping uses).
   - Staff use name + phone (email is optional on rms).
 
@@ -31,13 +31,14 @@ from db import get_app_conn, put_app_conn
 
 bp = Blueprint("tickets", __name__, url_prefix="/api/tickets")
 
-# me + every RM transitively beneath me via rms.manager_id (UNION guards cycles).
-# One %s = the root rm_id.
+# me + every RM transitively beneath me via rms.manager_ids (UNION guards cycles).
+# manager_ids is an integer[] — an RM with several managers is in each of their
+# teams. One %s = the root rm_id.
 _TEAM_RM_IDS_SQL = (
     "(WITH RECURSIVE my_team(id) AS ("
     " SELECT id FROM rms WHERE id = %s"
     " UNION"
-    " SELECT r.id FROM rms r JOIN my_team t ON r.manager_id = t.id"
+    " SELECT r.id FROM rms r JOIN my_team t ON t.id = ANY(r.manager_ids)"
     ") SELECT id FROM my_team)"
 )
 

@@ -25,8 +25,9 @@
  * instead of CP's plain inline-styled <table>. Same request shapes, same
  * guard/prompt logic. Columns: Name / Phone / Role / Force-logout / Actions
  * (active/inactive is read off the Actions button, not its own column). An
- * inline Edit panel per row edits name / phone / email and assigns a manager
- * (rms.manager_id) — email lives only in that panel, never as a column.
+ * inline Edit panel per row edits name / phone / email and assigns managers
+ * (rms.manager_ids — an RM can report to several at once) — email lives only
+ * in that panel, never as a column.
  */
 import { Fragment, useEffect, useMemo, useState } from 'react';
 
@@ -103,7 +104,7 @@ export default function Users() {
 
   // Inline row editor — which row's edit panel is open, plus its draft fields.
   const [editingKey, setEditingKey] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', manager_id: '' });
+  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', manager_ids: [] });
 
   // Client-side sort of the currently-loaded list. No field = CP's default
   // grouping (active first, then role, then name — mirrors the backend's
@@ -233,7 +234,7 @@ export default function Users() {
       name: u.name || '',
       phone: sanitizePhone(u.phone || '').slice(-10),
       email: u.email || '',
-      manager_id: u.manager_id != null ? String(u.manager_id) : '',
+      manager_ids: Array.isArray(u.manager_ids) ? u.manager_ids.map(Number) : [],
     });
   };
 
@@ -255,8 +256,8 @@ export default function Users() {
       phone: u.source === 'rm' ? `+91 ${phoneCheck.cleaned}` : phoneCheck.cleaned,
     };
     if (u.source === 'rm') {
-      fields.manager_id = editForm.manager_id ? Number(editForm.manager_id) : null;
-      changes.manager_id = fields.manager_id;
+      fields.manager_ids = editForm.manager_ids;
+      changes.manager_ids = fields.manager_ids;
     }
     setEditingKey(null);
     await patchUser(u, changes, () => api.adminPatchStaffUser(u.source, u.id, fields));
@@ -323,8 +324,9 @@ export default function Users() {
     return rows;
   }, [users, sort]);
 
-  // Manager assignment: the dropdown offers active managers; display resolves
-  // any manager_id (even an inactive one) back to a name.
+  // Manager assignment: the edit panel offers active managers (checkboxes —
+  // an RM can report to several); display resolves any manager id in
+  // manager_ids (even an inactive one) back to a name.
   const managers = useMemo(
     () => users.filter((u) => u.source === 'rm' && u.role === 'manager' && u.is_active),
     [users],
@@ -335,6 +337,8 @@ export default function Users() {
     return m;
   }, [users]);
   const managerName = (id) => { const m = rmById.get(id); return m ? (m.name || m.phone) : null; };
+  // "A, B" list of resolved manager names for a row (skips unresolvable ids).
+  const managerNames = (ids) => (ids || []).map(managerName).filter(Boolean).join(', ');
 
   const activeCount = users.filter((u) => u.is_active).length;
   const inactiveCount = users.length - activeCount;
@@ -483,8 +487,8 @@ export default function Users() {
                       {u.role === 'viewer' && u.city && (
                         <div className="usr-scope muted" style={{ fontSize: 11, marginTop: 3 }}>📍 {u.city}</div>
                       )}
-                      {u.source === 'rm' && u.manager_id && managerName(u.manager_id) && (
-                        <div className="usr-scope muted" style={{ fontSize: 11, marginTop: 3 }}>↳ reports to {managerName(u.manager_id)}</div>
+                      {u.source === 'rm' && managerNames(u.manager_ids) && (
+                        <div className="usr-scope muted" style={{ fontSize: 11, marginTop: 3 }}>↳ reports to {managerNames(u.manager_ids)}</div>
                       )}
                     </td>
                     <td>
@@ -539,17 +543,27 @@ export default function Users() {
                           </div>
                           {u.source === 'rm' && (
                             <div className="au-field">
-                              <label>Manager</label>
-                              <select
-                                className="role-select"
-                                value={editForm.manager_id}
-                                onChange={(e) => setEditForm((f) => ({ ...f, manager_id: e.target.value }))}
-                              >
-                                <option value="">— None —</option>
+                              <label>Managers</label>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflowY: 'auto', padding: '4px 2px' }}>
                                 {managers.filter((m) => userKey(m) !== userKey(u)).map((m) => (
-                                  <option key={userKey(m)} value={m.id}>{m.name || m.phone}</option>
+                                  <label key={userKey(m)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 400, cursor: 'pointer' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={editForm.manager_ids.includes(m.id)}
+                                      onChange={(e) => setEditForm((f) => ({
+                                        ...f,
+                                        manager_ids: e.target.checked
+                                          ? [...f.manager_ids, m.id]
+                                          : f.manager_ids.filter((id) => id !== m.id),
+                                      }))}
+                                    />
+                                    <span>{m.name || m.phone}</span>
+                                  </label>
                                 ))}
-                              </select>
+                                {managers.filter((m) => userKey(m) !== userKey(u)).length === 0 && (
+                                  <span className="muted" style={{ fontSize: 12 }}>No active managers</span>
+                                )}
+                              </div>
                             </div>
                           )}
                           <div className="au-actions" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>

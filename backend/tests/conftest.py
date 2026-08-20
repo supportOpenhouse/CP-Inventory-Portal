@@ -1,9 +1,10 @@
 """DB-backed test fixtures. Gated behind RUN_DB_TESTS=1; strictly self-cleaning.
 
 Builds a throwaway staff graph in whatever DB TEST_DATABASE_URL (preferred) or
-DATABASE_URL points at: a manager + two RMs (rm reports to manager, rm2 does
-not), an admin, a CP owned by rm, and one submission. Everything is deleted in
-teardown (reverse FK order). Never touches rows it didn't create.
+DATABASE_URL points at: two managers + two RMs (rm reports to BOTH managers —
+rms.manager_ids is an integer[] — rm2 reports to nobody), an admin, a CP owned
+by rm, and one submission. Everything is deleted in teardown (reverse FK
+order). Never touches rows it didn't create.
 """
 import os
 import time
@@ -46,9 +47,13 @@ def graph():
                     "VALUES (%s, %s, TRUE, FALSE) RETURNING id", (f"{tag}-mgr", "+91 9000000001"))
                 ids["manager"] = cur.fetchone()["id"]
                 cur.execute(
-                    "INSERT INTO rms (name, phone, is_manager, is_viewer, manager_id) "
+                    "INSERT INTO rms (name, phone, is_manager, is_viewer) "
+                    "VALUES (%s, %s, TRUE, FALSE) RETURNING id", (f"{tag}-mgr2", "+91 9000000006"))
+                ids["manager2"] = cur.fetchone()["id"]
+                cur.execute(
+                    "INSERT INTO rms (name, phone, is_manager, is_viewer, manager_ids) "
                     "VALUES (%s, %s, FALSE, FALSE, %s) RETURNING id",
-                    (f"{tag}-rm", "+91 9000000002", ids["manager"]))
+                    (f"{tag}-rm", "+91 9000000002", [ids["manager"], ids["manager2"]]))
                 ids["rm"] = cur.fetchone()["id"]
                 cur.execute(
                     "INSERT INTO rms (name, phone, is_manager, is_viewer) "
@@ -78,6 +83,9 @@ def graph():
             "manager": {"Authorization": "Bearer " + _token(
                 {"rm_id": ids["manager"], "phone": "+91 9000000001",
                  "role": "manager", "is_manager": True})},
+            "manager2": {"Authorization": "Bearer " + _token(
+                {"rm_id": ids["manager2"], "phone": "+91 9000000006",
+                 "role": "manager", "is_manager": True})},
             "rm": {"Authorization": "Bearer " + _token(
                 {"rm_id": ids["rm"], "phone": "+91 9000000002", "role": "rm"})},
             "rm2": {"Authorization": "Bearer " + _token(
@@ -93,5 +101,6 @@ def graph():
                 cur.execute("DELETE FROM channel_partners WHERE id = ANY(%s)",
                             ([ids.get("admin"), ids.get("cp")],))
                 cur.execute("DELETE FROM rms WHERE id = ANY(%s)",
-                            ([ids.get("manager"), ids.get("rm"), ids.get("rm2")],))
+                            ([ids.get("manager"), ids.get("manager2"),
+                              ids.get("rm"), ids.get("rm2")],))
         conn.close()

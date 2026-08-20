@@ -64,7 +64,7 @@ export default function Profile() {
   }, [showMap]);
 
   // RM roster → team hierarchy. /admin/rms is @require_staff, so admin/manager/rm
-  // can all list it; each row carries { id, name, city, is_manager, manager_id }.
+  // can all list it; each row carries { id, name, city, is_manager, manager_ids }.
   const [rms, setRms] = useState([]);
   useEffect(() => {
     if (!showMap) return undefined;
@@ -90,12 +90,16 @@ export default function Profile() {
   const showManager = ['rm', 'manager'].includes(roleLower) && !!mgrName;
 
   // Team hierarchy, derived from the RM roster. Managers are RMs with
-  // is_manager; a team is the RMs whose manager_id points at that manager.
+  // is_manager; a team is the RMs whose manager_ids array contains that
+  // manager — an RM with several managers appears in each team.
   const managers = rms.filter((r) => r.is_manager);
-  const teamOf = (mgrId) => rms.filter((r) => r.manager_id === mgrId && r.id !== mgrId);
+  const teamOf = (mgrId) => rms.filter((r) => (r.manager_ids || []).includes(mgrId) && r.id !== mgrId);
   const managerTeams = managers.map((m) => ({ manager: m, team: teamOf(m.id) }));
   const myTeam = user.rm_id ? teamOf(user.rm_id) : [];
-  const myManager = user.managerId ? rms.find((r) => r.id === user.managerId) : null;
+  // managerIds is the current shape; managerId covers a stale cached login
+  // payload from before the multi-manager change.
+  const myManagerIds = user.managerIds || (user.managerId != null ? [user.managerId] : []);
+  const myManagers = myManagerIds.map((id) => rms.find((r) => r.id === id)).filter(Boolean);
 
   const rmLine = (r) => (
     <li key={r.id} className="pf-team-item">
@@ -136,9 +140,11 @@ export default function Profile() {
   } else if (roleLower === 'rm') {
     teamCard = (
       <div className="card-block">
-        <h3>My Manager</h3>
-        {myManager
-          ? <div className="pf-team-mgr">{myManager.name || '—'}{myManager.city && <span className="muted"> · {myManager.city}</span>}</div>
+        <h3>{myManagers.length > 1 ? 'My Managers' : 'My Manager'}</h3>
+        {myManagers.length > 0
+          ? myManagers.map((m) => (
+              <div key={m.id} className="pf-team-mgr">{m.name || '—'}{m.city && <span className="muted"> · {m.city}</span>}</div>
+            ))
           : <p className="muted">No manager assigned.</p>}
       </div>
     );

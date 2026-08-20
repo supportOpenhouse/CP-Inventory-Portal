@@ -34,6 +34,7 @@ Login is phone + OTP. Use a phone that exists as a **staff** row (`rms`) or admi
 ## Tests / migrations
 - The `tickets` table migration (`backend/migrations/2026-07-03-tickets.sql`) is already applied to the DB. Re-applying is idempotent.
 - Two WhatsApp drop-migrations exist but are optional to apply.
+- **REQUIRED before deploying multi-manager support:** `backend/migrations/2026-08-20-manager-ids-array.sql` converts `rms.manager_id` (integer) to `rms.manager_ids` (integer[], existing values become one-element arrays). The team CTEs and all rms queries now read `manager_ids`, so the backend 500s on manager scoping until this is applied. Idempotent.
 
 # Deploying (frontend → Vercel, backend → Render)
 

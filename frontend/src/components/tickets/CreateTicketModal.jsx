@@ -15,8 +15,9 @@
  * valid. A ticket's assignee must be a plain RM (the backend's create_ticket
  * rejects `is_manager`/`is_viewer` rows with "invalid RM"), so this modal
  * excludes both up front — sparing the user a guaranteed-to-fail submit.
- * Managers are additionally scoped to their own team (`manager_id ===
- * user.rm_id`); the backend re-checks that scope too.
+ * Managers are additionally scoped to their own team (`manager_ids` contains
+ * `user.rm_id` — an RM can report to several managers); the backend re-checks
+ * that scope too.
  *
  * Admin/manager only — enforced by the caller (CreateTicketButton is only
  * rendered for those roles), not re-checked in here.
@@ -63,7 +64,7 @@ export default function CreateTicketModal({ onClose, onCreated }) {
   // Plain RMs only (see file-header note), then a manager's own team.
   const directRms = rms.filter((r) => {
     if (r.is_manager || r.is_viewer) return false;
-    if (isManager && r.manager_id !== user?.rm_id) return false;
+    if (isManager && !(r.manager_ids || []).includes(user?.rm_id)) return false;
     return true;
   });
 

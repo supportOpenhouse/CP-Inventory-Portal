@@ -76,7 +76,7 @@ def _fetch_active_rm(cur, phone: str):
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
                    r.city AS city,
-                   r.is_manager, r.manager_id,
+                   r.is_manager, r.manager_ids,
                    COALESCE(r.is_viewer, FALSE) AS is_viewer
             FROM rms r
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
@@ -96,7 +96,7 @@ def _fetch_active_rm(cur, phone: str):
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
                    r.city AS city,
-                   r.is_manager, r.manager_id,
+                   r.is_manager, r.manager_ids,
                    FALSE AS is_viewer
             FROM rms r
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
@@ -118,7 +118,7 @@ def _fetch_active_rm(cur, phone: str):
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
                    r.city AS city,
-                   FALSE AS is_manager, NULL::integer AS manager_id,
+                   FALSE AS is_manager, NULL::integer[] AS manager_ids,
                    FALSE AS is_viewer
             FROM rms r
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
@@ -140,7 +140,7 @@ def _fetch_active_rm(cur, phone: str):
         cur.execute("""
             SELECT r.id, r.name, r.phone, r.email,
                    NULL::varchar AS city,
-                   FALSE AS is_manager, NULL::integer AS manager_id,
+                   FALSE AS is_manager, NULL::integer[] AS manager_ids,
                    FALSE AS is_viewer
             FROM rms r
             WHERE RIGHT(REGEXP_REPLACE(r.phone, '\\D', '', 'g'), 10) = %s
@@ -189,7 +189,8 @@ def _rm_user_response(rm: dict) -> dict:
         "role": _resolve_role(rm),
         "isManager": is_mgr,
         "isViewer": is_viewer,
-        "managerId": rm.get("manager_id"),
+        # All managers this user reports to (an RM can have several).
+        "managerIds": rm.get("manager_ids") or [],
         "microMarkets": [],
     }
 
@@ -202,7 +203,7 @@ def _generate_rm_token(rm: dict) -> str:
       - role        : 'rm' | 'manager' | 'viewer' (informational)
       - is_manager  : bool — true if user has direct reports
       - is_viewer   : bool — true if user is read-only city viewer
-      - manager_id  : this user's own manager (NULL if top of chain)
+      - manager_ids : this user's own managers, integer[] ([] if top of chain)
       - city        : the row's text city. Used by the viewer scope filter.
     """
     import jwt
@@ -220,7 +221,7 @@ def _generate_rm_token(rm: dict) -> str:
         "role": role,
         "is_manager": is_mgr,
         "is_viewer": is_viewer,
-        "manager_id": rm.get("manager_id"),
+        "manager_ids": rm.get("manager_ids") or [],
         "city": rm.get("city"),        # text city — what the viewer scope filter now uses
         "iat": int(now.timestamp()),  # for force-logout check in auth middleware
         # Non-CP roles auto-logout after 7 days (vs 1 day for CPs).
@@ -445,7 +446,7 @@ def me():
                     cur.execute("""
                         SELECT r.id, r.name, r.phone, r.email,
                                r.city AS city,
-                               r.is_manager, r.manager_id
+                               r.is_manager, r.manager_ids
                         FROM rms r
                         WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
                     """, (rm_id,))
@@ -455,7 +456,7 @@ def me():
                     cur.execute("""
                         SELECT r.id, r.name, r.phone, r.email,
                                r.city AS city,
-                               FALSE AS is_manager, NULL::integer AS manager_id
+                               FALSE AS is_manager, NULL::integer[] AS manager_ids
                         FROM rms r
                         WHERE r.id = %s AND COALESCE(r.is_active, TRUE) = TRUE
                     """, (rm_id,))
