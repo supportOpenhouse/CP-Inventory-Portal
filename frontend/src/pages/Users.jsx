@@ -34,6 +34,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { ApiError, api } from '../api';
 import { validatePhone, sanitizePhone } from '../format';
 import { IconLock } from '../components/icons.jsx';
+import SearchableMultiSelect from '../components/SearchableMultiSelect.jsx';
 
 const ROLE_OPTIONS = [
   { value: 'rm',      label: 'RM' },
@@ -324,9 +325,9 @@ export default function Users() {
     return rows;
   }, [users, sort]);
 
-  // Manager assignment: the edit panel offers active managers (checkboxes —
-  // an RM can report to several); display resolves any manager id in
-  // manager_ids (even an inactive one) back to a name.
+  // Manager assignment: the edit panel offers active managers in a multi-
+  // select dropdown (an RM can report to several); display resolves any
+  // manager id in manager_ids (even an inactive one) back to a name.
   const managers = useMemo(
     () => users.filter((u) => u.source === 'rm' && u.role === 'manager' && u.is_active),
     [users],
@@ -544,26 +545,14 @@ export default function Users() {
                           {u.source === 'rm' && (
                             <div className="au-field">
                               <label>Managers</label>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 120, overflowY: 'auto', padding: '4px 2px' }}>
-                                {managers.filter((m) => userKey(m) !== userKey(u)).map((m) => (
-                                  <label key={userKey(m)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 400, cursor: 'pointer' }}>
-                                    <input
-                                      type="checkbox"
-                                      checked={editForm.manager_ids.includes(m.id)}
-                                      onChange={(e) => setEditForm((f) => ({
-                                        ...f,
-                                        manager_ids: e.target.checked
-                                          ? [...f.manager_ids, m.id]
-                                          : f.manager_ids.filter((id) => id !== m.id),
-                                      }))}
-                                    />
-                                    <span>{m.name || m.phone}</span>
-                                  </label>
-                                ))}
-                                {managers.filter((m) => userKey(m) !== userKey(u)).length === 0 && (
-                                  <span className="muted" style={{ fontSize: 12 }}>No active managers</span>
-                                )}
-                              </div>
+                              <SearchableMultiSelect
+                                options={managers
+                                  .filter((m) => userKey(m) !== userKey(u))
+                                  .map((m) => ({ value: m.id, label: m.name || m.phone }))}
+                                value={editForm.manager_ids}
+                                onChange={(ids) => setEditForm((f) => ({ ...f, manager_ids: ids }))}
+                                placeholder="— None —"
+                              />
                             </div>
                           )}
                           <div className="au-actions" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
