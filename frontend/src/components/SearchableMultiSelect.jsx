@@ -8,7 +8,9 @@ const LIST_CAP = 200;
 /**
  * Type-to-filter multiselect with selected chips, rendered in a portal so it
  * is never clipped. `single` mode commits + closes on pick (used for one-of
- * fields like society on Add Inventory).
+ * fields like society on Add Inventory). `chips={false}` drops the chips row
+ * and reads the selection out inside the control instead, keeping the field
+ * one line tall for inline/table-row forms — deselect from the menu.
  *
  * Ported verbatim from Direct Inventory's `components/SearchableMultiSelect.jsx`
  * (P3.4) — no project-specific imports, so no retokening was needed. Relies
@@ -16,6 +18,7 @@ const LIST_CAP = 200;
  */
 export default function SearchableMultiSelect({
   options, value, onChange, placeholder = 'Select…', disabled = false, single = false,
+  chips = true,
 }) {
   // Options may be plain strings or { value, label } objects. Normalize to
   // objects internally; `value`/`onChange` always speak in `value`s (the string
@@ -92,7 +95,12 @@ export default function SearchableMultiSelect({
     else onChange([...selected, v]);
   }
 
-  const label = single ? (selected ? labelOf(selected) : placeholder) : (selectedCount === 0 ? placeholder : `${selectedCount} selected`);
+  // Without a chips row the control is the only place the selection shows, so
+  // it names the picks instead of counting them.
+  const multiLabel = selectedCount === 0
+    ? placeholder
+    : (chips ? `${selectedCount} selected` : selected.map(labelOf).join(', '));
+  const label = single ? (selected ? labelOf(selected) : placeholder) : multiLabel;
 
   const menu = open && !disabled && pos
     ? createPortal(
@@ -132,7 +140,7 @@ export default function SearchableMultiSelect({
   }
 
   return (
-    <div className={`sms ${disabled ? 'sms-disabled' : ''}`}>
+    <div className={`sms ${disabled ? 'sms-disabled' : ''} ${chips ? '' : 'sms-compact'}`}>
       <div ref={btnRef} className="sms-control">
         <input
           ref={inputRef}
@@ -147,7 +155,7 @@ export default function SearchableMultiSelect({
         <span className="sms-caret" role="button" tabIndex={-1} onMouseDown={(e) => { e.preventDefault(); if (!disabled) toggle(); }}>▾</span>
       </div>
       {menu}
-      {!single && selectedCount > 0 && (
+      {chips && !single && selectedCount > 0 && (
         <div className="sms-chips">
           {selected.map((vv) => (
             <span key={vv} className="sms-chip">{labelOf(vv)}{!disabled && <button type="button" onClick={() => pick(vv)} aria-label={`Remove ${labelOf(vv)}`}>×</button>}</span>

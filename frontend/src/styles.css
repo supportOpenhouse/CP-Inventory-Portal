@@ -873,6 +873,8 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .usr-edit-row td { background: var(--brand-softer); }
 .usr-edit-form { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; padding: 10px 2px; }
 .usr-edit-form .au-field { flex: 1 1 160px; min-width: 0; }
+/* Managers holds a comma-joined list of names — give it a little more room. */
+.usr-edit-form .au-field-mgr { flex: 1.4 1 210px; }
 .usr-edit-form label { display: block; margin-bottom: 6px; }
 .usr-edit-form input { width: 100%; }
 .form-grid .form-wide-2 { grid-column: 1 / -1; }
@@ -1265,8 +1267,15 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .sms-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-input); padding: 9px 13px; color: var(--text-2); }
 .sms-control { display: flex; align-items: center; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-input); padding: 9px 13px; }
 .sms-control:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
-.sms-input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text-2); padding: 0; outline: none; font: inherit; }
+/* `.sms-control` is the visual input; the field inside it must stay chrome-free.
+   Selector is doubled up so it out-specifies the global `input[type=text]` rule,
+   which would otherwise draw a second bordered box inside the control. */
+.sms-control .sms-input { flex: 1; min-width: 0; width: auto; border: 0; background: transparent; color: var(--text-2); border-radius: 0; padding: 0; outline: none; font: inherit; }
+.sms-control .sms-input:focus { border-color: transparent; box-shadow: none; }
 .sms-input::placeholder { color: var(--text-faint); }
+/* Compact mode: no chips row, so the control stays one line tall and lines up
+   with the plain inputs beside it. The selection reads out in the field. */
+.sms-compact .sms-input::placeholder { color: var(--text-2); }
 .sms-caret { color: var(--text-muted); margin-left: 8px; cursor: pointer; }
 .sms-placeholder { color: var(--text-faint); }
 .sms-menu { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow-lg); padding: 8px; z-index: 1100; overflow: auto; }

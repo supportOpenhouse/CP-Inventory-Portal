@@ -543,7 +543,7 @@ export default function Users() {
                             />
                           </div>
                           {u.source === 'rm' && (
-                            <div className="au-field">
+                            <div className="au-field au-field-mgr">
                               <label>Managers</label>
                               <SearchableMultiSelect
                                 options={managers
@@ -552,6 +552,7 @@ export default function Users() {
                                 value={editForm.manager_ids}
                                 onChange={(ids) => setEditForm((f) => ({ ...f, manager_ids: ids }))}
                                 placeholder="— None —"
+                                chips={false}
                               />
                             </div>
                           )}
