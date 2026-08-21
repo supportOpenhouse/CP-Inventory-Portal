@@ -271,7 +271,7 @@ export default function TableView({
                         display: 'inline-block', marginLeft: 6, padding: '1px 6px',
                         fontSize: 9, fontWeight: 700, color: '#991b1b',
                         background: '#fee2e2', borderRadius: 3, letterSpacing: 0.3,
-                        cursor: 'pointer',
+                        cursor: 'pointer', whiteSpace: 'nowrap',
                       }} title={`${matchTypeLabel(s)} — click to see the matched record(s)`}
                         onClick={(e) => { e.stopPropagation(); setMatchModalItems(s.match_details || []); }}>
                         {matchBadgeText(s)}
@@ -282,6 +282,7 @@ export default function TableView({
                         display: 'inline-block', marginLeft: 6, padding: '1px 6px',
                         fontSize: 9, fontWeight: 700, color: '#92400e',
                         background: '#fef3c7', borderRadius: 3, letterSpacing: 0.3,
+                        whiteSpace: 'nowrap',
                       }} title={s.withdraw_reason === 'cp_withdrawn' ? 'CP withdrew this submission' : 'Soft-deleted'}>
                         WITHDRAWN
                       </span>
@@ -291,6 +292,7 @@ export default function TableView({
                         display: 'inline-block', marginLeft: 6, padding: '1px 6px',
                         fontSize: 9, fontWeight: 700, color: '#065F46',
                         background: '#ECFDF5', borderRadius: 3, letterSpacing: 0.3,
+                        whiteSpace: 'nowrap',
                       }} title={`Visit scheduled · ${formatDateOnly(s.scheduled_date)} ${formatTime12(s.scheduled_time)} · ${s.field_exec_name || ''} · UID ${s.forms_uid}`}>
                         <IconCalendar size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />{s.forms_uid}
                       </span>
