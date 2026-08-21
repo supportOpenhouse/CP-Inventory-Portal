@@ -186,7 +186,7 @@ export default function TableView({
   return (
     <>
     <div className="inv-table-wrap">
-      <table className="inv-table inv-table-fixed">
+      <table className="inv-table">
         <thead>
           <tr>
             {bulkMode && (
@@ -264,7 +264,7 @@ export default function TableView({
                       />
                     </td>
                   )}
-                  <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }} title={s.public_id || undefined}>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
                     {s.public_id || '—'}
                     {isPerfectMatch && (
                       <span style={{
@@ -296,20 +296,16 @@ export default function TableView({
                       </span>
                     )}
                   </td>
-                  <td style={{ fontWeight: 600 }} title={s.society_name || undefined}>
+                  <td style={{ fontWeight: 600 }}>
                     {isWeakMatch && <span style={{ color: 'var(--red-fg)', marginRight: 6 }}>⚠</span>}
                     {s.society_name}
                   </td>
-                  <td style={{ color: 'var(--text-muted)' }} title={s.city || undefined}>{s.city || '—'}</td>
-                  {(() => {
-                    const unit = [s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no || '—'), s.floor && `F${s.floor}`]
-                      .filter(Boolean).join(' · ');
-                    return <td title={unit}>{unit}</td>;
-                  })()}
-                  {(() => {
-                    const config = [s.bhk && formatBhk(s.bhk), s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—';
-                    return <td title={config}>{config}</td>;
-                  })()}
+                  <td style={{ color: 'var(--text-muted)' }}>{s.city || '—'}</td>
+                  <td>
+                    {[s.tower && s.unit_no ? `${s.tower}-${s.unit_no}` : (s.tower || s.unit_no || '—'), s.floor && `F${s.floor}`]
+                      .filter(Boolean).join(' · ')}
+                  </td>
+                  <td>{[s.bhk && formatBhk(s.bhk), s.sqft ? `${s.sqft} sqft` : null].filter(Boolean).join(' · ') || '—'}</td>
                   <td className="val-orange" style={{ fontWeight: 600 }}>{formatPrice(s.asking_price)}</td>
                   {(() => {
                     const oh = formatOhPrice(s);
@@ -324,7 +320,7 @@ export default function TableView({
                       </td>
                     );
                   })()}
-                  <td title={[s.cp_name, s.cp_code].filter(Boolean).join(' · ') || undefined}>
+                  <td>
                     {s.cp_name}
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.cp_code}</div>
                     {s.submitted_by_name && (
@@ -350,7 +346,6 @@ export default function TableView({
                       <span
                         className={`status-pill ${isRejected ? 'is-rejected' : ''}`}
                         style={{ '--sb': stage.bg, '--sc': stage.fg || stage.color, '--sc2': stage.color }}
-                        title={`${stageLabel(s.status)}${s.status_reason ? ` (${s.status_reason})` : ''}`}
                       >
                         {stageLabel(s.status)}{s.status_reason ? ` (${s.status_reason})` : ''}
                       </span>

@@ -23,6 +23,7 @@
  * `KeyValues` — up to 5 raw key:value pairs, "+N more".
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { ApiError, api } from '../api';
 import { formatDateTime, formatPrice } from '../format';
@@ -282,6 +283,12 @@ export default function Logs() {
   const start = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const end = Math.min(page * PAGE_SIZE, total);
 
+  // Layout's topbar portal target — the row count renders into it so it sits
+  // on the "Activity Logs" strip (right of .topbar-spacer = right-aligned)
+  // while keeping its live state here.
+  const [topbarSlot, setTopbarSlot] = useState(null);
+  useEffect(() => { setTopbarSlot(document.getElementById('topbar-actions')); }, []);
+
   function onSort(field) {
     setSort((s) => (s.field === field ? { field, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: field === 'created_at' ? 'desc' : 'asc' }));
   }
@@ -311,15 +318,16 @@ export default function Logs() {
 
   return (
     <div>
-      <div className="al-head">
+      {topbarSlot && createPortal(
         <div className="al-result-count">
           {loading
             ? <Loading />
             : total > 0
               ? `${total.toLocaleString()}${data.cap_reached ? '+' : ''} rows · showing ${start}–${end}`
               : 'No rows'}
-        </div>
-      </div>
+        </div>,
+        topbarSlot,
+      )}
 
       <div className="al-filters">
         <input

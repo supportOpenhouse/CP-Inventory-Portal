@@ -587,7 +587,8 @@ export default function Submissions() {
                 onClick={() => toggleStatus(s.key)}
               >
                 <span className="num" style={{ color: s.color }}>{counts[s.key] ?? 0}</span>
-                <span className="lbl">{s.label || s.key}</span>
+                {/* title: the label ellipsizes once the row gets tight. */}
+                <span className="lbl" title={s.label || s.key}>{s.label || s.key}</span>
               </button>
             );
           })}
