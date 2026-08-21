@@ -620,6 +620,24 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .inv-clip-seller { max-width: 160px; }
 .inv-clip-rm { max-width: 150px; }
 
+/* Submissions table: equal-width, fluid columns. `table-layout: fixed` splits
+   the wrap's width evenly across the columns, and the wrap follows `.main-col`
+   (min-width:0 grid track) — so the whole grid re-sizes on its own when the
+   sidebar collapses/expands, no JS. Overflowing text clips to an ellipsis
+   instead of pushing the table into a horizontal scroll. */
+.inv-table-fixed { table-layout: fixed; min-width: 960px; }
+.inv-table-fixed th, .inv-table-fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Multi-line cells (CP name / code / "via") ellipsize per line. */
+.inv-table-fixed td > div { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Checkbox column is furniture, not data — keep it out of the even split. */
+.inv-table-fixed .inv-th-sel, .inv-table-fixed .inv-td-sel { width: 36px; }
+/* Status pills stay on one line and truncate themselves rather than the cell
+   swallowing them whole (min-width:0 lets a flex child actually shrink). */
+.inv-table-fixed .status-cell { flex-wrap: nowrap; }
+.inv-table-fixed .status-pill { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The inline expand panel is a full-width form — exempt from all of the above. */
+.inv-table-fixed .expand-row td { overflow: visible; white-space: normal; }
+
 /* Topbar "Re-scan CP" action — icon + label, sits left of the notification bell. */
 .cp-scan-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
