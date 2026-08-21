@@ -14,7 +14,7 @@
  * Cancel to /api/external/cancel; both send source_app "CP Inventory App".
  */
 import { useEffect, useState } from 'react';
-import { IconCalendar } from '../../icons.jsx';
+import { IconCalendar, IconWarning, IconCheck, IconClose } from '../../icons.jsx';
 import { api, ApiError } from '../../../api';
 import {
   formatDateOnly, formatTime12, todayInIST, nowTimeIST, VISIT_TIME_SLOTS,
@@ -276,7 +276,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
           padding: '12px 14px', background: 'var(--green-bg)', border: '1.5px solid var(--green)',
           borderRadius: 'var(--r)', display: 'flex', flexDirection: 'column', gap: 6,
         }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-fg)' }}>✓ Visit scheduled</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green-fg)' }}><IconCheck size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Visit scheduled</div>
           <div style={{ fontSize: 12, color: 'var(--green-fg)', fontFamily: 'monospace', fontWeight: 600 }}>UID: {s.forms_uid}</div>
           <div style={{ fontSize: 13, color: 'var(--green-fg)' }}>
             {formatDateOnly(s.scheduled_date) || '—'}{s.scheduled_time ? ` at ${formatTime12(s.scheduled_time)}` : ''}
@@ -290,7 +290,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
               <IconCalendar size={14} /> Reschedule / Reassign
             </button>
             <button type="button" className="btn-ghost" onClick={openCancel} style={{ flex: '1 1 auto', justifyContent: 'center', color: 'var(--red-fg)' }}>
-              ✕ Cancel visit
+              <IconClose size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Cancel visit
             </button>
           </div>
         )}
@@ -372,7 +372,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
           padding: '12px 14px', background: '#FBEAE2', border: '1.5px solid #C2410C',
           borderRadius: 'var(--r)', display: 'flex', flexDirection: 'column', gap: 4,
         }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#C2410C' }}>✕ Visit cancelled</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#C2410C' }}><IconClose size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Visit cancelled</div>
           {s.forms_uid && <div style={{ fontSize: 12, color: '#C2410C', fontFamily: 'monospace', fontWeight: 600 }}>UID: {s.forms_uid}</div>}
         </div>
         {canAct && (
@@ -474,7 +474,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
     return (
       <div className={`modal-backdrop${warnClosing ? ' is-closing-scrim' : ''}`} onClick={closeWarning}>
         <div className={`modal modal-wide${warnClosing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()} style={{ display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
-          <h3 style={{ color: 'var(--amber-fg)' }}>⚠ Units already with Openhouse</h3>
+          <h3 style={{ color: 'var(--amber-fg)' }}><IconWarning size={15} style={{ verticalAlign: '-2px', marginRight: 5 }} />Units already with Openhouse</h3>
           <div className="modal-sub">
             {existingUnits.length} unit{existingUnits.length === 1 ? '' : 's'} already with Openhouse in <strong>{s.society_name}</strong>.
           </div>

@@ -8,14 +8,14 @@ const S = ({ children, size = 18, fill = 'none', ...rest }) => (
 );
 
 export const IconHome = (p) => <S {...p}><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M9.5 21v-6h5v6" /></S>;
-// Plain calendar — replaces the 📅 emoji on schedule chips/buttons.
+// Plain calendar — schedule chips/buttons.
 export const IconCalendar = (p) => <S {...p}><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></S>;
-// Siren / beacon — alert vibe (🚨) in the same stroke style as the set.
+// Siren / beacon — alert vibe, in the same stroke style as the set.
 export const IconLeads = (p) => <S {...p}><path d="M5 18h14" /><path d="M7 18a5 5 0 0 1 10 0" /><path d="M12 13V9" /><path d="M12 9 9.5 6M12 9l2.5-3" /></S>;
 export const IconFollowUp = (p) => <S {...p}><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /><path d="m9 16 2 2 4-4" /></S>;
 export const IconVisit = (p) => <S {...p}><path d="M12 21s-6-5.3-6-10a6 6 0 0 1 12 0c0 4.7-6 10-6 10Z" /><circle cx="12" cy="11" r="2" /></S>;
 export const IconQualified = (p) => <S {...p}><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></S>;
-// Abacus (🧮) — Supply Closure Tracker.
+// Abacus — Supply Closure Tracker.
 export const IconPipeline = (p) => <S {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M3 14.5h18" /><circle cx="7" cy="6.5" r="1.2" /><circle cx="10.5" cy="6.5" r="1.2" /><circle cx="14" cy="11.75" r="1.2" /><circle cx="17.5" cy="11.75" r="1.2" /><circle cx="7" cy="17.25" r="1.2" /><circle cx="10.5" cy="17.25" r="1.2" /></S>;
 export const IconToken = (p) => <S {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v10M9 9.5h4.5a1.5 1.5 0 0 1 0 3H9h5" /></S>;
 export const IconRejected = (p) => <S {...p}><circle cx="12" cy="12" r="9" /><path d="m15 9-6 6M9 9l6 6" /></S>;
@@ -50,3 +50,22 @@ export const IconPhone = (p) => <S {...p}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19
 export const IconChat = (p) => <S {...p}><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9 9 0 0 1-4-1L3 20l1-3.8A8.4 8.4 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5Z" /><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01" /></S>;
 export const IconMegaphone = (p) => <S {...p}><path d="M3 11v2a1 1 0 0 0 1 1h2.6l4.4 3.6V6.4L6.6 10H4a1 1 0 0 0-1 1Z" /><path d="M11 6.4 18 3v18l-7-3.4" /><path d="M18 9a3 3 0 0 1 0 6" /><path d="M7 14v3.5a1.5 1.5 0 0 0 3 0V16" /></S>;
 export const IconMobile = (p) => <S {...p}><rect x="7" y="2" width="10" height="20" rx="2.5" /><path d="M10.5 18.5h3" /></S>;
+
+// --- emoji replacements ---------------------------------------------------
+// One icon per emoji that used to sit in user-visible copy. Same 1.7px stroke
+// / currentColor contract as the rest of the set, so they inherit the text
+// colour of whatever pill, badge or log line they land in.
+export const IconWarning = (p) => <S {...p}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></S>;
+export const IconEdit = (p) => <S {...p}><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></S>;
+export const IconNote = (p) => <S {...p}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></S>;
+export const IconCheck = (p) => <S {...p}><path d="m4.5 12.5 5 5 10-11" /></S>;
+export const IconTrash = (p) => <S {...p}><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M6 6v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6" /><path d="M10 11v6M14 11v6" /></S>;
+export const IconCamera = (p) => <S {...p}><path d="M3 7h3.5L8 5h8l1.5 2H21a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13.5" r="3.5" /></S>;
+// Raised hand — a CP asking for something (visit request).
+export const IconHandRaise = (p) => <S {...p}><path d="M9 11.5V4.5a1.5 1.5 0 0 1 3 0V11" /><path d="M12 11V3.5a1.5 1.5 0 0 1 3 0V11" /><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5.2-3l-2-3.6a1.5 1.5 0 0 1 2.4-1.8L9 15" /></S>;
+export const IconSend = (p) => <S {...p}><path d="M21.5 12 3 3.5 6 12l-3 8.5Z" /><path d="M6 12h15.5" /></S>;
+export const IconPlay = (p) => <S {...p} fill="currentColor" stroke="none"><path d="M7 4.5v15l13-7.5Z" /></S>;
+// Corner arrow — the "reports to <manager>" sub-line under a staff user.
+export const IconCornerDown = (p) => <S {...p}><path d="M5 4v8a3 3 0 0 0 3 3h11" /><path d="m15 11 4 4-4 4" /></S>;
+export const IconUndo = (p) => <S {...p}><path d="M3 8h12a5 5 0 0 1 0 10H9" /><path d="m7 4-4 4 4 4" /></S>;
+export const IconClock = (p) => <S {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5.5l3.5 2" /></S>;

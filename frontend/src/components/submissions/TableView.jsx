@@ -17,7 +17,7 @@ import { matchBadgeText, matchTypeLabel } from '../../matchType';
 import ExpandPanel from './ExpandPanel.jsx';
 import Loading from '../Loading.jsx';
 import DotLoader from '../DotLoader.jsx';
-import { IconCalendar } from '../icons.jsx';
+import { IconCalendar, IconWarning, IconEdit } from '../icons.jsx';
 
 /**
  * Bottom-of-table infinite-scroll sentinel. The stage filter is a client-side
@@ -297,7 +297,7 @@ export default function TableView({
                     )}
                   </td>
                   <td style={{ fontWeight: 600 }}>
-                    {isWeakMatch && <span style={{ color: 'var(--red-fg)', marginRight: 6 }}>⚠</span>}
+                    {isWeakMatch && <IconWarning size={13} style={{ color: 'var(--red-fg)', verticalAlign: '-2px', marginRight: 6 }} />}
                     {s.society_name}
                   </td>
                   <td style={{ color: 'var(--text-muted)' }}>{s.city || '—'}</td>
@@ -333,7 +333,7 @@ export default function TableView({
                           borderRadius: 3, fontSize: 10, fontWeight: 600, letterSpacing: 0.2,
                         }}
                       >
-                        ✏ via {s.submitted_by_name.split(' ')[0]}
+                        <IconEdit size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />via {s.submitted_by_name.split(' ')[0]}
                       </div>
                     )}
                   </td>

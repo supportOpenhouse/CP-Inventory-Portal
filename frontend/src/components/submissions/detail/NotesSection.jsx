@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../../api';
 import { formatDateTime } from '../../../format';
+import { IconSend } from '../../icons.jsx';
 
 export default function NotesSection({ submission, canAct, onChanged }) {
   const [newComment, setNewComment] = useState('');
@@ -77,7 +78,7 @@ export default function NotesSection({ submission, canAct, onChanged }) {
             disabled={busy}
           />
           <button type="button" className="note-send" onClick={handleAddComment} disabled={busy || !newComment.trim()}>
-            {busy ? '…' : '➤'}
+            {busy ? '…' : <IconSend size={15} />}
           </button>
         </div>
       )}

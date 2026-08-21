@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../../api';
-import { IconClose } from '../icons.jsx';
+import { IconClose, IconCheck } from '../icons.jsx';
 import { useModalClose } from '../../hooks/useModalClose';
 
 export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSuccess }) {
@@ -256,7 +256,7 @@ export default function BulkReassignRmModal({ selectedSubmissions, onClose, onSu
             </>
           ) : (
             <div style={{ background: 'var(--green-bg)', color: 'var(--green-fg)', padding: 12, borderRadius: 'var(--r-sm)', fontSize: 14 }}>
-              ✓ Reassigned <strong>{resultSummary.updated_count}</strong> listing{resultSummary.updated_count === 1 ? '' : 's'} to{' '}
+              <IconCheck size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Reassigned <strong>{resultSummary.updated_count}</strong> listing{resultSummary.updated_count === 1 ? '' : 's'} to{' '}
               <strong>{resultSummary.target_rm_name}</strong>.
               {resultSummary.skipped_already_on_rm > 0 && (
                 <> {resultSummary.skipped_already_on_rm} were already on this RM.</>

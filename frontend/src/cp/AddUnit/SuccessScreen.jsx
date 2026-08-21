@@ -5,6 +5,7 @@
  *
  * When status is 'Unapproved', shows an admin-review message instead of the default.
  */
+import { IconClock, IconCheck } from '../../components/icons.jsx';
 export default function SuccessScreen({ submissionId, publicId, status, onDone }) {
   const displayId = publicId || `#${submissionId}`;
   const isUnapproved = status === 'Unapproved';
@@ -30,7 +31,7 @@ export default function SuccessScreen({ submissionId, publicId, status, onDone }
               : '0 6px 20px rgba(16,185,129,0.3)',
           }}
         >
-          {isUnapproved ? '⏳' : '✓'}
+          {isUnapproved ? <IconClock size={40} /> : <IconCheck size={40} />}
         </div>
         <h1
           style={{

@@ -12,6 +12,7 @@ import { useModalClose } from '../../../hooks/useModalClose';
 import {
   uploadToCloudinary, validateFile, thumbnailUrl, previewUrl, MAX_PHOTOS,
 } from '../../../cloudinary';
+import { IconClose } from '../../icons.jsx';
 
 // `only`: 'attachments' | 'media' — render just that block (the table-view
 // columns show them as separate columns). Default renders both.
@@ -132,7 +133,7 @@ export default function MediaSection({ submission, canAct, onChanged, only }) {
                       borderRadius: '999px', border: 'none', background: 'var(--red)', color: '#fff',
                       fontSize: 11, lineHeight: '20px', padding: 0, cursor: 'pointer',
                     }}
-                  >✕</button>
+                  ><IconClose size={13} /></button>
                 )}
               </div>
             ))}
@@ -200,7 +201,7 @@ export default function MediaSection({ submission, canAct, onChanged, only }) {
             className="modal-close"
             onClick={closeLightbox}
             style={{ position: 'fixed', top: 24, right: 28, fontSize: 30, color: '#fff' }}
-          >✕</button>
+          ><IconClose size={13} /></button>
         </div>
       )}
     </>

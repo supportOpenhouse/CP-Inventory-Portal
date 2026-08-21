@@ -14,7 +14,7 @@ import ShareMediaModal from './ShareMediaModal';
 import BookVisitModal from './BookVisitModal';
 import MediaVisitActions from './MediaVisitActions';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { IconSearch } from '../components/icons.jsx';
+import { IconSearch, IconWarning, IconHome, IconPhone } from '../components/icons.jsx';
 import { showToast } from '../components/Toast.jsx';
 
 // Real DB stages the accurate-count endpoint reports on (mirror of the backend
@@ -266,12 +266,12 @@ export default function Dashboard({ rmPhone }) {
         </>
       ) : state.error ? (
         <div className="empty-state">
-          <div className="empty-state-icon">⚠️</div>
+          <div className="empty-state-icon"><IconWarning size={52} /></div>
           <p>{state.error}</p>
         </div>
       ) : visibleSubmissions.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">{searchActive ? '🔍' : '🏠'}</div>
+          <div className="empty-state-icon">{searchActive ? <IconSearch size={52} /> : <IconHome size={52} />}</div>
           <p>
             {searchActive
               ? <>No matches for “{searchQuery.trim()}”.</>
@@ -399,7 +399,7 @@ export default function Dashboard({ rmPhone }) {
                         textDecoration: 'none',
                       }}
                     >
-                      📞 Call your RM
+                      <IconPhone size={15} style={{ verticalAlign: '-3px', marginRight: 6 }} />Call your RM
                     </a>
                   ) : (
                     <button
@@ -415,7 +415,7 @@ export default function Dashboard({ rmPhone }) {
                         opacity: 0.45,
                       }}
                     >
-                      📞 Call your RM
+                      <IconPhone size={15} style={{ verticalAlign: '-3px', marginRight: 6 }} />Call your RM
                     </button>
                   )}
 

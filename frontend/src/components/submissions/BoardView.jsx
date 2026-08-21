@@ -14,7 +14,7 @@ import { formatBhk, formatPrice, formatOhPrice, formatDateOnly, formatTime12, ST
 import MatchDetailsModal from '../MatchDetailsModal.jsx';
 import { matchTypeLabel } from '../../matchType';
 import Loading from '../Loading.jsx';
-import { IconCalendar } from '../icons.jsx';
+import { IconCalendar, IconWarning, IconEdit } from '../icons.jsx';
 
 /**
  * Infinite-scroll sentinel rendered at the bottom of each kanban column.
@@ -279,7 +279,7 @@ export default function BoardView({
                         className="board-chip board-chip-weak"
                         title="Weak society match — verify"
                       >
-                        ⚠ weak match
+                        <IconWarning size={11} style={{ verticalAlign: '-1px', marginRight: 3 }} />weak match
                       </span>
                     )}
                   </div>
@@ -379,7 +379,7 @@ export default function BoardView({
                         className="board-card-onbehalf"
                         title={`Submitted by ${s.submitted_by_name} on behalf of ${s.cp_name}`}
                       >
-                        ✏ via {s.submitted_by_name.split(' ')[0]}
+                        <IconEdit size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />via {s.submitted_by_name.split(' ')[0]}
                       </span>
                     )}
                   </div>

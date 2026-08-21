@@ -6,7 +6,7 @@ import Dashboard from '../cp/Dashboard.jsx';
 import AddUnit from '../cp/AddUnit/index.jsx';
 import Profile from '../cp/Profile.jsx';
 import Messages from '../cp/Messages.jsx';
-import { IconHome, IconPhone, IconPlus, IconChat, IconUsers } from '../components/icons.jsx';
+import { IconHome, IconPhone, IconPlus, IconChat, IconUsers, IconEye } from '../components/icons.jsx';
 import { useUnreadChat } from '../hooks/useUnreadChat';
 import Toast, { showToast } from '../components/Toast.jsx';
 
@@ -41,7 +41,7 @@ export default function CpApp() {
           in the Impersonator's iframe the exit/identity live in that page. */}
       {user?.impersonated_by && window.self === window.top && (
         <div className="imp-banner">
-          👁 Viewing as {user.name} · impersonated by {user.impersonated_by.name || user.impersonated_by.cp_code}
+          <IconEye size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Viewing as {user.name} · impersonated by {user.impersonated_by.name || user.impersonated_by.cp_code}
           <button className="btn-link" onClick={() => { clearSession(); window.location.assign('/'); }}>Exit</button>
         </div>
       )}

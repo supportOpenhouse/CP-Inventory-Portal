@@ -35,6 +35,7 @@ import MediaSection from './detail/MediaSection.jsx';
 import TicketsSection from '../tickets/TicketsSection.jsx';
 import CpThread from '../chat/CpThread.jsx';
 import MatchDetailsModal from '../MatchDetailsModal.jsx';
+import { IconWarning, IconCheck, IconPlay } from '../icons.jsx';
 
 // Ported verbatim from CP DetailPanel.jsx's banners block (perfect-match /
 // withdrawn / unit-less), just swapped to token-agnostic literal colors
@@ -48,7 +49,7 @@ function Banners({ s }) {
           margin: '0 0 14px', padding: '10px 12px', background: '#fef2f2',
           border: '1.5px solid #fca5a5', borderRadius: 8, fontSize: 13, color: '#991b1b',
         }}>
-          <strong>⚠ {matchTypeLabel(s)} detected at submit time.</strong>
+          <strong><IconWarning size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />{matchTypeLabel(s)} detected at submit time.</strong>
           <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
             {isFuzzyMatch(s)
               ? `Same society + BHK + floor, and the tower/unit are a near-miss (a likely
@@ -64,7 +65,7 @@ function Banners({ s }) {
           margin: '0 0 14px', padding: '10px 12px', background: '#fef3c7',
           border: '1.5px solid #fcd34d', borderRadius: 8, fontSize: 13, color: '#92400e', fontWeight: 600,
         }}>
-          ✓ Withdrawn{s.withdraw_reason === 'cp_withdrawn' ? ' by CP' : ''}
+          <IconCheck size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Withdrawn{s.withdraw_reason === 'cp_withdrawn' ? ' by CP' : ''}
         </div>
       )}
       {s.unit_less && !s.perfect_match_at_submit && !s.deleted_at && (() => {
@@ -153,7 +154,7 @@ function ActivityTimeline({ s }) {
                           width: 48, height: 48, borderRadius: 6, background: '#111', color: '#fff',
                           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, textDecoration: 'none',
                         }}
-                      >▶</a>
+                      ><IconPlay size={14} /></a>
                     ))}
                   </div>
                 )}

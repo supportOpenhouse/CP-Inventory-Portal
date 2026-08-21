@@ -23,6 +23,7 @@
  *                  Edit/Add-anyway buttons, which would otherwise be dead ends.
  */
 import { showToast } from '../../components/Toast.jsx';
+import { IconVisit, IconPhone } from '../../components/icons.jsx';
 
 export default function DuplicateCard({ result, onEdit, onForceCreate, onDone }) {
   const d = result.details || {};
@@ -82,7 +83,7 @@ export default function DuplicateCard({ result, onEdit, onForceCreate, onDone })
 
       <div className="dup-card-body">
         <div className="dup-card-name">{d.society || '—'}</div>
-        {d.city && <div className="dup-card-location">📍 {d.city}</div>}
+        {d.city && <div className="dup-card-location"><IconVisit size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />{d.city}</div>}
 
         <div className="dup-card-message">{result.message}</div>
 
@@ -102,7 +103,7 @@ export default function DuplicateCard({ result, onEdit, onForceCreate, onDone })
                 marginTop: 10,
               }}
             >
-              📞 Contact RM ({rmPhone})
+              <IconPhone size={15} style={{ verticalAlign: '-3px', marginRight: 6 }} />Contact RM ({rmPhone})
             </a>
           ) : (
             <button
@@ -118,7 +119,7 @@ export default function DuplicateCard({ result, onEdit, onForceCreate, onDone })
                 opacity: 0.45,
               }}
             >
-              📞 Contact RM
+              <IconPhone size={15} style={{ verticalAlign: '-3px', marginRight: 6 }} />Contact RM
             </button>
           )}
         </div>

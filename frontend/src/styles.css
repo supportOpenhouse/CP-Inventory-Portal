@@ -819,7 +819,7 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .phone-entry .pe-save:disabled { opacity: .5; cursor: not-allowed; }
 .phone-entry .pe-cancel { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 11px; font-size: 12.5px; font-weight: 600; }
 
-/* ✎ Edit Details button in the ExpandPanel Property Details header */
+/* Edit Details button in the ExpandPanel Property Details header */
 .btn-edit-details { margin-left: auto; background: var(--brand-soft); color: var(--brand-strong); border: 0; border-radius: 7px; padding: 3px 9px; font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none; transition: background .14s; }
 .btn-edit-details:hover { background: var(--brand-softer); }
 .edit-sec-h { font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--brand-strong); margin: 18px 0 10px; }
@@ -1658,7 +1658,7 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .section-title { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 600; color: var(--oh-charcoal); padding: 18px 20px 12px; }
 /* .empty-state itself is Direct's existing shared class (styles.css above); only
    the icon size is CP-specific. */
-.empty-state-icon { font-size: 52px; margin-bottom: 12px; opacity: 0.3; }
+.empty-state-icon { line-height: 0; margin-bottom: 12px; opacity: 0.3; }
 
 /* ===== Dashboard: inventory cards ===== */
 .unit-card { background: var(--surface); border: 1px solid var(--oh-border); border-radius: 12px; margin: 0 20px 12px; box-shadow: var(--oh-shadow-sm); overflow: hidden; }

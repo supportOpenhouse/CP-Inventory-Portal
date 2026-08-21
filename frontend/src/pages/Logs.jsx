@@ -29,7 +29,11 @@ import { ApiError, api } from '../api';
 import { formatDateTime, formatPrice } from '../format';
 import Loading from '../components/Loading.jsx';
 import CardDetailModal from '../components/submissions/CardDetailModal.jsx';
-import { IconCalendar } from '../components/icons.jsx';
+import {
+  IconCalendar, IconNote, IconEdit, IconCheck, IconTrash, IconUndo, IconToken,
+  IconRejected, IconHandRaise, IconCamera, IconReload, IconBuilding, IconProfile,
+  IconLock, IconEye, IconTicket, IconChat,
+} from '../components/icons.jsx';
 
 const PAGE_SIZE = 100;
 const HARD_CAP = 500;
@@ -87,6 +91,10 @@ function KeyValues({ d }) {
   );
 }
 
+// Every Details line opens with a small icon on the text baseline. One wrapper
+// so the size + alignment isn't restated at each of the 25 call sites.
+const DIcon = ({ icon: I }) => <I size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />;
+
 function Details({ row }) {
   const d = row.details || {};
   switch (row.action) {
@@ -96,87 +104,87 @@ function Details({ row }) {
     case 'status_change_bulk':
       return <>Bulk status → <b className="val-green">{d.to}</b> · {d.updated ?? 0} updated{d.skipped_same_status ? `, ${d.skipped_same_status} skipped` : ''}</>;
     case 'comment_added':
-      return <>📝 Note: {d.text}</>;
+      return <><DIcon icon={IconNote} />Note: {d.text}</>;
     case 'submission_edited': {
       const changes = d.changes || [];
-      return <>✏️ Edited: {changes.slice(0, 3).join('; ')}{changes.length > 3 ? ` +${changes.length - 3} more` : ''}</>;
+      return <><DIcon icon={IconEdit} />Edited: {changes.slice(0, 3).join('; ')}{changes.length > 3 ? ` +${changes.length - 3} more` : ''}</>;
     }
     case 'submission_created':
-      return <>✅ Submission created{d.initial_status ? ` · ${d.initial_status}` : ''}</>;
+      return <><DIcon icon={IconCheck} />Submission created{d.initial_status ? ` · ${d.initial_status}` : ''}</>;
     case 'submission_created_on_behalf':
-      return <>✅ Submitted on behalf of {d.target_cp_name}{d.submitted_by_name ? ` · by ${d.submitted_by_name}` : ''}</>;
+      return <><DIcon icon={IconCheck} />Submitted on behalf of {d.target_cp_name}{d.submitted_by_name ? ` · by ${d.submitted_by_name}` : ''}</>;
     case 'submission_deleted':
-      return <>🗑️ Submission deleted</>;
+      return <><DIcon icon={IconTrash} />Submission deleted</>;
     case 'submission_withdrawn':
-      return <>↩️ Withdrawn by CP</>;
+      return <><DIcon icon={IconUndo} />Withdrawn by CP</>;
     case 'asking_price_updated':
       return <>Asking price <span className="det-before">{formatPrice(d.old)}</span><span className="det-arrow"> → </span><span className="det-after">{formatPrice(d.new)}</span></>;
 
     // ── counter offers ──
     case 'counter_offer_sent':
-      return <>💰 Counter offer sent: <b>{formatPrice(d.price_rupees)}</b></>;
+      return <><DIcon icon={IconToken} />Counter offer sent: <b>{formatPrice(d.price_rupees)}</b></>;
     case 'counter_offer_broker_countered':
-      return <>💰 CP countered: <b>{formatPrice(d.counter_price)}</b>{d.comment ? ` · ${d.comment}` : ''}</>;
+      return <><DIcon icon={IconToken} />CP countered: <b>{formatPrice(d.counter_price)}</b>{d.comment ? ` · ${d.comment}` : ''}</>;
     case 'counter_offer_accepted':
-      return <>✅ Counter offer accepted{d.comment ? ` · ${d.comment}` : ''}</>;
+      return <><DIcon icon={IconCheck} />Counter offer accepted{d.comment ? ` · ${d.comment}` : ''}</>;
     case 'counter_offer_rejected':
-      return <>❌ Counter offer rejected{d.comment ? ` · ${d.comment}` : ''}</>;
+      return <><DIcon icon={IconRejected} />Counter offer rejected{d.comment ? ` · ${d.comment}` : ''}</>;
 
     // ── visits ──
     case 'visit_scheduled':
-      return <><IconCalendar size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Visit scheduled {d.schedule_date} {d.schedule_time} with {d.field_exec_name}</>;
+      return <><DIcon icon={IconCalendar} />Visit scheduled {d.schedule_date} {d.schedule_time} with {d.field_exec_name}</>;
     case 'visit_scheduled_bulk':
-      return <><IconCalendar size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Bulk visit scheduled · {d.n_scheduled ?? 0} scheduled, {d.n_already_scheduled ?? 0} already set</>;
+      return <><DIcon icon={IconCalendar} />Bulk visit scheduled · {d.n_scheduled ?? 0} scheduled, {d.n_already_scheduled ?? 0} already set</>;
     case 'cp_visit_requested':
-      return <>🙋 CP requested a visit · {d.date} {d.slot}{d.rm_name ? ` · ${d.rm_name}` : ''}</>;
+      return <><DIcon icon={IconHandRaise} />CP requested a visit · {d.date} {d.slot}{d.rm_name ? ` · ${d.rm_name}` : ''}</>;
 
     // ── media ──
     case 'cp_media_shared':
-      return <>📷 Media shared · {(d.photos || []).length} photos, {(d.videos || []).length} videos</>;
+      return <><DIcon icon={IconCamera} />Media shared · {(d.photos || []).length} photos, {(d.videos || []).length} videos</>;
     case 'cp_media_deleted':
-      return <>🗑️ Video removed</>;
+      return <><DIcon icon={IconTrash} />Video removed</>;
 
     // ── RM / society routing ──
     case 'cp_rm_changed':
-      return <>🔁 CP's RM changed{d.new_rm_id ? ` → RM #${d.new_rm_id}` : ''}</>;
+      return <><DIcon icon={IconReload} />CP's RM changed{d.new_rm_id ? ` → RM #${d.new_rm_id}` : ''}</>;
     case 'cp_rm_changed_bulk':
-      return <>🔁 Bulk RM reassign → {d.target_rm_name} · {d.reassigned ?? 0} CPs</>;
+      return <><DIcon icon={IconReload} />Bulk RM reassign → {d.target_rm_name} · {d.reassigned ?? 0} CPs</>;
     case 'listing_rm_set':
-      return <>🔁 Listing RM override → {d.target_rm_name}</>;
+      return <><DIcon icon={IconReload} />Listing RM override → {d.target_rm_name}</>;
     case 'listing_rm_cleared':
-      return <>🔁 Listing RM override cleared</>;
+      return <><DIcon icon={IconReload} />Listing RM override cleared</>;
     case 'listing_rm_set_bulk':
-      return <>🔁 Bulk listing RM override → {d.target_rm_name} · {d.updated_count ?? 0} listings</>;
+      return <><DIcon icon={IconReload} />Bulk listing RM override → {d.target_rm_name} · {d.updated_count ?? 0} listings</>;
     case 'listing_rm_cleared_bulk':
-      return <>🔁 Bulk listing RM override cleared · {d.updated_count ?? 0} listings</>;
+      return <><DIcon icon={IconReload} />Bulk listing RM override cleared · {d.updated_count ?? 0} listings</>;
     case 'society_rm_mapping_set':
-      return <>🏘️ {d.society_name || 'Society'} mapped → {d.rm_name}</>;
+      return <><DIcon icon={IconBuilding} />{d.society_name || 'Society'} mapped → {d.rm_name}</>;
     case 'society_rm_mapping_set_bulk':
-      return <>🏘️ {d.society_count ?? 0} societies mapped → {d.rm_name}</>;
+      return <><DIcon icon={IconBuilding} />{d.society_count ?? 0} societies mapped → {d.rm_name}</>;
 
     // ── CP notes ──
     case 'cp_note_added':
-      return <>📝 CP note: {d.text}</>;
+      return <><DIcon icon={IconNote} />CP note: {d.text}</>;
     case 'cp_note_deleted':
-      return <>🗑️ CP note deleted</>;
+      return <><DIcon icon={IconTrash} />CP note deleted</>;
 
     // ── staff / security ──
     case 'staff_user_added':
-      return <>👤 Staff user added: {d.name} ({d.role})</>;
+      return <><DIcon icon={IconProfile} />Staff user added: {d.name} ({d.role})</>;
     case 'force_logout_user':
-      return <>🔒 Force-logged-out</>;
+      return <><DIcon icon={IconLock} />Force-logged-out</>;
     case 'force_logout_all':
-      return <>🔒 Force-logged-out all · {d.admins ?? 0} admins, {d.rms ?? 0} RMs</>;
+      return <><DIcon icon={IconLock} />Force-logged-out all · {d.admins ?? 0} admins, {d.rms ?? 0} RMs</>;
     case 'cp_impersonation_started':
-      return <>🕵️ Viewed as CP{d.impersonated_by_name ? ` · by ${d.impersonated_by_name}` : ''}</>;
+      return <><DIcon icon={IconEye} />Viewed as CP{d.impersonated_by_name ? ` · by ${d.impersonated_by_name}` : ''}</>;
 
     // ── tickets ──
     case 'ticket_created':
-      return <>🎫 Ticket "{d.title}" raised → RM #{d.assigned_rm_id}{d.submission_id ? ` on submission #${d.submission_id}` : ''}</>;
+      return <><DIcon icon={IconTicket} />Ticket "{d.title}" raised → RM #{d.assigned_rm_id}{d.submission_id ? ` on submission #${d.submission_id}` : ''}</>;
     case 'ticket_reply':
-      return <>💬 Ticket reply: {d.body}</>;
+      return <><DIcon icon={IconChat} />Ticket reply: {d.body}</>;
     case 'ticket_closed':
-      return <>✅ Ticket #{d.ticket_id} closed</>;
+      return <><DIcon icon={IconCheck} />Ticket #{d.ticket_id} closed</>;
 
     default:
       return <KeyValues d={d} />;

@@ -33,7 +33,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../api';
 import { validatePhone, sanitizePhone } from '../format';
-import { IconLock } from '../components/icons.jsx';
+import { IconLock, IconVisit, IconCornerDown } from '../components/icons.jsx';
 import SearchableMultiSelect from '../components/SearchableMultiSelect.jsx';
 
 const ROLE_OPTIONS = [
@@ -486,10 +486,10 @@ export default function Users() {
                         ))}
                       </select>
                       {u.role === 'viewer' && u.city && (
-                        <div className="usr-scope muted" style={{ fontSize: 11, marginTop: 3 }}>📍 {u.city}</div>
+                        <div className="usr-scope muted" style={{ fontSize: 11, marginTop: 3 }}><IconVisit size={11} style={{ verticalAlign: '-2px', marginRight: 4 }} />{u.city}</div>
                       )}
                       {u.source === 'rm' && managerNames(u.manager_ids) && (
-                        <div className="usr-scope muted" style={{ fontSize: 11, marginTop: 3 }}>↳ reports to {managerNames(u.manager_ids)}</div>
+                        <div className="usr-scope muted" style={{ fontSize: 11, marginTop: 3 }}><IconCornerDown size={11} style={{ verticalAlign: '-2px', marginRight: 4 }} />reports to {managerNames(u.manager_ids)}</div>
                       )}
                     </td>
                     <td>

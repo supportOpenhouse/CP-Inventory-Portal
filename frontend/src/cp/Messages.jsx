@@ -14,7 +14,7 @@ import { useTheme } from '../contexts/ThemeContext.jsx';
 import { api } from '../api';
 import ChatErrorBoundary from '../components/ChatErrorBoundary';
 import ChatComposer from '../components/ChatComposer';
-import { IconChevron } from '../components/icons.jsx';
+import { IconChevron, IconChat, IconWarning } from '../components/icons.jsx';
 
 const STAFF_UID = 'openhouse';
 
@@ -67,7 +67,7 @@ export default function Messages({ onBack }) {
 
       {state.notEnabled ? (
         <div className="empty-state">
-          <div className="empty-state-icon">💬</div>
+          <div className="empty-state-icon"><IconChat size={52} /></div>
           <p>Chat isn’t enabled for your account yet.</p>
           {requested || state.requestPending ? (
             <p style={{ color: 'var(--green-fg)', fontWeight: 600 }}>Request sent — an admin will enable your chat.</p>
@@ -78,7 +78,7 @@ export default function Messages({ onBack }) {
           )}
         </div>
       ) : state.error ? (
-        <div className="empty-state"><div className="empty-state-icon">⚠️</div><p>{state.error}</p></div>
+        <div className="empty-state"><div className="empty-state-icon"><IconWarning size={52} /></div><p>{state.error}</p></div>
       ) : !state.ready ? (
         <div className="empty-state"><p>Loading chat…</p></div>
       ) : (

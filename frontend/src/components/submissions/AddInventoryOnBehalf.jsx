@@ -3,7 +3,7 @@ import { useState } from 'react';
 import Step1 from '../../cp/AddUnit/Step1';
 import CpSelector from '../CpSelector.jsx';
 import SegmentedTabs from '../SegmentedTabs.jsx';
-import { IconClose } from '../icons.jsx';
+import { IconClose, IconCheck } from '../icons.jsx';
 import { useModalClose } from '../../hooks/useModalClose';
 
 /**
@@ -70,7 +70,7 @@ export default function AddInventoryOnBehalf({ onClose, onCreated }) {
               background: result.status === 'Unapproved' ? 'var(--amber)' : 'var(--oh-green)',
               color: '#fff', fontSize: 34, fontWeight: 700,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>✓</div>
+            }}><IconCheck size={15} /></div>
             <h3 style={{ marginTop: 16, marginBottom: 4 }}>
               {result.status === 'Unapproved' ? 'Submitted for review' : 'Inventory added'}
             </h3>

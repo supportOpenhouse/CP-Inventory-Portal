@@ -8,6 +8,7 @@
  *   onOpenCpHistory?: (cpId) => void — opens the CP's full submission
  *   history (same as CP's `onOpenCpHistory` DetailPanel prop).
  */
+import { IconEdit } from '../../icons.jsx';
 export default function PeopleSection({ submission, canAct, onChanged, onOpenCpHistory, embedded }) {
   if (!submission) return null;
   const s = submission;
@@ -35,7 +36,7 @@ export default function PeopleSection({ submission, canAct, onChanged, onOpenCpH
                 border: '1px solid var(--brand-ring)', borderRadius: 4,
                 fontSize: 12, lineHeight: 1.3,
               }}>
-                ✏ Submitted by <strong>{s.submitted_by_name}</strong> on behalf of <strong>{s.cp_name}</strong>
+                <IconEdit size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Submitted by <strong>{s.submitted_by_name}</strong> on behalf of <strong>{s.cp_name}</strong>
               </div>
             )}
           </div>

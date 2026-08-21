@@ -25,7 +25,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../../api';
 import { todayInIST, nowTimeIST, VISIT_TIME_SLOTS } from '../../format';
-import { IconClose } from '../icons.jsx';
+import { IconClose, IconWarning, IconCheck, IconRejected } from '../icons.jsx';
 import { useModalClose } from '../../hooks/useModalClose';
 
 export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, onSuccess }) {
@@ -290,7 +290,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
           {error && <div className="modal-error">{error}</div>}
           {clientWarnings.length > 0 && !submitted && (
             <div style={{ background: 'var(--amber-bg)', color: 'var(--amber-fg)', padding: 12, borderRadius: 'var(--r-sm)', marginBottom: 12, fontSize: 13 }}>
-              {clientWarnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+              {clientWarnings.map((w, i) => <div key={i}><IconWarning size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />{w}</div>)}
             </div>
           )}
           {preflightErrors.length > 0 && (
@@ -356,7 +356,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                           <td style={{ padding: '9px 10px', verticalAlign: 'top' }}>
                             <div style={{ fontFamily: 'monospace', fontSize: 12 }}>{s.public_id || `#${s.id}`}</div>
                             {alreadyScheduled && (
-                              <div style={{ fontSize: 11, color: 'var(--green-fg)' }}>✓ already scheduled (will skip)</div>
+                              <div style={{ fontSize: 11, color: 'var(--green-fg)' }}><IconCheck size={12} style={{ verticalAlign: '-2px', marginRight: 3 }} />already scheduled (will skip)</div>
                             )}
                             {rowError && (
                               <div style={{ fontSize: 11, color: 'var(--red-fg)', marginTop: 4 }}>
@@ -439,7 +439,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                         <tr key={s.id} style={{ background: 'var(--green-bg)', borderBottom: '1px solid var(--hairline)' }}>
                           <td style={{ padding: '9px 10px' }}>{s.public_id || `#${s.id}`}</td>
                           <td style={{ padding: '9px 10px', color: 'var(--green-fg)' }}>
-                            ✓ Scheduled — UID <code style={{ fontFamily: 'monospace' }}>{r.uid}</code>
+                            <IconCheck size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Scheduled — UID <code style={{ fontFamily: 'monospace' }}>{r.uid}</code>
                             {r.already_existed ? ' (already existed)' : ''}
                           </td>
                         </tr>
@@ -448,7 +448,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
                     return (
                       <tr key={s.id} style={{ background: 'var(--red-bg)', borderBottom: '1px solid var(--hairline)' }}>
                         <td style={{ padding: '9px 10px' }}>{s.public_id || `#${s.id}`}</td>
-                        <td style={{ padding: '9px 10px', color: 'var(--red-fg)' }}>✗ {r.error}</td>
+                        <td style={{ padding: '9px 10px', color: 'var(--red-fg)' }}><IconRejected size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />{r.error}</td>
                       </tr>
                     );
                   })}
@@ -494,7 +494,7 @@ export default function BulkScheduleVisitModal({ selectedSubmissions, onClose, o
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--amber-fg)', marginBottom: 4 }}>
-              ⚠ Units already with Openhouse
+              <IconWarning size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />Units already with Openhouse
             </div>
             <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
               The following societies already have units with Openhouse. Review before scheduling.

@@ -1,5 +1,5 @@
 /**
- * Unit details — read-only field grid with an inline "✏ Edit" trigger in the
+ * Unit details — read-only field grid with an inline "Edit" trigger in the
  * card header (admin only). Ported from CP DetailPanel.jsx: the "Unit details"
  * block + the header Edit button + EDITABLE_FIELDS / startEdit / saveEdit
  * (previously split into a separate EditFieldsSection — merged so the button
@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { api } from '../../../api';
 import { getUser } from '../../../auth';
 import { formatBhk } from '../../../format';
+import { IconEdit, IconCheck } from '../../icons.jsx';
 
 const EDITABLE_FIELDS = [
   { key: 'tower',               label: 'Tower',            type: 'text'   },
@@ -96,7 +97,7 @@ export default function UnitDetailsSection({ submission, onChanged }) {
         <h3>Unit details</h3>
         {isAdmin && (editMode
           ? <small className="muted" style={{ fontWeight: 400 }}>Society &amp; CP cannot be changed</small>
-          : <button type="button" className="btn-soft" onClick={startEdit} disabled={busy}>✏ Edit</button>
+          : <button type="button" className="btn-soft" onClick={startEdit} disabled={busy}><IconEdit size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Edit</button>
         )}
       </div>
 
@@ -118,7 +119,7 @@ export default function UnitDetailsSection({ submission, onChanged }) {
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
             <button type="button" className="btn-primary" onClick={saveEdit} disabled={busy}>
-              {busy ? 'Saving…' : '✓ Save changes'}
+              {busy ? 'Saving…' : <><IconCheck size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Save changes</>}
             </button>
             <button type="button" className="btn-ghost" onClick={cancelEdit} disabled={busy}>Cancel</button>
           </div>
