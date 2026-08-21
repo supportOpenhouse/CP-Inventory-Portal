@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { ApiError, api } from '../api';
+import { useStickyState } from '../hooks/useStickyState.js';
 import { formatDateTime, formatPrice } from '../format';
 import Loading from '../components/Loading.jsx';
 import CardDetailModal from '../components/submissions/CardDetailModal.jsx';
@@ -209,20 +210,24 @@ export default function Logs() {
   // `searchInput` is what the user is typing; `search` is the debounced
   // (300ms) value that actually reaches the wire — mirrors CP's
   // useDebouncedValue without needing a dedicated hook file.
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  // Filter selections are sticky (localStorage, see useStickyState) so leaving
+  // the page and coming back restores what was applied. `page` is deliberately
+  // NOT sticky — returning to page 7 of a list you no longer remember filtering
+  // is disorienting, and the rows will have shifted anyway.
+  const [search, setSearch] = useStickyState('logs.search', '');
+  const [searchInput, setSearchInput] = useState(search);
   const [propId, setPropId] = useState(null); // submission whose detail popup is open
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const [action, setAction] = useState('');
-  const [category, setCategory] = useState('');
-  const [actorEmail, setActorEmail] = useState('');
-  const [actorName, setActorName] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [action, setAction] = useStickyState('logs.action', '');
+  const [category, setCategory] = useStickyState('logs.category', '');
+  const [actorEmail, setActorEmail] = useStickyState('logs.actorEmail', '');
+  const [actorName, setActorName] = useStickyState('logs.actorName', '');
+  const [dateFrom, setDateFrom] = useStickyState('logs.dateFrom', '');
+  const [dateTo, setDateTo] = useStickyState('logs.dateTo', '');
   const [page, setPage] = useState(1);
 
   // Client-only sort of the currently-loaded page. The backend's fixed

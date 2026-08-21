@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { api, downloadAdminCsv } from '../api';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useStickyState } from '../hooks/useStickyState.js';
 import { STAGES } from '../format';
 import { IconSearch, IconFilter, IconDownload } from '../components/icons.jsx';
 import BoardView from '../components/submissions/BoardView.jsx';
@@ -40,14 +41,17 @@ export default function Submissions() {
   const canAct = isStaff && !isViewer;
 
   const defaultCity = isAdmin ? 'All' : user.city || 'All';
-  const [city, setCity] = useState(defaultCity);
+  // Filter selections below are sticky (localStorage, see useStickyState) —
+  // navigating away and back restores what the user had applied.
+  const [city, setCity] = useStickyState('submissions.city', defaultCity);
   // `searchInput` is what the user is currently typing; `search` is the
   // committed value that actually filters the list. They diverge until the
   // user presses Enter (keyboard or the Search button), at which point the
   // committed value catches up and a reload fires. This avoids a request
   // per keystroke on a multi-thousand-row dataset.
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useStickyState('submissions.search', '');
+  // Seeded from the restored committed search so the box shows what's filtering.
+  const [searchInput, setSearchInput] = useState(search);
   const [view, setView] = useState('table');
   const [submissions, setSubmissions] = useState([]);
   const [counts, setCounts] = useState({});
@@ -108,16 +112,17 @@ export default function Submissions() {
   // they sit on the top strip while keeping their live state here.
   const [topbarSlot, setTopbarSlot] = useState(null);
   useEffect(() => { setTopbarSlot(document.getElementById('topbar-actions')); }, []);
-  const [bhk, setBhk] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [rmFilter, setRmFilter] = useState(''); // '' = All RMs
+  const [bhk, setBhk] = useStickyState('submissions.bhk', '');
+  const [dateFrom, setDateFrom] = useStickyState('submissions.dateFrom', '');
+  const [dateTo, setDateTo] = useStickyState('submissions.dateTo', '');
+  const [rmFilter, setRmFilter] = useStickyState('submissions.rm', ''); // '' = All RMs
   // Multi-select stage filter: an array of stage keys (client-side union).
   // [] = All. Deep-links may pass a comma list (?status=Unapproved,Submitted).
-  const [statusFilter, setStatusFilter] = useState(() => {
-    const s = searchParams.get('status');
-    return s ? s.split(',').filter(Boolean) : [];
-  });
+  const deepLinkStatus = searchParams.get('status');
+  const [statusFilter, setStatusFilter] = useStickyState(
+    'submissions.status', [],
+    deepLinkStatus ? deepLinkStatus.split(',').filter(Boolean) : undefined,
+  );
   const toggleStatus = (key) => setStatusFilter((prev) => (
     prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
   ));
@@ -125,12 +130,12 @@ export default function Submissions() {
   // Client-only refinements (FilterModal, P3.4) — CP's admin API has no
   // server params for these, so they post-filter the already-loaded rows
   // (see `clientFilteredSubmissions` below) instead of reaching the wire.
-  const [matchTypes, setMatchTypes] = useState([]); // subset of perfect/collated/submissions/weak
-  const [missingInfo, setMissingInfo] = useState([]); // subset of no_asking_price/no_seller
-  const [priceMin, setPriceMin] = useState('');
-  const [priceMax, setPriceMax] = useState('');
-  const [ohPriceFilter, setOhPriceFilter] = useState(''); // '' | 'has' | 'check'
-  const [rejectReasons, setRejectReasons] = useState([]);
+  const [matchTypes, setMatchTypes] = useStickyState('submissions.matchTypes', []); // subset of perfect/collated/submissions/weak
+  const [missingInfo, setMissingInfo] = useStickyState('submissions.missingInfo', []); // subset of no_asking_price/no_seller
+  const [priceMin, setPriceMin] = useStickyState('submissions.priceMin', '');
+  const [priceMax, setPriceMax] = useStickyState('submissions.priceMax', '');
+  const [ohPriceFilter, setOhPriceFilter] = useStickyState('submissions.ohPrice', ''); // '' | 'has' | 'check'
+  const [rejectReasons, setRejectReasons] = useStickyState('submissions.rejectReasons', []);
 
   // RM list for the filter dropdown (FilterModal) — loaded for any user with
   // board access (staff OR viewer); it's a read operation, so viewers get to

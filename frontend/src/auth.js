@@ -14,6 +14,8 @@
  * shared cookie alone can't give.
  */
 
+import { clearSticky } from './hooks/useStickyState.js';
+
 const TOKEN_KEY = 'oh_token';   // legacy localStorage key — only purged now
 const USER_KEY = 'oh_user';
 const IMP_TOKEN_KEY = 'oh_impersonation_token';
@@ -133,6 +135,10 @@ export function clearSession() {
   // POST /auth/logout (or already invalid on a 401). Here we only drop the
   // cached user object and purge any pre-migration token left in localStorage.
   setUser(null);
+  // Remembered filter selections are per-person, not per-browser: without this
+  // the next user to sign in here inherits the previous one's RM/city/stage
+  // filters and sees a mysteriously empty board.
+  clearSticky();
   try {
     localStorage.removeItem(TOKEN_KEY);
   } catch {
