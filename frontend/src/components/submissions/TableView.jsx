@@ -287,14 +287,18 @@ export default function TableView({
                         WITHDRAWN
                       </span>
                     )}
+                    {/* inline-flex + align-items:center centres the icon against the
+                        UID for real, instead of nudging it with a hardcoded
+                        vertical-align offset that only holds at one font size. */}
                     {s.forms_uid && (
                       <span style={{
-                        display: 'inline-block', marginLeft: 6, padding: '1px 6px',
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                        verticalAlign: 'middle', marginLeft: 6, padding: '1px 6px',
                         fontSize: 9, fontWeight: 700, color: '#065F46',
                         background: '#ECFDF5', borderRadius: 3, letterSpacing: 0.3,
                         whiteSpace: 'nowrap',
                       }} title={`Visit scheduled · ${formatDateOnly(s.scheduled_date)} ${formatTime12(s.scheduled_time)} · ${s.field_exec_name || ''} · UID ${s.forms_uid}`}>
-                        <IconCalendar size={10} style={{ verticalAlign: '-1px', marginRight: 3 }} />{s.forms_uid}
+                        <IconCalendar size={10} />{s.forms_uid}
                       </span>
                     )}
                   </td>
