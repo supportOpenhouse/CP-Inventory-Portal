@@ -2,7 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { readSticky, writeSticky, clearSticky, STICKY_PREFIX } from './useStickyState.js';
+import {
+  readSticky, writeSticky, clearSticky, expireSticky, touchSticky, STICKY_PREFIX,
+} from './useStickyState.js';
 
 // Minimal localStorage stand-in — the pure helpers take `storage` explicitly so
 // the branch logic is testable without a DOM or a React renderer.
@@ -61,4 +63,29 @@ test('unavailable storage degrades to a no-op', () => {
   assert.equal(readSticky('x', null), undefined);
   assert.doesNotThrow(() => writeSticky('x', 1, null));
   assert.doesNotThrow(() => clearSticky(null));
+});
+
+test('expireSticky: fresh stamp keeps the namespace', () => {
+  const s = fakeStorage();
+  touchSticky('submissions', 1_000_000, s);
+  writeSticky('submissions.city', 'Noida', s);
+  assert.equal(expireSticky('submissions', 12 * 3600e3, 1_000_000 + 3600e3, s), false);
+  assert.equal(readSticky('submissions.city', s), 'Noida');
+});
+
+test('expireSticky: stale stamp wipes the namespace and reports empty', () => {
+  const s = fakeStorage();
+  touchSticky('submissions', 1_000_000, s);
+  writeSticky('submissions.city', 'Noida', s);
+  writeSticky('logs.action', 'status_change', s);
+  // 13h later — past the 12h TTL.
+  assert.equal(expireSticky('submissions', 12 * 3600e3, 1_000_000 + 13 * 3600e3, s), true);
+  assert.equal(readSticky('submissions.city', s), undefined);
+  // Other namespaces are untouched by a scoped purge.
+  assert.equal(readSticky('logs.action', s), 'status_change');
+});
+
+test('expireSticky: never-stamped namespace reports empty', () => {
+  // First ever visit — the caller should fall back to the priority preset.
+  assert.equal(expireSticky('submissions', 12 * 3600e3, 1_000_000, fakeStorage()), true);
 });

@@ -392,6 +392,13 @@ export const api = {
   // not the current filter set (same anti-narrowing rule as the facet dropdowns).
   adminListActivityLogFacets: () => request('/admin/activity-log/facets'),
 
+  // Saved filter presets for the Submissions board — one document per user,
+  // read and written whole (see routes/filter_presets.py for why).
+  getFilterPresets: () => request('/presets'),
+  // resetCacheOnWrite:false — a preset is the caller's own UI preference and
+  // mutates nothing the board reads, so it must not wipe the submissions cache.
+  saveFilterPresets: (doc) => request('/presets', { method: 'PUT', body: doc, resetCacheOnWrite: false }),
+
   // Chat (CometChat) — backend provisions the CometChat user, mints login
   // tokens, and proxies/logs sends. Paths mount under /api/comet.
   // Provisioning POSTs — they don't mutate any cached read, so they must NOT

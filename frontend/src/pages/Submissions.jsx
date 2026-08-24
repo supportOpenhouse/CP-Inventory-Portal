@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { api, downloadAdminCsv } from '../api';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { useStickyState } from '../hooks/useStickyState.js';
+import { useStickyState, expireSticky, touchSticky } from '../hooks/useStickyState.js';
 import { STAGES } from '../format';
 import { IconSearch, IconFilter, IconDownload } from '../components/icons.jsx';
 import BoardView from '../components/submissions/BoardView.jsx';
@@ -24,6 +24,13 @@ const CITY_TABS = ['All', 'Noida', 'Gurgaon', 'Ghaziabad'];
 // bulk-status cap uses. One source of truth; the label renders from it.
 const SELECT_ALL_CAP = 5000;
 
+// Namespace + lifetime of the remembered filter selections. After 12h of not
+// touching the filters the store is dropped and the user's PRIORITY PRESET (if
+// they have one) reseeds the page — so "yesterday's ad-hoc filter" never
+// silently outlives the day, but this morning's work survives a trip to Logs.
+const FILTER_NS = 'submissions';
+const FILTER_TTL_MS = 12 * 60 * 60 * 1000;
+
 export default function Submissions() {
   const { user } = useAuth();
   // Deep-link from Home: ?status=<stage> opens the board filtered to that stage
@@ -41,6 +48,12 @@ export default function Submissions() {
   const canAct = isStaff && !isViewer;
 
   const defaultCity = isAdmin ? 'All' : user.city || 'All';
+  // Age the sticky store out BEFORE any useStickyState below reads it. Hook
+  // initialisers run in declaration order, so putting the purge in one here is
+  // what guarantees the reads below see an already-empty store. `stickyExpired`
+  // is the signal to fall back to the priority preset once it has loaded.
+  const [stickyExpired] = useState(() => expireSticky(FILTER_NS, FILTER_TTL_MS));
+
   // Filter selections below are sticky (localStorage, see useStickyState) —
   // navigating away and back restores what the user had applied.
   const [city, setCity] = useStickyState('submissions.city', defaultCity);
@@ -149,6 +162,85 @@ export default function Submissions() {
       .catch(() => { if (alive) setRms([]); });
     return () => { alive = false; };
   }, [isStaff, isViewer]);
+
+  // ── saved filter presets ────────────────────────────────────────────────
+  // One document per user: three named slots, a display order, and which slot
+  // is the priority one. `sequence[0]` IS the priority slot — see PresetBar.
+  const [presetDoc, setPresetDoc] = useState(null); // null until loaded
+  const [presetsSaving, setPresetsSaving] = useState(false);
+  const [presetError, setPresetError] = useState('');
+  // Guards the priority-preset seed to a single application per mount, so a
+  // later refetch can't yank the board out from under a user who has since
+  // filtered by hand.
+  const prioritySeeded = useRef(false);
+
+  useEffect(() => {
+    if (!isStaff && !isViewer) return;
+    let alive = true;
+    api.getFilterPresets()
+      .then((d) => { if (alive) setPresetDoc(d || { presets: [null, null, null], sequence: [1, 2, 3], priority: null }); })
+      // Presets are a convenience; if the endpoint is down the board still
+      // works, it just shows three empty slots.
+      .catch(() => { if (alive) setPresetDoc({ presets: [null, null, null], sequence: [1, 2, 3], priority: null }); });
+    return () => { alive = false; };
+  }, [isStaff, isViewer]);
+
+  // One place that pushes a flattened filter object into page state. Used by
+  // the modal's Apply, by a preset chip, and by the priority seed below — so
+  // all three routes can't drift apart.
+  const applyFilters = useCallback((a) => {
+    if (a.city !== undefined) setCity(a.city);
+    setBhk(a.bhk ?? '');
+    setStatusFilter(a.statusFilter ?? []);
+    setRmFilter(a.rmFilter ?? '');
+    setDateFrom(a.dateFrom ?? '');
+    setDateTo(a.dateTo ?? '');
+    setMatchTypes(a.matchTypes ?? []);
+    setMissingInfo(a.missingInfo ?? []);
+    setPriceMin(a.priceMin ?? '');
+    setPriceMax(a.priceMax ?? '');
+    setOhPriceFilter(a.ohPrice ?? '');
+    setRejectReasons(a.rejectReasons ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The priority preset seeds the board only when the sticky store had nothing
+  // to restore — first ever visit, or the 12h window lapsed. Whatever the user
+  // filters afterwards is written back to the sticky store and wins on the next
+  // visit, until that store ages out again.
+  useEffect(() => {
+    if (prioritySeeded.current || !presetDoc) return;
+    prioritySeeded.current = true;
+    // A ?status= deep link from Home is an explicit instruction — it outranks
+    // both the sticky store and the priority preset.
+    if (deepLinkStatus || !stickyExpired) return;
+    const p = presetDoc.priority ? presetDoc.presets[presetDoc.priority - 1] : null;
+    if (p && p.filters) applyFilters(p.filters);
+  }, [presetDoc, stickyExpired, deepLinkStatus, applyFilters]);
+
+  // Restart the 12h window whenever a filter actually moves, so "expired"
+  // means 12h of not touching the filters rather than 12h since first use.
+  useEffect(() => { touchSticky(FILTER_NS); }, [
+    city, search, statusFilter, bhk, dateFrom, dateTo, rmFilter,
+    matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons,
+  ]);
+
+  // Optimistic: a drag should land instantly, so state moves first and the PUT
+  // catches up. On rejection (e.g. the priority-is-first CHECK) we re-read the
+  // server's copy rather than leaving the UI showing an order that didn't save.
+  const savePresets = useCallback(async (next) => {
+    setPresetDoc(next);
+    setPresetsSaving(true);
+    setPresetError('');
+    try {
+      setPresetDoc(await api.saveFilterPresets(next));
+    } catch (err) {
+      setPresetError(err.message || 'Could not save presets');
+      api.getFilterPresets().then(setPresetDoc).catch(() => {});
+    } finally {
+      setPresetsSaving(false);
+    }
+  }, []);
 
   const clientFilterCount = [
     matchTypes.length > 0,
@@ -546,20 +638,11 @@ export default function Submissions() {
         isStaff={isStaff}
         isViewer={isViewer}
         onClose={() => setShowFilters(false)}
-        onApply={(applied) => {
-          setBhk(applied.bhk);
-          setDateFrom(applied.dateFrom);
-          setDateTo(applied.dateTo);
-          setRmFilter(applied.rmFilter);
-          setStatusFilter(applied.statusFilter);
-          setMatchTypes(applied.matchTypes);
-          setMissingInfo(applied.missingInfo);
-          setPriceMin(applied.priceMin);
-          setPriceMax(applied.priceMax);
-          setOhPriceFilter(applied.ohPrice);
-          setRejectReasons(applied.rejectReasons);
-          setShowFilters(false);
-        }}
+        onApply={(applied) => { applyFilters(applied); setShowFilters(false); }}
+        presetDoc={presetDoc}
+        onPresetChange={savePresets}
+        presetsSaving={presetsSaving}
+        presetCity={city}
       />
 
       {addingInventory && (
@@ -600,9 +683,9 @@ export default function Submissions() {
         </div>
       </div>
 
-      {error && (
+      {(error || presetError) && (
         <div className="muted" style={{ padding: '10px 0', color: 'var(--red-fg)' }}>
-          {error}
+          {error || presetError}
         </div>
       )}
 

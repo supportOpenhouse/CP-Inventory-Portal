@@ -887,6 +887,56 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 
 /* ── filter panel ────────────────────────────────────────────────────── */
 .filter-modal { max-width: 760px; }
+
+/* ── saved filter presets (Filters modal header) ───────────────────────────
+   Three slots in the head row, right of the "Filters" heading. Display order
+   IS priority order: the leftmost chip is the one that auto-applies, so the
+   ★ always sits in the first slot and dragging a chip there promotes it. */
+.preset-bar { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.preset-chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  max-width: 150px; height: 28px; padding: 0 4px 0 8px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface-2); font-size: 12px; font-weight: 600;
+  cursor: grab; transition: border-color .14s, background .14s, opacity .14s;
+}
+.preset-chip:hover { border-color: var(--brand); }
+/* The priority chip is the load-bearing one — give it the brand ring so it
+   reads as "this is what you get on arrival", not just "first in a list". */
+.preset-chip-priority { border-color: var(--brand); background: var(--brand-softer); }
+.preset-chip-dragging { opacity: .4; cursor: grabbing; }
+/* Holds the row's height while its neighbours are occupied, so chips don't
+   jump left/right as slots fill and empty. */
+.preset-chip-blank { border-style: dashed; opacity: .35; width: 28px; cursor: default; pointer-events: none; }
+.preset-chip-add { border-style: dashed; color: var(--text-muted); cursor: pointer; padding: 0 10px; gap: 4px; }
+.preset-chip-add:hover { color: var(--brand-strong); border-style: solid; }
+/* The name is a button so a preset applies on click (and is keyboard-
+   reachable) while the chip around it stays the drag handle. */
+.preset-chip-apply {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.preset-star { color: var(--brand); margin-right: 3px; }
+.preset-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; flex-shrink: 0;
+  border: 0; border-radius: 50%; background: none;
+  color: var(--text-muted); cursor: pointer;
+}
+.preset-icon-btn:hover { background: var(--surface-3); color: var(--text); }
+.preset-icon-btn:disabled { opacity: .4; cursor: default; }
+.preset-chip-naming { cursor: default; padding-left: 6px; max-width: 190px; }
+.preset-chip-naming input {
+  width: 120px; height: 20px; padding: 0 4px; border: 0; background: none;
+  font: inherit; color: var(--text); outline: none;
+}
+/* The head row wraps on narrow screens so the chips drop under the heading
+   instead of squeezing the close button off the panel. */
+@media (max-width: 620px) {
+  .modal-head-row { flex-wrap: wrap; }
+  .preset-bar { order: 3; width: 100%; margin-left: 0; }
+}
 .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .filter-block label { margin-bottom: 8px; }
 .bhk-pills { display: flex; gap: 7px; flex-wrap: wrap; }

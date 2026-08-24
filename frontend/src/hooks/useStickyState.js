@@ -38,20 +38,50 @@ export function writeSticky(key, value, storage = safeStorage()) {
   }
 }
 
-export function clearSticky(storage = safeStorage()) {
+// `ns` narrows the purge to one namespace ('submissions'); omit it to drop
+// everything sticky (logout).
+export function clearSticky(storage = safeStorage(), ns = '') {
   if (!storage) return;
+  const scope = ns ? `${STICKY_PREFIX}${ns}.` : STICKY_PREFIX;
   try {
     // Collect first: removing during the index walk shifts the remaining keys.
     const doomed = [];
     for (let i = 0; i < storage.length; i += 1) {
       const k = storage.key(i);
-      if (k && k.startsWith(STICKY_PREFIX)) doomed.push(k);
+      if (k && k.startsWith(scope)) doomed.push(k);
     }
     doomed.forEach((k) => storage.removeItem(k));
   } catch {
     // noop
   }
 }
+
+/**
+ * Age out a whole namespace at once and report whether it's now empty.
+ *
+ * Filters go stale as a SET — a stage picked 13h ago shouldn't survive just
+ * because the city tab was touched an hour later — so one stamp covers the
+ * group instead of a TTL per key.
+ *
+ * Returns true when the caller should treat the store as empty: either it
+ * expired just now, or nothing was ever saved. That's the signal to fall back
+ * to a default (on Submissions, the user's priority preset).
+ */
+export function expireSticky(ns, ttlMs, now = Date.now(), storage = safeStorage()) {
+  const stamp = readSticky(stampKey(ns), storage);
+  if (typeof stamp === 'number' && now - stamp < ttlMs) return false;
+  clearSticky(storage, ns);
+  return true;
+}
+
+// Restart the TTL window. Called whenever a filter in the namespace changes,
+// so "expired" means 12h of not touching the filters, not 12h since first use.
+export function touchSticky(ns, now = Date.now(), storage = safeStorage()) {
+  writeSticky(stampKey(ns), now, storage);
+}
+
+// Lives under the namespace so clearSticky(ns) takes the stamp with it.
+const stampKey = (ns) => `${ns}.__stamp`;
 
 function safeStorage() {
   try {

@@ -17,6 +17,7 @@ from db import init_pools
 from routes.admin import bp as admin_bp
 from routes.auth_routes import bp as auth_bp
 from routes.comet import bp as comet_bp
+from routes.filter_presets import bp as filter_presets_bp
 from routes.health import bp as health_bp
 from routes.media import bp as media_bp
 from routes.meta import bp as meta_bp
@@ -86,6 +87,7 @@ def create_app() -> Flask:
     app.register_blueprint(tickets_bp)
     app.register_blueprint(comet_bp)
     app.register_blueprint(webhooks_bp)
+    app.register_blueprint(filter_presets_bp)
 
     @app.errorhandler(400)
     def bad_request(e):

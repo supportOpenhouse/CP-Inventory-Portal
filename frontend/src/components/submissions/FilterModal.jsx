@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 import { STAGES, REJECTED_REASONS } from '../../format';
 import { IconClose } from '../icons.jsx';
 import SearchableMultiSelect from '../SearchableMultiSelect.jsx';
+import PresetBar from './PresetBar.jsx';
 import { useModalClose } from '../../hooks/useModalClose';
 
 // Standard BHK configurations offered as single-select pills. CP stores `bhk`
@@ -77,6 +78,15 @@ const EMPTY = {
   rejectReasons: [],
 };
 
+// The flattened (applied) shape with everything off. Spread under a preset so
+// a field the preset doesn't mention is CLEARED, not inherited from whatever
+// happened to be applied when the chip was clicked.
+const EMPTY_APPLIED = {
+  bhk: '', statusFilter: [], rmFilter: '', dateFrom: '', dateTo: '',
+  matchTypes: [], missingInfo: [], priceMin: '', priceMax: '', ohPrice: '',
+  rejectReasons: [],
+};
+
 function seedForm(initial = {}) {
   const dateFrom = initial.dateFrom || '';
   const dateTo = initial.dateTo || '';
@@ -99,6 +109,9 @@ function seedForm(initial = {}) {
 export default function FilterModal({
   open, initial = {}, rms = [], canFilterRm = false, isStaff = false, isViewer = false,
   onApply, onClose,
+  // Saved presets (see PresetBar). `presetDoc` is the whole server document;
+  // the page owns loading/saving it, this modal just hosts the UI.
+  presetDoc = null, onPresetChange, presetsSaving = false, presetCity,
 }) {
   const [f, setF] = useState(() => seedForm(initial));
 
@@ -152,10 +165,13 @@ export default function FilterModal({
 
   function reset() { setF(EMPTY); }
 
-  function apply() {
+  // The form's draft flattened into the shape the page consumes. Both Apply
+  // and "save as preset" go through this, so a preset can never capture a
+  // different set of fields than Apply hands over.
+  function flatten() {
     // Backend's rm_id filter only accepts a single RM at a time — when
     // multiple are checked in the multiselect, the first one wins.
-    onApply({
+    return {
       bhk: f.bhk,
       statusFilter: f.statusFilter,
       rmFilter: f.rmIds[0] || '',
@@ -167,7 +183,21 @@ export default function FilterModal({
       priceMax: f.priceMax,
       ohPrice: f.ohPrice,
       rejectReasons: f.rejectReasons,
-    });
+    };
+  }
+
+  function apply() { onApply(flatten()); }
+
+  // Clicking a preset chip applies it straight through to the page (and closes
+  // the modal), rather than only loading it into the form — a preset is a
+  // shortcut, so making the user press Apply afterwards defeats the point.
+  function applyPreset(filters) {
+    // EMPTY_APPLIED underneath so a field the preset doesn't carry is CLEARED
+    // rather than inherited from whatever was applied when the chip was hit.
+    // `city` is intentionally absent from it: an older preset saved before city
+    // was captured leaves the city tab alone instead of resetting it.
+    onApply({ ...EMPTY_APPLIED, ...(filters || {}) });
+    close();
   }
 
   const visibleStages = STAGES.filter((s) => isStaff || isViewer || !s.adminOnly);
@@ -178,6 +208,17 @@ export default function FilterModal({
       <div className={`modal filter-modal${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3>Filters</h3>
+          {presetDoc && (
+            <PresetBar
+              doc={presetDoc}
+              // A preset captures the form as it stands plus the page's city
+              // tab, which lives outside this modal.
+              currentFilters={{ ...flatten(), city: presetCity }}
+              onApply={applyPreset}
+              onChange={onPresetChange}
+              saving={presetsSaving}
+            />
+          )}
           <button className="modal-close" onClick={close} aria-label="Close"><IconClose /></button>
         </div>
 
