@@ -905,6 +905,21 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
    reads as "this is what you get on arrival", not just "first in a list". */
 .preset-chip-priority { border-color: var(--brand); background: var(--brand-softer); }
 .preset-chip-dragging { opacity: .4; cursor: grabbing; }
+/* Drop indicator. The whole row is the drop target and the landing slot is
+   computed from the pointer's X against the chip midpoints, so the user needs
+   to SEE where the chip will land — a 2px brand rule on that edge. Drawn with
+   an outline-style pseudo-element so it doesn't shift the row's layout. */
+.preset-chip { position: relative; }
+.preset-drop-before::before,
+.preset-drop-after::after {
+  content: ''; position: absolute; top: -2px; bottom: -2px; width: 2px;
+  border-radius: 2px; background: var(--brand);
+}
+.preset-drop-before::before { left: -4px; }
+.preset-drop-after::after { right: -4px; }
+/* The row keeps a little slack on both ends so there's somewhere to aim when
+   dropping before the first chip or after the last. */
+.preset-bar { padding: 0 4px; }
 /* Holds the row's height while its neighbours are occupied, so chips don't
    jump left/right as slots fill and empty. */
 .preset-chip-blank { border-style: dashed; opacity: .35; width: 28px; cursor: default; pointer-events: none; }
