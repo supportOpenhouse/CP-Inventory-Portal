@@ -14,6 +14,12 @@
  *             CP's submission (source==='submissions' with a numeric ref_id),
  *             the row becomes clickable and calls this to open that submission's
  *             side panel.
+ *
+ * Rows are clickable in two different ways:
+ *   - source 'submissions' -> opens that submission's panel in-app (onOpenSubmission)
+ *   - source 'inventory'   -> opens the listing in the Direct Inventory portal
+ *                             in a new tab; `id` is the external oh_id.
+ * 'properties' rows stay inert — there's no per-record page to send anyone to.
  */
 
 import { formatBhk } from '../format';
@@ -26,6 +32,17 @@ const SOURCE_LABELS = {
 };
 
 const SOURCE_ORDER = ['inventory', 'submissions', 'properties'];
+
+// Sibling app that owns the external inventory records. Hardcoded rather than
+// an env var: it's a fixed public URL, and adding VITE_* config would mean a
+// Vercel setting to keep in sync for no gain.
+const DIRECT_INVENTORY_URL = 'https://direct-inventory-portal.vercel.app';
+
+// The oh_id lands in a path segment, so encode it — ids come from an external
+// system and we don't control their character set.
+const inventoryHref = (it) => (
+  it.source === 'inventory' && it.id ? `${DIRECT_INVENTORY_URL}/${encodeURIComponent(it.id)}` : null
+);
 
 function unitLabel(it) {
   // "Tower 13 · Unit 502" / "Unit 502" / "—" when neither is present.
@@ -64,25 +81,39 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
                 {SOURCE_LABELS[src] || src} ({rows.length})
               </div>
               {rows.map((it, idx) => {
-                const clickable = it.source === 'submissions' && it.ref_id != null && typeof onOpenSubmission === 'function';
+                const href = inventoryHref(it);
+                const internal = it.source === 'submissions' && it.ref_id != null && typeof onOpenSubmission === 'function';
+                const clickable = !!href || internal;
+                // External links get the brand accent so they read as "leaves
+                // the app", distinct from the purple in-app submission rows.
+                const accent = href ? 'var(--brand)' : 'var(--purple)';
+                const tint = href ? 'var(--brand-softer)' : 'rgba(139, 92, 246, 0.08)';
+                // A real anchor for the external case — that's what makes
+                // ctrl/middle-click, "copy link address" and keyboard focus
+                // work. window.open() would give up all three.
+                const Row = href ? 'a' : 'div';
                 return (
-                  <div
+                  <Row
                     key={`${src}-${it.id || idx}`}
-                    onClick={clickable ? () => { close(); onOpenSubmission(it.ref_id); } : undefined}
-                    title={clickable ? 'Open this listing' : undefined}
+                    {...(href ? { href, target: '_blank', rel: 'noopener noreferrer' } : {})}
+                    onClick={internal ? () => { close(); onOpenSubmission(it.ref_id); } : undefined}
+                    title={href ? `Open ${it.id} in the Direct Inventory portal` : internal ? 'Open this listing' : undefined}
                     style={{
-                      border: `1px solid ${clickable ? 'var(--purple)' : 'var(--border)'}`,
+                      display: 'block',
+                      textDecoration: 'none',
+                      color: 'inherit',
+                      border: `1px solid ${clickable ? accent : 'var(--border)'}`,
                       borderRadius: 'var(--r-sm)',
                       padding: '10px 12px',
                       marginBottom: 8,
-                      background: clickable ? 'rgba(139, 92, 246, 0.08)' : 'var(--surface-2)',
+                      background: clickable ? tint : 'var(--surface-2)',
                       cursor: clickable ? 'pointer' : 'default',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
                         {it.society || '—'}
-                        {clickable && <span style={{ color: 'var(--purple)', fontWeight: 600 }}> ↗</span>}
+                        {clickable && <span style={{ color: accent, fontWeight: 600 }}> ↗</span>}
                       </div>
                       {it.match && (
                         <span
@@ -112,7 +143,7 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
                         {it.id}
                       </div>
                     )}
-                  </div>
+                  </Row>
                 );
               })}
             </div>
