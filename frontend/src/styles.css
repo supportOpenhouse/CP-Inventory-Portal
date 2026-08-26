@@ -1896,6 +1896,16 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 
 /* ── login ─────────────────────────────────────────────────────────────── */
 .login-wrap { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; overflow: hidden; background: radial-gradient(1100px 780px at 10% 108%, rgba(214, 92, 34, 0.5), rgba(214, 92, 34, 0) 55%), linear-gradient(160deg, #251813 0%, #1b110d 58%, #17100c 100%); }
+/* <DottedSurface> canvas host. `absolute`, not the component's original
+   `fixed`: it lives inside .login-wrap (position:relative, overflow:hidden),
+   and fixed would escape that clip and cover the whole app. */
+.dotted-surface { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.dotted-surface canvas { display: block; }
+/* Card and legal links above the backdrop. Named individually rather than
+   `> *:not(.dotted-surface)`: that outranks .login-legal on specificity and
+   would replace its `position: absolute`, unpinning the footer. */
+.login-wrap > .login-card { position: relative; z-index: 1; }
+.login-wrap > .login-legal { z-index: 1; }  /* already position:absolute below */
 .login-card { width: 100%; max-width: 380px; }
 .login-brand { text-align: center; margin-bottom: 22px; }
 .login-mark { font-family: 'Fraunces', Georgia, serif; font-size: 30px; font-weight: 700; color: var(--brand); letter-spacing: -0.01em; }

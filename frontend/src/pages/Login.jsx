@@ -1,9 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 
 import { useAuth } from '../contexts/AuthContext';
 import { sanitizePhone } from '../format';
 import OtpInput from '../components/OtpInput';
 import LegalLinks from '../components/LegalLinks';
+
+// three.js is ~150KB gzipped and this is the app's ENTRY screen — lazy so the
+// bundle never blocks the phone/OTP form. The backdrop fades in a beat later;
+// fallback is null because a spinner behind the card would be worse than
+// nothing.
+const DottedSurface = lazy(() => import('../components/DottedSurface.jsx'));
 
 const RESEND_COOLDOWN_SEC = 30;
 
@@ -84,6 +90,11 @@ export default function Login() {
 
   return (
     <div className="login-wrap" data-theme="light">
+      <Suspense fallback={null}>
+        {/* White dots: the plate is a dark orange gradient in both themes, so
+            the component's theme-driven default would vanish on it. */}
+        <DottedSurface color="#ffffff" opacity={0.55} size={7} />
+      </Suspense>
       <div className="login-card card-block">
         <div className="login-brand">
           <img src="/oh_full_logo.png" alt="Openhouse" className="login-logo" />
