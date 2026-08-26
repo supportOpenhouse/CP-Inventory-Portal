@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api } from '../api';
 import CpSelector from '../components/CpSelector.jsx';
-import { IconMobile, IconEye } from '../components/icons.jsx';
+import { IconMobile, IconEye, IconArrowLeft } from '../components/icons.jsx';
 
 export default function Impersonator() {
   const [embed, setEmbed] = useState(null); // { picked, token } — embedded CP view
@@ -47,7 +47,7 @@ export default function Impersonator() {
               <div className="imp-identity-name">{embed.picked.name}</div>
               <div className="imp-identity-meta muted">{embed.picked.cp_code}</div>
               <div className="imp-identity-meta muted">{embed.picked.phone}</div>
-              <button type="button" className="btn-soft imp-exit" onClick={() => setEmbed(null)}>← Exit view</button>
+              <button type="button" className="btn-soft imp-exit" onClick={() => setEmbed(null)}><IconArrowLeft size={14} style={{ verticalAlign: '-2px', marginRight: 5 }} />Exit view</button>
             </div>
             <button type="button" className="btn-ghost imp-newtab" onClick={openNewTab}>Open in new tab</button>
           </>

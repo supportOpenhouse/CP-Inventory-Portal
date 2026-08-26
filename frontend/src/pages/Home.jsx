@@ -6,6 +6,7 @@ import { useUnreadConversations } from '../hooks/useUnreadConversations';
 import SegToggle from '../components/SegToggle.jsx';
 import SubmissionsTrend from '../components/home/SubmissionsTrend.jsx';
 import { stageMeta, stageLabel } from '../format';
+import { IconArrowRight } from '../components/icons.jsx';
 
 // Pipeline order (funnel top → bottom, then the two terminal rejections). Each
 // bar is directly labelled (stage name + value), so the stage colours — reused
@@ -157,7 +158,7 @@ export default function Home() {
                 </div>
               ))}
               {unreadChats.length > 3 && (
-                <div className="muted uc-more">+{unreadChats.length - 3} more unread →</div>
+                <div className="muted uc-more">+{unreadChats.length - 3} more unread <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /></div>
               )}
             </div>
           )}
@@ -234,7 +235,7 @@ export default function Home() {
           {!isViewer && (
             <Link to="/tickets" className="task-card task-card-link home-tickets" style={{ '--tc': '#2563eb' }}>
               <span className="st-num" style={{ color: '#2563eb', minWidth: 56 }}>{pending}</span>
-              <span className="muted">unresolved ticket{pending === 1 ? '' : 's'}→</span>
+              <span className="muted">unresolved ticket{pending === 1 ? '' : 's'} <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /></span>
             </Link>
           )}
         </div>

@@ -33,7 +33,7 @@
  *   saving         — disables the controls while a PUT is in flight
  */
 import { useRef, useState } from 'react';
-import { IconPlus, IconClose, IconCheck } from '../icons.jsx';
+import { IconPlus, IconClose, IconCheck, IconStar } from '../icons.jsx';
 // Ordering rules live in a plain-JS sibling so node:test can cover them
 // directly (same split as clientFilters.js) — see presetOrder.js for why the
 // packing matters.
@@ -181,7 +181,7 @@ export default function PresetBar({ doc, currentFilters, onApply, onChange, savi
               : `Apply "${p.name}". Drag it to the far left to make it your priority preset.`}
           >
             <button type="button" className="preset-chip-apply" onClick={() => onApply(p.filters)} disabled={saving}>
-              {isPriority && <span className="preset-star" aria-label="Priority preset">★</span>}
+              {isPriority && <IconStar size={11} className="preset-star" aria-label="Priority preset" />}
               {p.name}
             </button>
             <button

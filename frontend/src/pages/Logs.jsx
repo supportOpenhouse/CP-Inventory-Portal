@@ -34,6 +34,7 @@ import {
   IconCalendar, IconNote, IconEdit, IconCheck, IconTrash, IconUndo, IconToken,
   IconRejected, IconHandRaise, IconCamera, IconReload, IconBuilding, IconProfile,
   IconLock, IconEye, IconTicket, IconChat,
+  IconArrowUp, IconArrowDown, IconArrowRight, IconSort,
 } from '../components/icons.jsx';
 
 const PAGE_SIZE = 100;
@@ -101,9 +102,9 @@ function Details({ row }) {
   switch (row.action) {
     // ── submissions ──
     case 'status_change':
-      return <>Status <b>{d.from}</b> → <b className="val-green">{d.to}</b>{d.to_reason ? ` · ${d.to_reason}` : ''}</>;
+      return <>Status <b>{d.from}</b> <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> <b className="val-green">{d.to}</b>{d.to_reason ? ` · ${d.to_reason}` : ''}</>;
     case 'status_change_bulk':
-      return <>Bulk status → <b className="val-green">{d.to}</b> · {d.updated ?? 0} updated{d.skipped_same_status ? `, ${d.skipped_same_status} skipped` : ''}</>;
+      return <>Bulk status <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> <b className="val-green">{d.to}</b> · {d.updated ?? 0} updated{d.skipped_same_status ? `, ${d.skipped_same_status} skipped` : ''}</>;
     case 'comment_added':
       return <><DIcon icon={IconNote} />Note: {d.text}</>;
     case 'submission_edited': {
@@ -119,7 +120,7 @@ function Details({ row }) {
     case 'submission_withdrawn':
       return <><DIcon icon={IconUndo} />Withdrawn by CP</>;
     case 'asking_price_updated':
-      return <>Asking price <span className="det-before">{formatPrice(d.old)}</span><span className="det-arrow"> → </span><span className="det-after">{formatPrice(d.new)}</span></>;
+      return <>Asking price <span className="det-before">{formatPrice(d.old)}</span><span className="det-arrow"> <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> </span><span className="det-after">{formatPrice(d.new)}</span></>;
 
     // ── counter offers ──
     case 'counter_offer_sent':
@@ -147,21 +148,21 @@ function Details({ row }) {
 
     // ── RM / society routing ──
     case 'cp_rm_changed':
-      return <><DIcon icon={IconReload} />CP's RM changed{d.new_rm_id ? ` → RM #${d.new_rm_id}` : ''}</>;
+      return <><DIcon icon={IconReload} />CP's RM changed{d.new_rm_id ? <> <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> RM #{d.new_rm_id}</> : ''}</>;
     case 'cp_rm_changed_bulk':
-      return <><DIcon icon={IconReload} />Bulk RM reassign → {d.target_rm_name} · {d.reassigned ?? 0} CPs</>;
+      return <><DIcon icon={IconReload} />Bulk RM reassign <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> {d.target_rm_name} · {d.reassigned ?? 0} CPs</>;
     case 'listing_rm_set':
-      return <><DIcon icon={IconReload} />Listing RM override → {d.target_rm_name}</>;
+      return <><DIcon icon={IconReload} />Listing RM override <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> {d.target_rm_name}</>;
     case 'listing_rm_cleared':
       return <><DIcon icon={IconReload} />Listing RM override cleared</>;
     case 'listing_rm_set_bulk':
-      return <><DIcon icon={IconReload} />Bulk listing RM override → {d.target_rm_name} · {d.updated_count ?? 0} listings</>;
+      return <><DIcon icon={IconReload} />Bulk listing RM override <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> {d.target_rm_name} · {d.updated_count ?? 0} listings</>;
     case 'listing_rm_cleared_bulk':
       return <><DIcon icon={IconReload} />Bulk listing RM override cleared · {d.updated_count ?? 0} listings</>;
     case 'society_rm_mapping_set':
-      return <><DIcon icon={IconBuilding} />{d.society_name || 'Society'} mapped → {d.rm_name}</>;
+      return <><DIcon icon={IconBuilding} />{d.society_name || 'Society'} mapped <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> {d.rm_name}</>;
     case 'society_rm_mapping_set_bulk':
-      return <><DIcon icon={IconBuilding} />{d.society_count ?? 0} societies mapped → {d.rm_name}</>;
+      return <><DIcon icon={IconBuilding} />{d.society_count ?? 0} societies mapped <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> {d.rm_name}</>;
 
     // ── CP notes ──
     case 'cp_note_added':
@@ -181,7 +182,7 @@ function Details({ row }) {
 
     // ── tickets ──
     case 'ticket_created':
-      return <><DIcon icon={IconTicket} />Ticket "{d.title}" raised → RM #{d.assigned_rm_id}{d.submission_id ? ` on submission #${d.submission_id}` : ''}</>;
+      return <><DIcon icon={IconTicket} />Ticket "{d.title}" raised <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> RM #{d.assigned_rm_id}{d.submission_id ? ` on submission #${d.submission_id}` : ''}</>;
     case 'ticket_reply':
       return <><DIcon icon={IconChat} />Ticket reply: {d.body}</>;
     case 'ticket_closed':
@@ -194,14 +195,17 @@ function Details({ row }) {
 
 function SortableTh({ field, label, sort, onSort }) {
   const active = sort.field === field;
-  const arrow = active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕';
+  // Sort state as an icon rather than ▲/▼/↕ text glyphs — those render in the
+  // font's fallback and sit at a different weight to every other icon in the
+  // table chrome.
+  const SortIcon = active ? (sort.dir === 'asc' ? IconArrowUp : IconArrowDown) : IconSort;
   return (
     <th
       className={`al-th-sortable${active ? ' al-th-active' : ''}`}
       onClick={() => onSort(field)}
       title={`Sort by ${label}`}
     >
-      {label} <span>{arrow}</span>
+      {label} <SortIcon size={11} style={{ verticalAlign: '-1px', opacity: active ? 1 : 0.4 }} />
     </th>
   );
 }

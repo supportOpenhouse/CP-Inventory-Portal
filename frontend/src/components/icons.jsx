@@ -69,3 +69,17 @@ export const IconPlay = (p) => <S {...p} fill="currentColor" stroke="none"><path
 export const IconCornerDown = (p) => <S {...p}><path d="M5 4v8a3 3 0 0 0 3 3h11" /><path d="m15 11 4 4-4 4" /></S>;
 export const IconUndo = (p) => <S {...p}><path d="M3 8h12a5 5 0 0 1 0 10H9" /><path d="m7 4-4 4 4 4" /></S>;
 export const IconClock = (p) => <S {...p}><circle cx="12" cy="12" r="9" /><path d="M12 7v5.5l3.5 2" /></S>;
+
+// --- typographic glyph replacements ---------------------------------------
+// Sort indicators, carets, arrows and the priority star were still literal
+// characters (▲ ▼ ↕ ▾ ← → ★ ×). They render in whatever the user's font
+// falls back to — inconsistent weight next to the stroke icons, and a few of
+// them get emoji-presentation on some platforms. These are the replacements.
+export const IconArrowUp = (p) => <S {...p}><path d="M12 19V5M6 11l6-6 6 6" /></S>;
+export const IconArrowDown = (p) => <S {...p}><path d="M12 5v14M6 13l6 6 6-6" /></S>;
+export const IconArrowLeft = (p) => <S {...p}><path d="M19 12H5M11 6l-6 6 6 6" /></S>;
+export const IconArrowRight = (p) => <S {...p}><path d="M5 12h14M13 6l6 6-6 6" /></S>;
+// Neutral "this column is sortable" state — both directions, no commitment.
+export const IconSort = (p) => <S {...p}><path d="M8 9 5 6 2 9M5 6v12" /><path d="m16 15 3 3 3-3M19 18V6" /></S>;
+export const IconCaretDown = (p) => <S {...p} fill="currentColor" stroke="none"><path d="M6 9.5h12L12 16z" /></S>;
+export const IconStar = (p) => <S {...p} fill="currentColor" stroke="none"><path d="m12 2.8 2.9 5.9 6.5.9-4.7 4.6 1.1 6.4-5.8-3-5.8 3 1.1-6.4L2.6 9.6l6.5-.9Z" /></S>;

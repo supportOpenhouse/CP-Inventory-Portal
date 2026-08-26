@@ -891,7 +891,7 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 /* ── saved filter presets (Filters modal header) ───────────────────────────
    Three slots in the head row, right of the "Filters" heading. Display order
    IS priority order: the leftmost chip is the one that auto-applies, so the
-   ★ always sits in the first slot and dragging a chip there promotes it. */
+   star always sits in the first slot and dragging a chip there promotes it. */
 .preset-bar { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .preset-chip {
   display: inline-flex; align-items: center; gap: 2px;
@@ -932,7 +932,7 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
   cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap;
 }
-.preset-star { color: var(--brand); margin-right: 3px; }
+.preset-star { color: var(--brand); margin-right: 3px; vertical-align: -1px; flex-shrink: 0; }
 .preset-icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 18px; height: 18px; flex-shrink: 0;
@@ -1348,7 +1348,7 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 /* Compact mode: no chips row, so the control stays one line tall and lines up
    with the plain inputs beside it. The selection reads out in the field. */
 .sms-compact .sms-input::placeholder { color: var(--text-2); }
-.sms-caret { color: var(--text-muted); margin-left: 8px; cursor: pointer; }
+.sms-caret { display: inline-flex; align-items: center; line-height: 0; color: var(--text-muted); margin-left: 8px; cursor: pointer; }
 .sms-placeholder { color: var(--text-faint); }
 .sms-menu { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--shadow-lg); padding: 8px; z-index: 1100; overflow: auto; }
 .sms-search { margin-bottom: 6px; }
@@ -1674,7 +1674,7 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 /* Plain greeting — no colored strip. Just "Hi, {user}" on the surface. */
 .header { background: var(--surface); padding: 20px 20px 4px; display: flex; align-items: center; color: var(--text); }
 .header > div { font-family: 'Fraunces', serif; }
-.back-btn { background: none; border: none; color: var(--text); font-size: 20px; cursor: pointer; padding: 0; }
+.back-btn { display: inline-flex; align-items: center; line-height: 0; background: none; border: none; color: var(--text); cursor: pointer; padding: 0; }
 
 /* ===== Filter chips (neutral — brand when active, grey otherwise) ===== */
 .cp-filter { padding: 10px 6px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60px; transition: all .15s; }

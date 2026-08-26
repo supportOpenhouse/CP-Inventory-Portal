@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEscapeLayer } from '../hooks/useModalClose';
+import { IconCaretDown, IconClose } from './icons.jsx';
 
 const MENU_MIN_WIDTH = 320;
 const LIST_CAP = 200;
@@ -152,13 +153,13 @@ export default function SearchableMultiSelect({
           onFocus={() => setOpen(true)}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         />
-        <span className="sms-caret" role="button" tabIndex={-1} onMouseDown={(e) => { e.preventDefault(); if (!disabled) toggle(); }}>▾</span>
+        <span className="sms-caret" role="button" tabIndex={-1} onMouseDown={(e) => { e.preventDefault(); if (!disabled) toggle(); }}><IconCaretDown size={12} /></span>
       </div>
       {menu}
       {chips && !single && selectedCount > 0 && (
         <div className="sms-chips">
           {selected.map((vv) => (
-            <span key={vv} className="sms-chip">{labelOf(vv)}{!disabled && <button type="button" onClick={() => pick(vv)} aria-label={`Remove ${labelOf(vv)}`}>×</button>}</span>
+            <span key={vv} className="sms-chip">{labelOf(vv)}{!disabled && <button type="button" onClick={() => pick(vv)} aria-label={`Remove ${labelOf(vv)}`}><IconClose size={10} /></button>}</span>
           ))}
         </div>
       )}

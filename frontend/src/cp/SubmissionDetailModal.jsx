@@ -7,6 +7,7 @@ import ShareMediaModal from './ShareMediaModal';
 import BookVisitModal from './BookVisitModal';
 import MediaVisitActions from './MediaVisitActions';
 import { useModalClose, MODAL_EXIT_MS } from '../hooks/useModalClose';
+import { IconClose, IconArrowRight } from '../components/icons.jsx';
 
 /**
  * Full-screen modal showing all details of a CP's submission:
@@ -122,7 +123,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
             }}
             aria-label="Close"
           >
-            ×
+            <IconClose size={20} />
           </button>
         </div>
 
@@ -273,7 +274,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
                   )}
                   <div style={{ fontSize: 13, color: 'var(--oh-charcoal)' }}>
                     {ev.kind === 'status_change' && (
-                      <>Status: <strong>{ev.from_status || '—'}</strong> → <strong>{ev.to_status}</strong></>
+                      <>Status: <strong>{ev.from_status || '—'}</strong> <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> <strong>{ev.to_status}</strong></>
                     )}
                     {ev.kind === 'system' && ev.to_status && (
                       <>Status: <strong>{ev.to_status}</strong></>
@@ -343,7 +344,7 @@ export default function SubmissionDetailModal({ submission, onClose }) {
                             background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 15, lineHeight: '22px',
                           }}
                         >
-                          ×
+                          <IconClose size={13} />
                         </button>
                       )}
                     </div>

@@ -24,6 +24,7 @@
 
 import { formatBhk } from '../format';
 import { useModalClose } from '../hooks/useModalClose';
+import { IconClose, IconExternal } from './icons.jsx';
 
 const SOURCE_LABELS = {
   inventory: 'External inventory',
@@ -66,7 +67,7 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
       <div className={`modal${closing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head-row">
           <h3 style={{ marginBottom: 0 }}>{title}</h3>
-          <button type="button" className="modal-close" onClick={close} aria-label="Close">×</button>
+          <button type="button" className="modal-close" onClick={close} aria-label="Close"><IconClose size={15} /></button>
         </div>
 
         {list.length === 0 ? (
@@ -113,7 +114,7 @@ export default function MatchDetailsModal({ open, onClose, title = 'Matched with
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
                         {it.society || '—'}
-                        {clickable && <span style={{ color: accent, fontWeight: 600 }}> ↗</span>}
+                        {clickable && <IconExternal size={12} style={{ color: accent, marginLeft: 5, verticalAlign: '-1px' }} />}
                       </div>
                       {it.match && (
                         <span

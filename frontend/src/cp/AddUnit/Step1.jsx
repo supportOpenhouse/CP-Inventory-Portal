@@ -7,7 +7,7 @@ import { formatPrice } from '../../format';
 import DuplicateCard from './DuplicateCard';
 import ForceCreateWarning from './ForceCreateWarning';
 import NoUnitDetailsWarning from './NoUnitDetailsWarning';
-import { IconVisit } from '../../components/icons.jsx';
+import { IconVisit, IconCaretDown } from '../../components/icons.jsx';
 
 // Values are numeric (the DB `bhk` column is numeric); the label adds "BHK".
 const BHK_OPTIONS = ['2', '2.5', '3', '3.5', '4'];
@@ -245,7 +245,7 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
               lineHeight: 1,
             }}
           >
-            ▾
+            <IconCaretDown size={12} />
           </span>
           {dropdownOpen && search.length >= 2 && (
             <div className="society-dropdown">

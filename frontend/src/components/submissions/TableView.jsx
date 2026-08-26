@@ -17,7 +17,9 @@ import { matchBadgeText, matchTypeLabel } from '../../matchType';
 import ExpandPanel from './ExpandPanel.jsx';
 import Loading from '../Loading.jsx';
 import DotLoader from '../DotLoader.jsx';
-import { IconCalendar, IconWarning, IconEdit } from '../icons.jsx';
+import {
+  IconCalendar, IconWarning, IconEdit, IconArrowUp, IconArrowDown, IconSort,
+} from '../icons.jsx';
 
 /**
  * Bottom-of-table infinite-scroll sentinel. The stage filter is a client-side
@@ -169,14 +171,17 @@ export default function TableView({
 
   const TH = ({ sortKey, children }) => {
     const state = sort.key === sortKey ? sort.dir : null;
-    const arrow = state === 'asc' ? '▲' : state === 'desc' ? '▼' : '↕';
+    // Sort state as an icon rather than ▲/▼/↕ text glyphs — those render in
+    // the font's fallback, at a different weight to the rest of the chrome.
+    const SortIcon = state === 'asc' ? IconArrowUp : state === 'desc' ? IconArrowDown : IconSort;
     return (
       <th
         className={`inv-th inv-th-sortable ${state ? 'inv-th-active' : ''}`}
         onClick={() => toggleSort(sortKey)}
         title={`Sort by ${typeof children === 'string' ? children : sortKey}`}
       >
-        {children} <span className={state ? 'inv-th-arrow-active' : 'inv-th-arrow'}>{arrow}</span>
+        {children}{' '}
+        <SortIcon size={11} className={state ? 'inv-th-arrow-active' : 'inv-th-arrow'} style={{ verticalAlign: '-1px' }} />
       </th>
     );
   };

@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../../api';
 import { getUser } from '../../../auth';
+import { IconArrowRight } from '../../icons.jsx';
 
 export default function ReassignRmSection({ submission, onChanged }) {
   const [rms, setRms] = useState([]);
@@ -76,7 +77,7 @@ export default function ReassignRmSection({ submission, onChanged }) {
               />
               <span style={{ fontSize: 13 }}>
                 <strong>This listing + future submissions of {s.society_name || 'this society'}</strong>{' '}
-                <span className="muted">(writes society→RM mapping)</span>
+                <span className="muted">(writes society <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> RM mapping)</span>
               </span>
             </label>
           </div>

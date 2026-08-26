@@ -35,7 +35,7 @@ import MediaSection from './detail/MediaSection.jsx';
 import TicketsSection from '../tickets/TicketsSection.jsx';
 import CpThread from '../chat/CpThread.jsx';
 import MatchDetailsModal from '../MatchDetailsModal.jsx';
-import { IconWarning, IconCheck, IconPlay } from '../icons.jsx';
+import { IconWarning, IconCheck, IconPlay, IconArrowRight } from '../icons.jsx';
 
 // Ported verbatim from CP DetailPanel.jsx's banners block (perfect-match /
 // withdrawn / unit-less), just swapped to token-agnostic literal colors
@@ -131,7 +131,7 @@ function ActivityTimeline({ s }) {
                 </div>
                 <div className="note-text">
                   {ev.kind === 'status_change' ? (
-                    <span>Status: <strong>{ev.from_status || '—'}</strong> → <strong>{ev.to_status}</strong></span>
+                    <span>Status: <strong>{ev.from_status || '—'}</strong> <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> <strong>{ev.to_status}</strong></span>
                   ) : ev.kind === 'system' ? (
                     <em>{ev.text || 'Unit submitted'}</em>
                   ) : ev.text ? (

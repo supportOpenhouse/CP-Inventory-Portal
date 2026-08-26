@@ -301,7 +301,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
             <div className={`modal${reClosing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
               <div className="modal-head-row">
                 <h3 style={{ marginBottom: 0 }}>Reschedule / Reassign</h3>
-                <button type="button" className="modal-close" onClick={closeReschedule} aria-label="Close">×</button>
+                <button type="button" className="modal-close" onClick={closeReschedule} aria-label="Close"><IconClose size={15} /></button>
               </div>
               <div className="modal-sub">{s.public_id} · {s.society_name}</div>
               {reError && <div className="modal-error">{reError}</div>}
@@ -339,7 +339,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
             <div className={`modal${cancelClosing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
               <div className="modal-head-row">
                 <h3 style={{ marginBottom: 0, color: 'var(--red-fg)' }}>Cancel visit</h3>
-                <button type="button" className="modal-close" onClick={closeCancel} aria-label="Close">×</button>
+                <button type="button" className="modal-close" onClick={closeCancel} aria-label="Close"><IconClose size={15} /></button>
               </div>
               <div className="modal-sub">{s.public_id} · {s.society_name}</div>
               {cancelError && <div className="modal-error">{cancelError}</div>}
@@ -410,7 +410,7 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
         <div className={`modal${modalClosing ? ' is-closing-panel' : ''}`} onClick={(e) => e.stopPropagation()}>
           <div className="modal-head-row">
             <h3 style={{ marginBottom: 0 }}>Schedule Visit</h3>
-            <button type="button" className="modal-close" onClick={closeScheduleModal} aria-label="Close">×</button>
+            <button type="button" className="modal-close" onClick={closeScheduleModal} aria-label="Close"><IconClose size={15} /></button>
           </div>
           <div className="modal-sub">{s.public_id} · {s.society_name}</div>
           {error && (

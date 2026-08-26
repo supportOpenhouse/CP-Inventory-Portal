@@ -138,7 +138,7 @@ export default function BroadcastModal({ onClose }) {
                 {selected.map((c) => (
                   <span key={c.id} className="chat-chip">
                     {c.name || `CP #${c.id}`}{c.cp_code ? ` · ${c.cp_code}` : (c.phone ? ` · ${c.phone}` : '')}
-                    <button type="button" onClick={() => removeCp(c.id)} disabled={submitting} aria-label={`Remove ${c.name || c.id}`}>×</button>
+                    <button type="button" onClick={() => removeCp(c.id)} disabled={submitting} aria-label={`Remove ${c.name || c.id}`}><IconClose size={10} /></button>
                   </span>
                 ))}
               </div>

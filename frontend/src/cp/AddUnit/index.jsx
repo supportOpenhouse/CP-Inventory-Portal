@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import Step1 from './Step1';
 import SuccessScreen from './SuccessScreen';
+import { IconArrowLeft } from '../../components/icons.jsx';
 
 // Single-step flow: Step1 collects everything (identification + occupancy +
 // asking price) and submits in one shot. Server-side dup check still runs.
@@ -40,7 +41,7 @@ export default function AddUnit({ onDone }) {
     <div className="cp-shell">
       <div className="header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="back-btn" onClick={onDone}>←</button>
+          <button className="back-btn" onClick={onDone} aria-label="Back"><IconArrowLeft size={18} /></button>
           <span style={{ fontSize: 15, fontWeight: 600 }}>Add Unit</span>
         </div>
       </div>

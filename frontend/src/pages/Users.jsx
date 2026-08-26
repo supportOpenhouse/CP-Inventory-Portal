@@ -33,7 +33,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 
 import { ApiError, api } from '../api';
 import { validatePhone, sanitizePhone } from '../format';
-import { IconLock, IconVisit, IconCornerDown } from '../components/icons.jsx';
+import {
+  IconLock, IconVisit, IconCornerDown, IconArrowUp, IconArrowDown, IconSort,
+} from '../components/icons.jsx';
 import SearchableMultiSelect from '../components/SearchableMultiSelect.jsx';
 
 const ROLE_OPTIONS = [
@@ -53,14 +55,17 @@ const CITY_OPTIONS = [
 
 function SortableTh({ field, label, sort, onSort }) {
   const active = sort.field === field;
-  const arrow = active ? (sort.dir === 'asc' ? '▲' : '▼') : '↕';
+  // Sort state as an icon rather than ▲/▼/↕ text glyphs — those render in the
+  // font's fallback and sit at a different weight to every other icon in the
+  // table chrome.
+  const SortIcon = active ? (sort.dir === 'asc' ? IconArrowUp : IconArrowDown) : IconSort;
   return (
     <th
       className={`data-th-sortable${active ? ' data-th-active' : ''}`}
       onClick={() => onSort(field)}
       title={`Sort by ${label}`}
     >
-      {label} <span>{arrow}</span>
+      {label} <SortIcon size={11} style={{ verticalAlign: '-1px', opacity: active ? 1 : 0.4 }} />
     </th>
   );
 }
