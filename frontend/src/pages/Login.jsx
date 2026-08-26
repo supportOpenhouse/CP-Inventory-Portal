@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { sanitizePhone } from '../format';
 import OtpInput from '../components/OtpInput';
 import LegalLinks from '../components/LegalLinks';
-import SwirlBackground from '../components/SwirlBackground.jsx';
 
 const RESEND_COOLDOWN_SEC = 30;
 
@@ -85,7 +84,6 @@ export default function Login() {
 
   return (
     <div className="login-wrap" data-theme="light">
-      <SwirlBackground />
       <div className="login-card card-block">
         <div className="login-brand">
           <img src="/oh_full_logo.png" alt="Openhouse" className="login-logo" />
