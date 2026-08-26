@@ -1895,10 +1895,10 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .page-head:has(> h2:only-child) { display: none; }  /* collapse title-only heads */
 
 /* ── login ─────────────────────────────────────────────────────────────── */
-/* The animated <SwirlBackground> canvas paints the plate now. The flat colour
-   stays as the pre-paint background so there's no dark flash before the first
-   frame lands. */
-.login-wrap { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; overflow: hidden; background: var(--brand); }
+/* The original orange gradient is the plate. <SwirlBackground> draws over it
+   on a TRANSPARENT canvas — only the white pixels are painted, so this shows
+   through as the background rather than being replaced by it. */
+.login-wrap { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; overflow: hidden; background: radial-gradient(1100px 780px at 10% 108%, rgba(214, 92, 34, 0.5), rgba(214, 92, 34, 0) 55%), linear-gradient(160deg, #251813 0%, #1b110d 58%, #17100c 100%); }
 /* Backing size is the low-res grid; CSS stretches it and `pixelated` keeps the
    blocks crisp instead of smoothing them into a blur. */
 .swirl-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; image-rendering: pixelated; }
@@ -1929,8 +1929,8 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
    yellow underlined links, over the dark splash background. */
 .login-legal { position: absolute; left: 0; right: 0; bottom: 22px; margin: 0; padding: 0 16px; }
 .legal-links.login-legal { color: rgba(255, 255, 255, 0.9); }
-.login-legal a { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
-.login-legal a:hover { color: #fff; opacity: .8; }
+.login-legal a { color: #facc15; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+.login-legal a:hover { color: #fde047; }
 .login-notreg { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--hairline); }
 .login-notreg-title { font-weight: 700; color: var(--red-fg); font-size: 14px; }
 .login-rm { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
