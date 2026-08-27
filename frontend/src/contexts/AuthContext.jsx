@@ -1,9 +1,13 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { Suspense, createContext, lazy, useContext, useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api';
 import { clearSession, getUser, isImpersonating, setUser } from '../auth';
 import { logoutCometChat } from '../cometchat';
 import { detailStore } from '../components/submissions/submissionDetailStore.js';
+
+// Same module specifier as Login's lazy import, so both share ONE chunk —
+// once the login screen has pulled three.js in, the curtain gets it for free.
+const DottedSurface = lazy(() => import('../components/DottedSurface.jsx'));
 
 const AuthContext = createContext(null);
 
@@ -61,6 +65,16 @@ export function AuthProvider({ children }) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Warm the backdrop chunk once the session has settled. A user restored from
+  // a cached session never saw the login screen, so on sign-OUT the curtain
+  // would be racing a cold 128KB fetch it can't win in 1.7s. Deliberately late
+  // and fire-and-forget — it must never compete with the dashboard's own loads.
+  useEffect(() => {
+    if (!user) return undefined;
+    const t = setTimeout(() => { import('../components/DottedSurface.jsx').catch(() => {}); }, 4000);
+    return () => clearTimeout(t);
+  }, [user]);
 
   /**
    * Legacy phone-only login. Will return 410 Gone if backend has OTP_ENABLED=true.
@@ -158,6 +172,15 @@ export function AuthProvider({ children }) {
       {transition && (
         <div className={`welcome-curtain ${transition}`} aria-hidden="true">
           <div className="wc-grad">
+            {/* The same backdrop the login screen runs, so the motion carries
+                through the transition instead of freezing into a flat panel
+                the moment the curtain covers the page. Suspense fallback is
+                null: on a logout that never visited Login the chunk may still
+                be in flight, and the curtain is only ~1.7s — a plain gradient
+                for that case beats a spinner. */}
+            <Suspense fallback={null}>
+              <DottedSurface color="#ffffff" opacity={0.55} size={7} />
+            </Suspense>
             <div className="wc-greeting">
               <span className="wc-hi">{transition === 'out' ? 'Goodbye :(' : 'Welcome back,'}</span>
               <span className="wc-name">{tname ? tname.split(' ')[0] : ''}</span>
