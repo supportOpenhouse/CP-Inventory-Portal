@@ -6,7 +6,7 @@ import { api, downloadAdminCsv } from '../api';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStickyState, expireSticky, touchSticky } from '../hooks/useStickyState.js';
 import { STAGES } from '../format';
-import { IconSearch, IconFilter, IconDownload } from '../components/icons.jsx';
+import { IconSearch, IconFilter, IconDownload, IconReload } from '../components/icons.jsx';
 import BoardView from '../components/submissions/BoardView.jsx';
 import TableView from '../components/submissions/TableView.jsx';
 import CardDetailModal from '../components/submissions/CardDetailModal.jsx';
@@ -250,6 +250,21 @@ export default function Submissions() {
     rejectReasons.length > 0,
   ].filter(Boolean).length;
   const activeFilterCount = [bhk, dateFrom, dateTo, rmFilter].filter(Boolean).length + clientFilterCount;
+  // The Reset button's visibility. Broader than activeFilterCount (which only
+  // counts what the Filters modal owns) because Reset also clears the stage
+  // pills and the search term — the search box's own clear affordance is gone,
+  // so this is the single way back to an unfiltered board.
+  const hasAnyFilter = activeFilterCount > 0 || statusFilter.length > 0 || !!search;
+
+  // Empty object -> applyFilters falls back to '' / [] for every field. City is
+  // deliberately untouched: it's a tab on the left of the toolbar, not one of
+  // the Filters, and 'All' vs a city is a view choice rather than a refinement.
+  const resetFilters = useCallback(() => {
+    applyFilters({});
+    setSearch('');
+    setSearchInput('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyFilters]);
 
   // The client-only filter values, bundled once so both the memo below and
   // onSelectAll (Task 4) feed the SAME object to the SAME predicate.
@@ -588,6 +603,17 @@ export default function Submissions() {
         >
           <IconFilter size={15} /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
         </button>
+
+        {hasAnyFilter && (
+          <button
+            type="button"
+            className="btn-ghost btn-reset"
+            onClick={resetFilters}
+            title="Clear the search, the stage pills and every filter"
+          >
+            <IconReload size={14} /> Reset
+          </button>
+        )}
 
         {/* Board/Table toggle — last, after Filters. */}
         <SegToggle

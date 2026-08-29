@@ -550,6 +550,15 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .search-form { display: flex; gap: 8px; flex: 1; min-width: 260px; }
 .search-form input { flex: 1; min-width: 0; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-pill); padding: 9px 16px; outline: none; transition: border-color .14s, box-shadow .14s; }
 .search-form .btn-primary, .search-form .btn-ghost { border-radius: var(--r-pill); flex-shrink: 0; white-space: nowrap; }
+/* Kill the browser's built-in search clear affordance (the blue x WebKit draws,
+   and Edge's legacy equivalent). type=search is kept for the mobile keyboard's
+   search key; clearing is the toolbar Reset's job now, in one place. */
+.search-form input[type="search"]::-webkit-search-cancel-button,
+.search-form input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+.search-form input[type="search"]::-ms-clear { display: none; width: 0; height: 0; }
+/* Reset appears only while something is actually filtering, so the toolbar
+   stays quiet at rest. */
+.btn-reset { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap; }
 .al-filter-input { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-pill); padding: 9px 15px; outline: none; transition: border-color .14s, box-shadow .14s; }
 .ar-search, .sms-search { border-radius: var(--r-pill); padding-left: 15px; }
 .toolbar-spacer { flex: 1; }
