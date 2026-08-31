@@ -211,6 +211,9 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 6px 8px 6px; min-height: 40px; }
 .sidebar-brand img { width: 34px; height: 34px; border-radius: 9px; object-fit: contain; background: #fff; padding: 3px; flex-shrink: 0; box-shadow: var(--shadow-sm); }
 .sidebar-brand .brand-name { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 700; color: var(--sidebar-fg-strong); line-height: 1; white-space: nowrap; }
+/* Second half of the wordmark drops to regular weight. Fraunces has a real
+   400 cut, so this is a genuine weight change, not a synthesised one. */
+.sidebar-brand .brand-name-light { font-weight: 400; }
 .sidebar-brand .brand-sub { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); font-weight: 700; white-space: nowrap; }
 .sidebar-collapse-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0 12px; padding: 7px; border-radius: 9px; border: 1px solid var(--sidebar-border); background: transparent; color: var(--sidebar-fg-dim); transition: all .14s; }
 .sidebar-collapse-btn:hover { background: var(--sidebar-hover); color: var(--sidebar-fg-strong); }

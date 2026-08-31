@@ -97,7 +97,8 @@ export default function Layout() {
         <div className="sidebar-brand">
           <img src="/openhouse-logo.png" alt="" className="brand-logo" />
           <div className="brand-text">
-            <div className="brand-name">Openhouse</div>
+            {/* "Open" bold, "house" regular — one word, two weights. */}
+            <div className="brand-name">Open<span className="brand-name-light">house</span></div>
             <div className="brand-sub">CP Inventory</div>
           </div>
         </div>
