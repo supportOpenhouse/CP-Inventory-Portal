@@ -226,13 +226,20 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
   const openCancel = () => { setCancelError(''); setCancelReason(''); setCancelOpen(true); };
 
   const submitCancel = async () => {
+    // Guard here as well as on the button's disabled state: the reason is what
+    // the Visit Cancelled card shows afterwards, and a blank one leaves the
+    // next person with no idea why the visit died. Backend rejects it too.
+    if (!cancelReason.trim()) {
+      setCancelError('Please enter a reason for cancelling.');
+      return;
+    }
     setCancelError('');
     setCancelBusy(true);
     try {
-      await api.adminCancelVisit(s.id, cancelReason.trim() ? { reason: cancelReason.trim() } : {});
+      await api.adminCancelVisit(s.id, { reason: cancelReason.trim() });
       setCancelOpen(false);
       setToast({ kind: 'success', text: 'Visit cancelled.' });
-      onChanged?.({ ...s, status: 'Visit Cancelled' });
+      onChanged?.({ ...s, status: 'Visit Cancelled', visit_cancel_reason: cancelReason.trim() });
     } catch (e) {
       setCancelError(e instanceof ApiError ? e.message : 'Failed to cancel visit');
     } finally {
@@ -347,12 +354,20 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
                 This cancels the visit in the Forms app (deletes the calendar event, notifies the assignee) and moves the lead to <strong>Visit Cancelled</strong>.
               </div>
               <div>
-                <label>Reason <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
-                <input type="text" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="e.g. buyer backed out" maxLength={200} />
+                <label>Reason <span style={{ color: 'var(--red-fg)' }}>*</span></label>
+                <input
+                  type="text"
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="e.g. buyer backed out"
+                  maxLength={200}
+                  required
+                  autoFocus
+                />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-ghost" onClick={closeCancel} disabled={cancelBusy} style={{ flex: 1, justifyContent: 'center' }}>Keep visit</button>
-                <button type="button" className="btn-primary" onClick={submitCancel} disabled={cancelBusy} style={{ flex: 1, justifyContent: 'center', background: 'var(--red)' }}>
+                <button type="button" className="btn-primary" onClick={submitCancel} disabled={cancelBusy || !cancelReason.trim()} style={{ flex: 1, justifyContent: 'center', background: 'var(--red)' }}>
                   {cancelBusy ? 'Cancelling…' : 'Cancel visit'}
                 </button>
               </div>
@@ -374,6 +389,13 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#C2410C' }}><IconClose size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Visit cancelled</div>
           {s.forms_uid && <div style={{ fontSize: 12, color: '#C2410C', fontFamily: 'monospace', fontWeight: 600 }}>UID: {s.forms_uid}</div>}
+          {/* Why it was cancelled — captured in the Cancel modal. Older rows
+              predate the column, so it can legitimately be absent. */}
+          {s.visit_cancel_reason && (
+            <div style={{ fontSize: 12.5, color: '#C2410C', marginTop: 2, lineHeight: 1.45 }}>
+              <span style={{ fontWeight: 700 }}>Reason:</span> {s.visit_cancel_reason}
+            </div>
+          )}
         </div>
         {canAct && (
           <button type="button" onClick={openModal} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '12px 16px', marginTop: 10 }}>
@@ -391,6 +413,21 @@ export default function ScheduleVisitSection({ submission, canAct, onChanged }) 
   return (
     <div className="card-block">
       <h3>Visit Schedule</h3>
+      {/* What the CP actually asked for. Requesting a visit doesn't move the
+          stage or book anything (submissions.py only records the request), so
+          without this the person scheduling has no idea which date was wanted
+          and has to go digging through the timeline. */}
+      {s.status === 'Visit Requested' && s.requested_visit_date && (
+        <div style={{
+          padding: '10px 12px', marginBottom: 10, background: 'var(--brand-softer)',
+          border: '1px solid var(--brand)', borderRadius: 'var(--r)',
+          fontSize: 12.5, color: 'var(--brand-strong)', lineHeight: 1.5,
+        }}>
+          <span style={{ fontWeight: 700 }}>CP requested:</span>{' '}
+          {formatDateOnly(s.requested_visit_date)}
+          {s.requested_visit_slot ? ` · ${s.requested_visit_slot}` : ''}
+        </div>
+      )}
       <button type="button" onClick={openModal} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '12px 16px' }}>
         <IconCalendar size={15} /> Schedule Visit
       </button>

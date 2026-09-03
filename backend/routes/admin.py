@@ -2351,13 +2351,18 @@ def reschedule_visit(sid: int):
 @require_acting_staff
 def cancel_visit(sid: int):
     """Cancel an existing visit via the Forms app and move the submission to the
-    'Visit Cancelled' stage. Body: { reason (OPTIONAL) }. Proxies to
-    FORMS_APP_URL + /api/external/cancel (source_app 'CP Inventory App')."""
+    'Visit Cancelled' stage. Body: { reason (REQUIRED) }. Proxies to
+    FORMS_APP_URL + /api/external/cancel (source_app 'CP Inventory App').
+
+    The reason is persisted to submissions.visit_cancel_reason so the detail
+    view can show it later — the event text alone isn't queryable per-row."""
     if not Config.FORMS_APP_URL or not Config.INTERNAL_API_KEY:
         return jsonify({"error": "Forms app integration not configured."}), 503
 
     data = request.get_json(silent=True) or {}
     reason = to_str(data.get("reason")) or None
+    if not reason:
+        return jsonify({"error": "A cancellation reason is required."}), 400
 
     sub = _load_scheduled_submission(sid)
     if not sub:
@@ -2367,9 +2372,7 @@ def cancel_visit(sid: int):
 
     lead_id = sub.get("public_id") or str(sub["id"])
     actor_name = _resolve_admin_name_for_forms(g.user.get("phone") or "")
-    payload = {"lead_id": lead_id, "source_app": "CP Inventory App"}
-    if reason:
-        payload["reason"] = reason
+    payload = {"lead_id": lead_id, "source_app": "CP Inventory App", "reason": reason}
     if actor_name:
         payload["actor_name"] = actor_name
 
@@ -2381,14 +2384,17 @@ def cancel_visit(sid: int):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("UPDATE submissions SET status='Visit Cancelled' WHERE id=%s", (sid,))
+            cur.execute(
+                "UPDATE submissions SET status='Visit Cancelled', visit_cancel_reason=%s WHERE id=%s",
+                (reason, sid),
+            )
             if old_status != "Visit Cancelled":
                 cur.execute("""
                     INSERT INTO submission_events
                         (submission_id, actor_cp_id, actor_rm_id, kind, from_status, to_status, text)
                     VALUES (%s, %s, %s, 'status_change', %s, 'Visit Cancelled', %s)
                 """, (sid, g.user.get("cp_id"), g.user.get("rm_id"), old_status,
-                      f"Visit cancelled{f' — {reason}' if reason else ''}."))
+                      f"Visit cancelled — {reason}."))
             log_activity(
                 cur, action="visit_cancelled", category="submission",
                 entity_uid=sub.get("public_id"), entity_type="submission", entity_id=sid,
