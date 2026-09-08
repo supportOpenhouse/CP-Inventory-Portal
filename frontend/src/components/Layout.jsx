@@ -95,12 +95,12 @@ export default function Layout() {
     <div className={`app-shell ${collapsed ? 'collapsed' : ''}`}>
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
         <div className="sidebar-brand">
-          <img src="/openhouse-logo.png" alt="" className="brand-logo" />
-          <div className="brand-text">
-            {/* "Open" bold, "house" regular — one word, two weights. */}
-            <div className="brand-name">Open<span className="brand-name-light">house</span></div>
-            <div className="brand-sub">CP Inventory</div>
-          </div>
+          {/* One asset for both themes — dark mode inverts it in CSS rather
+              than shipping a second PNG (see styles.css). The lockup is
+              ~4.2:1: fine across the 248px rail, unreadable in the 76px
+              collapsed one, so that state swaps to the square mark. */}
+          <img src="/cp_inventory_logo.png" alt="Openhouse CP Inventory" className="brand-lockup" />
+          <img src="/openhouse-logo.png" alt="" className="brand-mark" />
         </div>
         <button className="sidebar-collapse-btn" onClick={toggleCollapse} aria-label="Toggle sidebar">
           <span className="scb-chev"><IconChevron size={16} /></span>

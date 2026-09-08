@@ -210,11 +210,28 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 }
 .sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 6px 8px 6px; min-height: 40px; }
 .sidebar-brand img { width: 34px; height: 34px; border-radius: 9px; object-fit: contain; background: #fff; padding: 3px; flex-shrink: 0; box-shadow: var(--shadow-sm); }
-.sidebar-brand .brand-name { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 700; color: var(--sidebar-fg-strong); line-height: 1; white-space: nowrap; }
-/* Second half of the wordmark drops to regular weight. Fraunces has a real
-   400 cut, so this is a genuine weight change, not a synthesised one. */
-.sidebar-brand .brand-name-light { font-weight: 400; }
-.sidebar-brand .brand-sub { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--brand); font-weight: 700; white-space: nowrap; }
+/* Full lockup — replaces the old mark + "Openhouse" + "CP Inventory" text.
+   Overrides the square-mark chrome from `.sidebar-brand img` above (fixed 34px
+   box, white plate, padding, shadow); two-class selector because that rule is
+   (0,1,1) and would otherwise win. */
+.sidebar-brand .brand-lockup {
+  width: 100%; max-width: 190px; height: auto;
+  border-radius: 0; background: none; padding: 0; box-shadow: none;
+}
+/* Dark mode: drop the plate/shadow, then invert the ink.
+   Why the PAIR and not a plain invert(): invert alone flips the orange
+   "CP INVENTORY" to cyan as well. Each row of hue-rotate(180deg)'s matrix sums
+   to 1.0, so white maps to itself while the inverted orange lands back on
+   ~#fd6a23. The PNG is RGBA, so only the ink is touched — no black box behind
+   it. One asset, both themes; no second PNG to keep in sync. */
+[data-theme='dark'] .sidebar-brand .brand-lockup {
+  background: none; box-shadow: none;
+  filter: invert(1) hue-rotate(180deg);
+}
+/* Square mark: collapsed rail only. */
+.sidebar-brand .brand-mark { display: none; }
+.app-shell.collapsed .sidebar-brand .brand-lockup { display: none; }
+.app-shell.collapsed .sidebar-brand .brand-mark { display: block; }
 .sidebar-collapse-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0 12px; padding: 7px; border-radius: 9px; border: 1px solid var(--sidebar-border); background: transparent; color: var(--sidebar-fg-dim); transition: all .14s; }
 .sidebar-collapse-btn:hover { background: var(--sidebar-hover); color: var(--sidebar-fg-strong); }
 .sidebar-collapse-btn .scb-chev { transition: transform .18s; transform: rotate(180deg); }
@@ -241,7 +258,6 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .sidebar-user .su-role { font-size: 11px; color: var(--sidebar-fg-dim); text-transform: capitalize; }
 
 /* collapsed state — icon-only rail */
-.app-shell.collapsed .brand-text,
 .app-shell.collapsed .sidebar-section-label,
 .app-shell.collapsed .nav-label,
 .app-shell.collapsed .sidebar-user .su-text,
@@ -1962,8 +1978,8 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 /* ── brand logos ───────────────────────────────────────────────────────── */
 .login-logo { height: 42px; width: auto; display: block; margin: 0 auto 2px; }
 .sidebar-brand { display: flex; align-items: center; gap: 10px; }
-.brand-logo { width: 30px; height: 30px; border-radius: 7px; flex: none; object-fit: contain; }
-.app-shell.collapsed .brand-logo { margin: 0 auto; }
+/* Collapsed rail centres the square mark; expanded, the lockup fills the row. */
+.app-shell.collapsed .sidebar-brand .brand-mark { margin: 0 auto; }
 
 /* ── welcome curtain — login/logout transition (Direct Inventory pattern) ── */
 .welcome-curtain { position: fixed; inset: 0; z-index: 9999; overflow: hidden; pointer-events: none; }
@@ -2135,3 +2151,36 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .imp-picker-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 10px; }
 .imp-frame-empty { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 24px; font-size: 13px; }
 .imp-frame-empty-icon { display: flex; opacity: .45; }
+
+/* ── theme swap curtain (View Transitions) ────────────────────────────────
+   Toggling dark/light wipes the new palette in from a random edge instead of
+   snapping. ThemeContext picks the direction and puts it on <html> as
+   data-theme-sweep; these keyframes read it.
+
+   Default view-transition behaviour is a cross-fade of old against new, so
+   both halves have to be re-pointed: the OLD snapshot holds still underneath
+   (animation: none) while the NEW one is clipped in on top. mix-blend-mode
+   must go back to `normal` — the UA default of plus-lighter is built for that
+   cross-fade and would wash the wipe edge out. */
+::view-transition-old(root),
+::view-transition-new(root) { mix-blend-mode: normal; }
+::view-transition-old(root) { animation: none; z-index: 0; }
+::view-transition-new(root) { animation: .55s cubic-bezier(.65, 0, .35, 1) both; z-index: 1; }
+
+/* inset() is top right bottom left. Each starts fully clipped from the edge
+   the curtain travels FROM, and opens to inset(0). */
+:root[data-theme-sweep='ltr']::view-transition-new(root) { animation-name: theme-sweep-ltr; }
+:root[data-theme-sweep='rtl']::view-transition-new(root) { animation-name: theme-sweep-rtl; }
+:root[data-theme-sweep='ttb']::view-transition-new(root) { animation-name: theme-sweep-ttb; }
+:root[data-theme-sweep='btt']::view-transition-new(root) { animation-name: theme-sweep-btt; }
+
+@keyframes theme-sweep-ltr { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes theme-sweep-rtl { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0); } }
+@keyframes theme-sweep-ttb { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0); } }
+@keyframes theme-sweep-btt { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0); } }
+
+/* Belt and braces: ThemeContext already skips the transition entirely under
+   this preference, but if one is somehow in flight, don't animate it. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) { animation: none; }
+}
