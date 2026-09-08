@@ -209,23 +209,23 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
   border-right: 1px solid var(--sidebar-border); overflow: hidden;
 }
 .sidebar-brand { display: flex; align-items: center; gap: 11px; padding: 6px 8px 6px; min-height: 40px; }
-.sidebar-brand img { width: 34px; height: 34px; border-radius: 9px; object-fit: contain; background: #fff; padding: 3px; flex-shrink: 0; box-shadow: var(--shadow-sm); }
+/* Both marks sit directly on the sidebar — no white plate, radius or shadow.
+   The PNGs are transparent artwork, so the chrome was a box around ink that
+   never needed one. */
+.sidebar-brand img { width: 34px; height: 34px; object-fit: contain; flex-shrink: 0; }
 /* Full lockup — replaces the old mark + "Openhouse" + "CP Inventory" text.
-   Overrides the square-mark chrome from `.sidebar-brand img` above (fixed 34px
-   box, white plate, padding, shadow); two-class selector because that rule is
-   (0,1,1) and would otherwise win. */
-.sidebar-brand .brand-lockup {
-  width: 100%; max-width: 190px; height: auto;
-  border-radius: 0; background: none; padding: 0; box-shadow: none;
-}
-/* Dark mode: drop the plate/shadow, then invert the ink.
-   Why the PAIR and not a plain invert(): invert alone flips the orange
-   "CP INVENTORY" to cyan as well. Each row of hue-rotate(180deg)'s matrix sums
-   to 1.0, so white maps to itself while the inverted orange lands back on
-   ~#fd6a23. The PNG is RGBA, so only the ink is touched — no black box behind
-   it. One asset, both themes; no second PNG to keep in sync. */
-[data-theme='dark'] .sidebar-brand .brand-lockup {
-  background: none; box-shadow: none;
+   Two-class selector to beat `.sidebar-brand img` (0,1,1) on the fixed 34px box. */
+.sidebar-brand .brand-lockup { width: 100%; max-width: 190px; height: auto; }
+/* Dark mode inverts the ink. Why the PAIR and not a plain invert(): invert
+   alone flips the orange "CP INVENTORY" to cyan as well. Each row of
+   hue-rotate(180deg)'s matrix sums to 1.0, so white maps to itself while the
+   inverted orange lands back on ~#fd6a23. The PNGs are RGBA, so only the ink
+   is touched — no black box behind it. One asset per logo, both themes.
+   The square mark is achromatic so the hue-rotate is a no-op there, but it
+   shares the rule to keep the two in step. Without it the near-black mark
+   would vanish on the #0c0c0c sidebar now that the white plate is gone. */
+[data-theme='dark'] .sidebar-brand .brand-lockup,
+[data-theme='dark'] .sidebar-brand .brand-mark {
   filter: invert(1) hue-rotate(180deg);
 }
 /* Square mark: collapsed rail only. */
