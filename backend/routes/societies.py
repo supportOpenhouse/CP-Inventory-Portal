@@ -48,7 +48,10 @@ def list_societies():
     if not user.get("is_admin") and not city_name:
         return jsonify({"societies": []}), 200
 
-    conditions = []
+    # Deactivated societies (active=false) are closed to new submissions, so
+    # they never appear in the picker — for CPs and for staff submitting on
+    # behalf alike. COALESCE keeps rows visible if the column is ever NULL.
+    conditions = ["COALESCE(active, TRUE) = TRUE"]
     params = []
     if search:
         conditions.append("society_name ILIKE %s")
