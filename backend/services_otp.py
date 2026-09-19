@@ -132,7 +132,10 @@ def _send_sms_via_kaleyra(phone: str, code: str) -> tuple[bool, Optional[str]]:
                 _mask_phone(to), sender_id, template_id)
 
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=8)
+        # 15s: Kaleyra intermittently takes >8s to answer (2026-09-19, one
+        # ReadTimeout at 15:30 IST with sends succeeding either side). Stays
+        # under gunicorn's default 30s worker timeout.
+        r = requests.post(url, headers=headers, json=payload, timeout=15)
         logger.info("[OTP] Kaleyra response status=%d", r.status_code)
         # Kaleyra returns 200 OR 202 for success
         if r.status_code in (200, 202):
