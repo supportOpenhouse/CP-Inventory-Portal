@@ -187,7 +187,9 @@ export default function Submissions() {
         const data = await api.adminListSubmissions(
           { search: openPublicId, skip_counts: 'true' }, { fresh: true },
         );
-        const hit = (data?.rows || []).find(
+        // `submissions`, not `rows` — that's the key /admin/submissions returns
+        // (see reload() below and every other call site).
+        const hit = (data?.submissions || []).find(
           (r) => (r.public_id || '').toUpperCase() === openPublicId.toUpperCase(),
         );
         if (!alive) return;
