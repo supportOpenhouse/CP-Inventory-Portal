@@ -35,7 +35,7 @@ export default function Submissions() {
   const { user } = useAuth();
   // Deep-link from Home: ?status=<stage> opens the board filtered to that stage
   // in table view. Read once to seed initial state (below).
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isAdmin = user.role === 'admin';
   const isManager = user.role === 'manager';
   const isViewer = user.role === 'viewer';
@@ -100,6 +100,9 @@ export default function Submissions() {
   // Which submission's detail modal is open (board-card click). Table view
   // uses its own inline row-expand instead of this.
   const [selectedId, setSelectedId] = useState(null);
+  // Why the deep link couldn't be opened, if it couldn't. Rendered next to the
+  // board's other errors below.
+  const [deepLinkError, setDeepLinkError] = useState('');
 
   const onToggleSelect = useCallback((id) => {
     setSelectedIds((prev) => {
@@ -162,6 +165,51 @@ export default function Submissions() {
       .catch(() => { if (alive) setRms([]); });
     return () => { alive = false; };
   }, [isStaff, isViewer]);
+
+  // ── /OHLGHC0009 deep link ───────────────────────────────────────────────
+  // App.jsx rewrites the bare public_id path to ?open=<public_id>. The modal
+  // wants the NUMERIC submission id, so resolve it here.
+  //
+  // Its own request, deliberately not the board's: the row may sit on a page
+  // we haven't paginated to, or be excluded by the user's remembered filters,
+  // and neither should stop a shared link from opening. `skip_counts` because
+  // a single-row lookup has no use for the per-stage COUNT aggregate (or the
+  // cp_status sync the counted path triggers).
+  //
+  // The permission check is the endpoint's own scoping — a lead this user
+  // isn't allowed to see simply isn't in the response, and reads as not found.
+  const openPublicId = searchParams.get('open');
+  useEffect(() => {
+    if (!openPublicId) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const data = await api.adminListSubmissions(
+          { search: openPublicId, skip_counts: 'true' }, { fresh: true },
+        );
+        const hit = (data?.rows || []).find(
+          (r) => (r.public_id || '').toUpperCase() === openPublicId.toUpperCase(),
+        );
+        if (!alive) return;
+        if (hit) setSelectedId(hit.id);
+        else setDeepLinkError(`${openPublicId} was not found, or you don't have access to it.`);
+      } catch (err) {
+        if (alive) setDeepLinkError(err.message || `Could not open ${openPublicId}`);
+      } finally {
+        // Drop ?open= either way, so a refresh or a Back doesn't reopen a
+        // modal the user has already dismissed.
+        if (alive) {
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('open');
+            return next;
+          }, { replace: true });
+        }
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPublicId]);
 
   // ── saved filter presets ────────────────────────────────────────────────
   // One document per user: three named slots, a display order, and which slot
@@ -585,7 +633,7 @@ export default function Submissions() {
         >
           <input
             type="search"
-            placeholder="Search society, CP, unit, seller…"
+            placeholder="Search any field — e.g. 1709 Sahaj"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             enterKeyHint="search"
@@ -709,9 +757,9 @@ export default function Submissions() {
         </div>
       </div>
 
-      {(error || presetError) && (
+      {(error || presetError || deepLinkError) && (
         <div className="muted" style={{ padding: '10px 0', color: 'var(--red-fg)' }}>
-          {error || presetError}
+          {error || presetError || deepLinkError}
         </div>
       )}
 

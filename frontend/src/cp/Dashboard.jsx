@@ -248,7 +248,7 @@ export default function Dashboard({ rmPhone }) {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search society, tower, unit, ID…"
+            placeholder="Search any field — e.g. 1709 Sahaj"
             className="input-field"
             style={{ width: '100%' }}
           />

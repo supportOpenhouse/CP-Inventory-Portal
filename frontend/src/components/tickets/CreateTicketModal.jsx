@@ -162,7 +162,7 @@ export default function CreateTicketModal({ onClose, onCreated }) {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search society, public ID, CP, seller…"
+                  placeholder="Search any field — e.g. 1709 Sahaj"
                   autoFocus
                   disabled={submitting}
                 />

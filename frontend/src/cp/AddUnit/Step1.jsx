@@ -221,7 +221,7 @@ export default function Step1({ form, setForm, onSubmitted, onAbandon, mode = 'c
         <div className="society-search-wrap" style={{ position: 'relative' }}>
           <input
             className="input-field"
-            placeholder={`Search societies in ${city}...`}
+            placeholder={`Search societies in ${city}... eg: Sahaj`}
             value={form.society?.name || search}
             onChange={(e) => {
               setSearch(e.target.value);

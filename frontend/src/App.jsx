@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext.jsx';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
@@ -16,6 +16,22 @@ const Profile = lazy(() => import('./pages/Profile.jsx'));
 const Chat = lazy(() => import('./pages/Chat.jsx'));
 
 const STAFF = ['admin', 'manager', 'rm', 'viewer'];
+
+// Shareable deep link: /OHLGHC0009 opens that submission's detail popup.
+// public_id is OHL + city letter(s) + C + digits (OHLNC0091 / OHLGC0537 /
+// OHLGHC0009 — see backend/public_id.py). Anything that doesn't match falls
+// through to the catch-all home redirect, so a typo'd path behaves as before.
+const PUBLIC_ID_RE = /^OHL[A-Z]{1,2}C\d+$/i;
+
+function PublicIdRoute() {
+  const { publicId } = useParams();
+  if (!PUBLIC_ID_RE.test(publicId || '')) return <Navigate to="/" replace />;
+  // Hand off to Submissions rather than re-hosting the modal here: that page
+  // already owns CardDetailModal and the board behind it. `replace` keeps the
+  // bare link out of history, so closing the modal doesn't bounce back into
+  // this redirect.
+  return <Navigate to={`/submissions?open=${encodeURIComponent(publicId.toUpperCase())}`} replace />;
+}
 
 // roles=undefined → any authenticated staff; roles=[] → admin only;
 // roles=[...] → those roles (admin always passes).
@@ -52,6 +68,10 @@ export default function App() {
           <Route path="/logs" element={<RequireRole user={user} roles={[]}><Logs /></RequireRole>} />
           <Route path="/chat" element={<RequireRole user={user} roles={['manager', 'rm']}><Chat /></RequireRole>} />
         </Route>
+        {/* Single-segment catch-all, ranked BELOW every static route above
+            (React Router scores static segments higher), so /submissions and
+            friends are unaffected. */}
+        <Route path="/:publicId" element={<PublicIdRoute />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
