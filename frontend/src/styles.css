@@ -504,7 +504,11 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 
 /* Updates row: narrow "New Unacted Submissions" (Outcomes width) + wide "Unread Chats"
    (Pipeline width). Mirror of the Summary grid; both cards equal, tall. */
-.home-updates { display: grid; grid-template-columns: 1fr 1.7fr; gap: 18px; align-items: stretch; margin-bottom: 4px; }
+/* CHAT REMOVED 2026-10-08 — was `1fr 1.7fr`: New submissions on the left, Unread Chats on the
+   right. With the chat card gone the survivor would sit in the narrow column
+   with a hole beside it, so the row is a single full-width column now.
+   Restore the two-column value when re-enabling chat. */
+.home-updates { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: stretch; margin-bottom: 4px; }
 .home-updates .report-card { min-height: 230px; }
 .home-newsubs, .home-unread { display: flex; flex-direction: column; text-decoration: none; color: inherit; transition: border-color .14s, box-shadow .14s; }
 .home-newsubs:hover, .home-unread:hover { border-color: var(--brand); box-shadow: var(--shadow-md); }

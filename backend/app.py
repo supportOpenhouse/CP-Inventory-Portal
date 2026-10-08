@@ -16,7 +16,8 @@ from config import Config
 from db import init_pools
 from routes.admin import bp as admin_bp
 from routes.auth_routes import bp as auth_bp
-from routes.comet import bp as comet_bp
+# CHAT REMOVED 2026-10-08 — CometChat retired; module lives in _disabled/chat/.
+# from routes.comet import bp as comet_bp
 from routes.filter_presets import bp as filter_presets_bp
 from routes.health import bp as health_bp
 from routes.media import bp as media_bp
@@ -26,7 +27,8 @@ from routes.relay import bp as relay_bp
 from routes.submissions import bp as submissions_bp
 from routes.sync import bp as sync_bp
 from routes.tickets import bp as tickets_bp
-from routes.webhooks import bp as webhooks_bp
+# CHAT REMOVED 2026-10-08 — the only route here was the CometChat webhook.
+# from routes.webhooks import bp as webhooks_bp
 
 
 def create_app() -> Flask:
@@ -85,8 +87,10 @@ def create_app() -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(sync_bp)
     app.register_blueprint(tickets_bp)
-    app.register_blueprint(comet_bp)
-    app.register_blueprint(webhooks_bp)
+    # CHAT REMOVED 2026-10-08
+    # app.register_blueprint(comet_bp)
+    # CHAT REMOVED 2026-10-08
+    # app.register_blueprint(webhooks_bp)
     app.register_blueprint(filter_presets_bp)
 
     @app.errorhandler(400)

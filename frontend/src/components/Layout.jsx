@@ -8,7 +8,8 @@ import BusyOverlay from './BusyOverlay.jsx';
 import PageTransition from './PageTransition.jsx';
 import Toast from './Toast.jsx';
 import CreateTicketButton from './tickets/CreateTicketButton.jsx';
-import { useUnreadChat } from '../hooks/useUnreadChat';
+// CHAT REMOVED 2026-10-08 — hook lives in src/_disabled/chat/.
+// import { useUnreadChat } from '../hooks/useUnreadChat';
 import {
   IconHome, IconBoard, IconEye, IconTicket, IconLogs, IconUsers, IconProfile,
   IconSun, IconMoon, IconMenu, IconLogout, IconChevron, IconPlus, IconChat, IconMegaphone,
@@ -17,7 +18,7 @@ import {
 const TITLES = {
   '': 'Home', submissions: 'Submissions', impersonator: 'Impersonator',
   tickets: 'Tickets', logs: 'Activity Logs',
-  users: 'Users', profile: 'My Profile', chat: 'Chat',
+  users: 'Users', profile: 'My Profile',   // CHAT REMOVED 2026-10-08: chat: 'Chat',
 };
 
 function initials(name, phone) {
@@ -46,8 +47,9 @@ export default function Layout() {
   const isManager = role === 'manager';
   const canTickets = role === 'admin' || role === 'manager' || role === 'rm';
   const canAct = canTickets; // admin/manager/rm can perform actions (adds on behalf, etc.)
+  // CHAT REMOVED 2026-10-08
   // Number of CPs with unread chat — drives the count on the Chat nav icon.
-  const chatUnread = useUnreadChat({ people: true, enabled: canTickets });
+  // const chatUnread = useUnreadChat({ people: true, enabled: canTickets });
 
   // Poll "needs my action" ticket count for the nav dot (skip for roles with no
   // ticket access). 15s while visible; on focus; on local ticket mutations.
@@ -110,7 +112,8 @@ export default function Layout() {
         {navItem({ to: '/', label: 'Home', Icon: IconHome, end: true })}
         {navItem({ to: '/submissions', label: 'Submissions', Icon: IconBoard })}
         {canTickets && navItem({ to: '/tickets', label: 'Tickets', Icon: IconTicket, count: ticketDot })}
-        {canTickets && navItem({ to: '/chat', label: 'Chat', Icon: IconChat, count: chatUnread })}
+        {/* CHAT REMOVED 2026-10-08 */}
+        {/* {canTickets && navItem({ to: '/chat', label: 'Chat', Icon: IconChat, count: chatUnread })} */}
 
         {isAdmin && (
           <>
@@ -158,6 +161,7 @@ export default function Layout() {
               <IconPlus size={15} /> Add Inventory
             </button>
           )}
+          {/* CHAT REMOVED 2026-10-08 — Broadcast / Manage-users lived on the chat page only.
           {seg === 'chat' && isAdmin && (
             <>
               <button type="button" className="btn-soft" onClick={() => window.dispatchEvent(new Event('chat:broadcast'))} title="Broadcast — mass message CPs">
@@ -167,7 +171,7 @@ export default function Layout() {
                 <IconUsers size={15} /> Manage users
               </button>
             </>
-          )}
+          )} */}
           {/* Theme toggle + logout live only on the profile page. */}
           {seg === 'profile' && (
             <>

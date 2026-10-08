@@ -33,7 +33,8 @@ import ScheduleVisitSection from './detail/ScheduleVisitSection.jsx';
 import NotesSection from './detail/NotesSection.jsx';
 import MediaSection from './detail/MediaSection.jsx';
 import TicketsSection from '../tickets/TicketsSection.jsx';
-import CpThread from '../chat/CpThread.jsx';
+// CHAT REMOVED 2026-10-08 — component lives in src/_disabled/chat/.
+// import CpThread from '../chat/CpThread.jsx';
 import MatchDetailsModal from '../MatchDetailsModal.jsx';
 import { IconWarning, IconCheck, IconPlay, IconArrowRight } from '../icons.jsx';
 
@@ -241,8 +242,9 @@ function MatchProperty({ s, onOpenSubmission }) {
 export default function SubmissionSections({ s, canAct, onChanged, onOpenCpHistory, onOpenSubmission, stacked, columns }) {
   const { user } = useAuth();
   const role = user?.role;
-  // Staff (admin/manager/rm) get an inline CometChat thread with this CP.
-  const canChat = canAct && !!s.cp_id;
+  // CHAT REMOVED 2026-10-08
+  // Staff (admin/manager/rm) got an inline CometChat thread with this CP.
+  // const canChat = canAct && !!s.cp_id;
   if (!s) return null;
 
   // Direct-style horizontal columns for the table-view row expand: one section
@@ -270,6 +272,7 @@ export default function SubmissionSections({ s, canAct, onChanged, onOpenCpHisto
           <div className="expand-col">
             <NotesSection submission={s} canAct={canAct} onChanged={onChanged} />
           </div>
+          {/* CHAT REMOVED 2026-10-08 — the Chat column is gone from the row expand.
           <div className="expand-col expand-col-chat">
             {canChat && (
               <div className="card-block">
@@ -277,7 +280,7 @@ export default function SubmissionSections({ s, canAct, onChanged, onOpenCpHisto
                 <CpThread cpId={s.cp_id} />
               </div>
             )}
-          </div>
+          </div> */}
           <div className="expand-col">
             <TicketsSection submissionId={s.id} publicId={s.public_id} canCreate={canCreateTickets} />
           </div>
@@ -327,12 +330,13 @@ export default function SubmissionSections({ s, canAct, onChanged, onOpenCpHisto
         <ActivityTimeline s={s} />
         <TicketsSection submissionId={s.id} publicId={s.public_id} canCreate={canAct && role !== 'rm'} />
         <MediaSection submission={s} canAct={canAct} onChanged={onChanged} />
+        {/* CHAT REMOVED 2026-10-08
         {canChat && (
           <div className="card-block">
             <h3>Chat</h3>
             <CpThread cpId={s.cp_id} />
           </div>
-        )}
+        )} */}
       </div>
     </div>
   );

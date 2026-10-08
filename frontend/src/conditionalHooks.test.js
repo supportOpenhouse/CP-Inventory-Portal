@@ -20,6 +20,8 @@ const COMPONENT = /^\s*(export default function|function|const)\s+([A-Z]\w*)/;
 
 function jsxFiles(dir) {
   return readdirSync(dir).flatMap((name) => {
+    // Quarantined code (_disabled/) is not in the build graph — don't lint it.
+    if (name === '_disabled') return [];
     const p = join(dir, name);
     if (statSync(p).isDirectory()) return jsxFiles(p);
     return p.endsWith('.jsx') ? [p] : [];

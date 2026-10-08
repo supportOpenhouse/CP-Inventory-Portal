@@ -13,7 +13,8 @@ const Logs = lazy(() => import('./pages/Logs.jsx'));
 const Users = lazy(() => import('./pages/Users.jsx'));
 const Tickets = lazy(() => import('./pages/Tickets.jsx'));
 const Profile = lazy(() => import('./pages/Profile.jsx'));
-const Chat = lazy(() => import('./pages/Chat.jsx'));
+// CHAT REMOVED 2026-10-08 — CometChat retired; page lives in src/_disabled/chat/.
+// const Chat = lazy(() => import('./pages/Chat.jsx'));
 
 const STAFF = ['admin', 'manager', 'rm', 'viewer'];
 
@@ -66,7 +67,8 @@ export default function App() {
           <Route path="/impersonator" element={<RequireRole user={user} roles={[]}><Impersonator /></RequireRole>} />
           <Route path="/users" element={<RequireRole user={user} roles={[]}><Users /></RequireRole>} />
           <Route path="/logs" element={<RequireRole user={user} roles={[]}><Logs /></RequireRole>} />
-          <Route path="/chat" element={<RequireRole user={user} roles={['manager', 'rm']}><Chat /></RequireRole>} />
+          {/* CHAT REMOVED 2026-10-08 — /chat now falls through to the catch-all home redirect. */}
+          {/* <Route path="/chat" element={<RequireRole user={user} roles={['manager', 'rm']}><Chat /></RequireRole>} /> */}
         </Route>
         {/* Single-segment catch-all, ranked BELOW every static route above
             (React Router scores static segments higher), so /submissions and

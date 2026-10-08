@@ -48,7 +48,8 @@ const TTL_RULES = [
   ['/me', 0],                        // identity — always fresh
   ['/health', 0],
   ['/version', 0],                   // update gate — always fresh
-  ['/comet/', 20],                   // chat state (requests / access / history)
+  // CHAT REMOVED 2026-10-08
+  // ['/comet/', 20],                   // chat state (requests / access / history)
   ['/submissions/stats', 120],
   ['/', 1800],                       // everything else (most reads) — 30 min
 ];
@@ -399,6 +400,7 @@ export const api = {
   // mutates nothing the board reads, so it must not wipe the submissions cache.
   saveFilterPresets: (doc) => request('/presets', { method: 'PUT', body: doc, resetCacheOnWrite: false }),
 
+  /* CHAT REMOVED 2026-10-08 — /api/comet is no longer mounted (backend/_disabled/chat/).
   // Chat (CometChat) — backend provisions the CometChat user, mints login
   // tokens, and proxies/logs sends. Paths mount under /api/comet.
   // Provisioning POSTs — they don't mutate any cached read, so they must NOT
@@ -413,6 +415,7 @@ export const api = {
   cometAccessStatus: (cpIds) => request(`/comet/access?cp_ids=${cpIds.join(',')}`),
   cometEnableCp: (cpId) => request('/comet/enable', { method: 'POST', body: { cp_id: cpId } }),
   cometDisableCp: (cpId) => request('/comet/disable', { method: 'POST', body: { cp_id: cpId } }),
+  */
 
   // Health
   health: () => request('/health', { auth: false }),

@@ -5,9 +5,11 @@ import { clearSession } from '../auth';
 import Dashboard from '../cp/Dashboard.jsx';
 import AddUnit from '../cp/AddUnit/index.jsx';
 import Profile from '../cp/Profile.jsx';
-import Messages from '../cp/Messages.jsx';
+// CHAT REMOVED 2026-10-08 — page lives in src/_disabled/chat/.
+// import Messages from '../cp/Messages.jsx';
 import { IconHome, IconPhone, IconPlus, IconChat, IconUsers, IconEye } from '../components/icons.jsx';
-import { useUnreadChat } from '../hooks/useUnreadChat';
+// CHAT REMOVED 2026-10-08
+// import { useUnreadChat } from '../hooks/useUnreadChat';
 import Toast, { showToast } from '../components/Toast.jsx';
 
 const NO_RM_MSG = 'No RM Assigned, Cant Use this Feature';
@@ -32,7 +34,8 @@ export default function CpApp() {
     return () => { alive = false; };
   }, []);
 
-  const unread = useUnreadChat();
+  // CHAT REMOVED 2026-10-08
+  // const unread = useUnreadChat();
   const goHome = () => setScreen('dashboard');
 
   return (
@@ -50,8 +53,10 @@ export default function CpApp() {
         <AddUnit onDone={goHome} />
       ) : screen === 'profile' ? (
         <Profile onBack={goHome} rmPhone={rmPhone} rmName={rmName} />
+      /* CHAT REMOVED 2026-10-08
       ) : screen === 'messages' ? (
         <Messages onBack={goHome} />
+      */
       ) : (
         <Dashboard rmPhone={rmPhone} />
       )}
@@ -81,6 +86,7 @@ export default function CpApp() {
           <IconPlus size={28} />
         </button>
 
+        {/* CHAT REMOVED 2026-10-08 — bottom strip is now Home · Call · +Add · Profile.
         <button type="button" className={`cp-nav${screen === 'messages' ? ' active' : ''}`} onClick={() => setScreen('messages')} title="Messages">
           <span className="cp-nav-ic">
             <IconChat size={22} />
@@ -89,7 +95,7 @@ export default function CpApp() {
             )}
           </span>
           <span className="cp-nav-lbl">Messages</span>
-        </button>
+        </button> */}
 
         <button type="button" className={`cp-nav${screen === 'profile' ? ' active' : ''}`} onClick={() => setScreen('profile')} title="Profile">
           <span className="cp-nav-ic"><IconUsers size={22} /></span>

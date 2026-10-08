@@ -2,7 +2,8 @@ import { Suspense, createContext, lazy, useContext, useEffect, useState } from '
 
 import { api, ApiError } from '../api';
 import { clearSession, getUser, isImpersonating, setUser } from '../auth';
-import { logoutCometChat } from '../cometchat';
+// CHAT REMOVED 2026-10-08 — module lives in src/_disabled/chat/.
+// import { logoutCometChat } from '../cometchat';
 import { detailStore } from '../components/submissions/submissionDetailStore.js';
 
 // Same module specifier as Login's lazy import, so both share ONE chunk —
@@ -156,7 +157,8 @@ export function AuthProvider({ children }) {
     // Tear down the CometChat session + cached login promise BEFORE clearing
     // the portal session, so a logout→login in the same tab doesn't let the
     // next user inherit this user's CometChat identity.
-    logoutCometChat().catch(() => {});
+    // CHAT REMOVED 2026-10-08
+    // logoutCometChat().catch(() => {});
     setTimeout(() => {
       if (!isImpersonating()) api.logout().catch(() => {});
       api.resetCache();  // drop this user's cached reads on the way out

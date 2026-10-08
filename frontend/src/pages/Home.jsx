@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { useUnreadConversations } from '../hooks/useUnreadConversations';
+// CHAT REMOVED 2026-10-08 — hook lives in src/_disabled/chat/.
+// import { useUnreadConversations } from '../hooks/useUnreadConversations';
 import SegToggle from '../components/SegToggle.jsx';
 import SubmissionsTrend from '../components/home/SubmissionsTrend.jsx';
 import { stageMeta, stageLabel } from '../format';
@@ -21,7 +22,8 @@ export default function Home() {
   const { user } = useAuth();
   const isViewer = user?.role === 'viewer';
   const isAdmin = user?.role === 'admin';
-  const unreadChats = useUnreadConversations({ city: user?.city, isAdmin, enabled: !isViewer });
+  // CHAT REMOVED 2026-10-08
+  // const unreadChats = useUnreadConversations({ city: user?.city, isAdmin, enabled: !isViewer });
 
   const [counts, setCounts] = useState({});
   const [pending, setPending] = useState(0);
@@ -133,8 +135,7 @@ export default function Home() {
           </div>
         </Link>
 
-        {/* Unread chats (right, wide = Pipeline width). Read-only preview list;
-            the whole card navigates to /chat. */}
+        {/* CHAT REMOVED 2026-10-08 — the Unread Chats card is gone; the row now holds Pipeline alone.
         <Link to="/chat" className="report-card home-unread">
           <div className="report-head">
             <h3>Unread Chats</h3>
@@ -162,7 +163,7 @@ export default function Home() {
               )}
             </div>
           )}
-        </Link>
+        </Link> */}
       </div>
 
       <h2 className="home-sec">Summary</h2>
