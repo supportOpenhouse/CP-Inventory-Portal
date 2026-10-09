@@ -7,7 +7,6 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import SegToggle from '../components/SegToggle.jsx';
 import SubmissionsTrend from '../components/home/SubmissionsTrend.jsx';
 import { stageMeta, stageLabel } from '../format';
-import { IconArrowRight } from '../components/icons.jsx';
 
 // Pipeline order (funnel top → bottom, then the two terminal rejections). Each
 // bar is directly labelled (stage name + value), so the stage colours — reused
@@ -26,7 +25,6 @@ export default function Home() {
   // const unreadChats = useUnreadConversations({ city: user?.city, isAdmin, enabled: !isViewer });
 
   const [counts, setCounts] = useState({});
-  const [pending, setPending] = useState(0);
   const [loading, setLoading] = useState(true);
   // New submissions per stage ({ count, latest }) for the chosen range.
   const [nsRange, setNsRange] = useState('today'); // 'today' | 'week'
@@ -38,9 +36,12 @@ export default function Home() {
       .then((d) => { if (alive) setCounts(d.counts || {}); })
       .catch(() => {})
       .finally(() => { if (alive) setLoading(false); });
-    if (!isViewer) {
-      api.ticketsPendingCount().then((r) => { if (alive) setPending(r?.count || 0); }).catch(() => {});
-    }
+    // TICKETS CARD REMOVED 2026-10-08 — nothing on this page renders the
+    // count any more, so don't spend a request on it. Tickets still has its
+    // own nav item and page.
+    // if (!isViewer) {
+    //   api.ticketsPendingCount().then((r) => { if (alive) setPending(r?.count || 0); }).catch(() => {});
+    // }
     return () => { alive = false; };
   }, [isViewer]);
 
@@ -88,88 +89,99 @@ export default function Home() {
 
   return (
     <div className="home">
-      <h2 className="home-sec">Updates</h2>
-      <div className="home-updates">
-        {/* New Unacted Submissions (left, narrow = Outcomes width) — today's
-            Unapproved & Submitted counts + the latest of each. "Unacted" is what
-            those two stages mean: nothing has moved them on yet. Whole card
-            filters to both. */}
-        <Link to="/submissions?status=Unapproved,Submitted" className="report-card home-newsubs">
-          <div className="report-head">
-            <h3>New Unacted Submissions</h3>
-            {/* Range toggle (bare) — SegToggle stops the click bubbling to the card Link. */}
-            <SegToggle
-              bare
-              options={[{ value: 'today', label: 'Today' }, { value: 'week', label: 'This week' }]}
-              value={nsRange}
-              onChange={setNsRange}
-              style={{ marginLeft: 'auto' }}
-            />
-          </div>
-          <div className="ns-cols">
-            {['Unapproved', 'Submitted'].map((stage) => {
-              const d = newSubs[stage];
-              const latest = d.latest;
-              const unit = latest && (latest.tower && latest.unit_no ? `${latest.tower}-${latest.unit_no}` : (latest.unit_no || ''));
-              const meta = latest ? [unit, latest.bhk ? `${latest.bhk} BHK` : ''].filter(Boolean).join(' · ') : '';
-              return (
-                <div key={stage} className="ns-col">
-                  <div className="ns-stage" style={{ color: stageMeta(stage).color }}>{stage}</div>
-                  <div className="ns-count">{newSubs.loading ? '—' : d.count}</div>
-                  <div className="ns-cap muted">added {nsRange === 'week' ? 'this week' : 'today'}</div>
-                  <div className="ns-latest">
-                    {newSubs.loading ? (
-                      <span className="inv-skel" style={{ width: '85%', height: 12, display: 'block' }} />
-                    ) : latest ? (
-                      <>
-                        <div className="ns-latest-soc">{latest.society_name || '—'}</div>
-                        <div className="ns-latest-meta muted">{meta || latest.public_id || ''}</div>
-                      </>
-                    ) : (
-                      <div className="ns-latest-meta muted">Nothing new {nsRange === 'week' ? 'this week' : 'today'}</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Link>
+      <h2 className="home-sec">Summary</h2>
 
-        {/* CHAT REMOVED 2026-10-08 — the Unread Chats card is gone; the row now holds Pipeline alone.
-        <Link to="/chat" className="report-card home-unread">
-          <div className="report-head">
-            <h3>Unread Chats</h3>
-            {!isViewer && unreadChats.length > 0 && (
-              <span className="muted">{unreadChats.length} conversation{unreadChats.length === 1 ? '' : 's'}</span>
-            )}
-          </div>
-          {isViewer ? (
-            <div className="muted" style={{ fontSize: 13 }}>—</div>
-          ) : unreadChats.length === 0 ? (
-            <div className="muted" style={{ fontSize: 13 }}>No unread messages.</div>
-          ) : (
-            <div className="uc-list">
-              {unreadChats.slice(0, 3).map((c) => (
-                <div key={c.uid} className="uc-row">
-                  <span className="uc-badge">{c.unread > 9 ? '9+' : c.unread}</span>
-                  <div className="uc-body">
-                    <div className="uc-name"><strong>{c.name}</strong></div>
-                    <div className="uc-preview muted">{c.text || 'unread message'}</div>
-                  </div>
+      {/* One card, three regions (was four separate cards). Top band splits
+          New Unacted / Outcomes; Pipeline spans the full width beneath, which
+          is the real win — its bars were previously squeezed into 1.7fr. */}
+      <div className="report-card home-overview">
+        <div className="ov-top">
+          {/* New Unacted Submissions — today's Unapproved & Submitted counts
+              plus the latest of each. "Unacted" is what those two stages mean:
+              nothing has moved them on yet. */}
+          <section className="ov-block">
+            <div className="report-head">
+              <h3>New Unacted Submissions</h3>
+              {/* Bare SegToggle; no longer needs to stop click propagation now
+                  that the card itself isn't a Link. */}
+              <SegToggle
+                bare
+                options={[{ value: 'today', label: 'Today' }, { value: 'week', label: 'This week' }]}
+                value={nsRange}
+                onChange={setNsRange}
+                style={{ marginLeft: 'auto' }}
+              />
+            </div>
+            <div className="ns-cols">
+              {['Unapproved', 'Submitted'].map((stage) => {
+                const d = newSubs[stage];
+                const latest = d.latest;
+                const unit = latest && (latest.tower && latest.unit_no ? `${latest.tower}-${latest.unit_no}` : (latest.unit_no || ''));
+                const meta = latest ? [unit, latest.bhk ? `${latest.bhk} BHK` : ''].filter(Boolean).join(' · ') : '';
+                return (
+                  // Per-stage link. The whole card used to be one Link to both
+                  // stages; it can't be now (Pipeline rows are Links, and
+                  // nesting <a> is invalid), and filtering to the one stage you
+                  // clicked is more useful anyway.
+                  <Link
+                    key={stage}
+                    to={`/submissions?status=${encodeURIComponent(stage)}`}
+                    className="ns-col"
+                    title={`Show ${stage} submissions`}
+                  >
+                    <div className="ns-stage" style={{ color: stageMeta(stage).color }}>{stage}</div>
+                    <div className="ns-count">{newSubs.loading ? '—' : d.count}</div>
+                    <div className="ns-cap muted">added {nsRange === 'week' ? 'this week' : 'today'}</div>
+                    <div className="ns-latest">
+                      {newSubs.loading ? (
+                        <span className="inv-skel" style={{ width: '85%', height: 12, display: 'block' }} />
+                      ) : latest ? (
+                        <>
+                          <div className="ns-latest-soc">{latest.society_name || '—'}</div>
+                          <div className="ns-latest-meta muted">{meta || latest.public_id || ''}</div>
+                        </>
+                      ) : (
+                        <div className="ns-latest-meta muted">Nothing new {nsRange === 'week' ? 'this week' : 'today'}</div>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Outcomes — hero total + a labelled composition bar (active / won / lost). */}
+          <section className="ov-block">
+            <div className="report-head"><h3>Outcomes</h3></div>
+            <div className="oc-total">{loading ? '—' : total}</div>
+            <div className="oc-total-lbl muted">total submissions</div>
+
+            <div className="oc-bar" role="img" aria-label="Outcome composition">
+              {outcomes.map((o) => (
+                <span
+                  key={o.label}
+                  className="oc-seg"
+                  title={`${o.label} · ${o.n}`}
+                  style={{ flexGrow: Math.max(o.n, total ? 0 : 1), background: o.color, minWidth: o.n > 0 ? 4 : 0 }}
+                />
+              ))}
+            </div>
+
+            <div className="oc-legend">
+              {outcomes.map((o) => (
+                <div key={o.label} className="oc-leg-row">
+                  <span className="oc-dot" style={{ background: o.color }} />
+                  <span className="oc-leg-lbl">{o.label}</span>
+                  <span className="oc-leg-val">{loading ? '—' : o.n}</span>
+                  <span className="oc-leg-pct muted">{loading || !total ? '' : `${Math.round((o.n / total) * 100)}%`}</span>
                 </div>
               ))}
-              {unreadChats.length > 3 && (
-                <div className="muted uc-more">+{unreadChats.length - 3} more unread <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /></div>
-              )}
             </div>
-          )}
-        </Link> */}
-      </div>
+          </section>
+        </div>
 
-      <h2 className="home-sec">Summary</h2>
-      <div className="home-reports">
-        {/* Pipeline — horizontal magnitude bars, one per stage, clickable to filter. */}
-        <div className="report-card">
+        {/* Pipeline — horizontal magnitude bars, one per stage, click to filter. */}
+        <section className="ov-block ov-pipeline">
           <div className="report-head">
             <h3>Pipeline</h3>
             <span className="muted">by stage · click to filter</span>
@@ -198,48 +210,7 @@ export default function Home() {
                 </Link>
               ))}
           </div>
-        </div>
-
-        {/* Right column: Outcomes on top, Tickets below — together they match
-            the pipeline's height (grid stretches the column; Tickets flex-grows
-            to fill), and both stay within the narrower column's width. */}
-        <div className="home-right">
-          {/* Outcomes — hero total + a labelled composition bar (active / won / lost). */}
-          <div className="report-card">
-            <div className="report-head"><h3>Outcomes</h3></div>
-            <div className="oc-total">{loading ? '—' : total}</div>
-            <div className="oc-total-lbl muted">total submissions</div>
-
-            <div className="oc-bar" role="img" aria-label="Outcome composition">
-              {outcomes.map((o) => (
-                <span
-                  key={o.label}
-                  className="oc-seg"
-                  title={`${o.label} · ${o.n}`}
-                  style={{ flexGrow: Math.max(o.n, total ? 0 : 1), background: o.color, minWidth: o.n > 0 ? 4 : 0 }}
-                />
-              ))}
-            </div>
-
-            <div className="oc-legend">
-              {outcomes.map((o) => (
-                <div key={o.label} className="oc-leg-row">
-                  <span className="oc-dot" style={{ background: o.color }} />
-                  <span className="oc-leg-lbl">{o.label}</span>
-                  <span className="oc-leg-val">{loading ? '—' : o.n}</span>
-                  <span className="oc-leg-pct muted">{loading || !total ? '' : `${Math.round((o.n / total) * 100)}%`}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {!isViewer && (
-            <Link to="/tickets" className="task-card task-card-link home-tickets" style={{ '--tc': '#2563eb' }}>
-              <span className="st-num" style={{ color: '#2563eb', minWidth: 56 }}>{pending}</span>
-              <span className="muted">unresolved ticket{pending === 1 ? '' : 's'} <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /></span>
-            </Link>
-          )}
-        </div>
+        </section>
       </div>
 
       {/* Intake over time — closes the Summary section. Pipeline/Outcomes above

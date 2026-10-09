@@ -426,13 +426,24 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .stat-tile .st-lbl { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 
 /* ── Home dashboard: action cards + report/graph cards ───────────────── */
-.home-chat-alert { display: flex; flex-direction: column; margin-bottom: 18px; }
+/* CHAT REMOVED 2026-10-08 — no markup uses this any more.
+.home-chat-alert { display: flex; flex-direction: column; margin-bottom: 18px; } */
 
-.home-reports { display: grid; grid-template-columns: 1.7fr 1fr; gap: 18px; align-items: stretch; }
-/* Right column stretches to the pipeline's height (grid stretch); Outcomes takes
-   its content, Tickets flex-grows to fill the rest → Outcomes + Tickets ≈ Pipeline. */
-.home-right { display: flex; flex-direction: column; gap: 18px; min-height: 0; }
-.home-tickets { flex: 1; display: flex; align-items: center; gap: 16px; margin-bottom: 0; }
+/* MERGED 2026-10-08 — New Unacted / Outcomes / Pipeline were three cards in
+   two grids (.home-updates + .home-reports with a .home-right column holding
+   Outcomes over a Tickets card). They are one card now; the Tickets card is
+   gone. Regions are separated by hairlines instead of card gaps.
+
+   Top band: New Unacted | Outcomes, split by a vertical rule. Pipeline then
+   spans the FULL card width beneath — it used to live in a 1.7fr column, so
+   its bars gain roughly a third more track. */
+.home-overview { display: flex; flex-direction: column; }
+.ov-top { display: grid; grid-template-columns: 1.35fr 1fr; gap: 28px; }
+/* The rule is a border on the second block, not a gap background: it then
+   spans exactly the taller block's height and needs no extra element. */
+.ov-top > .ov-block + .ov-block { border-left: 1px solid var(--hairline); padding-left: 28px; }
+.ov-block { min-width: 0; display: flex; flex-direction: column; }
+.ov-pipeline { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--hairline); }
 .report-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--shadow-sm); }
 .report-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
 .report-head h3 { margin: 0; font-size: 16px; }
@@ -502,20 +513,18 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .home-sec { font-size: 24px; margin: 0 0 14px; }
 .home-sec:not(:first-child) { margin-top: 30px; }
 
-/* Updates row: narrow "New Unacted Submissions" (Outcomes width) + wide "Unread Chats"
-   (Pipeline width). Mirror of the Summary grid; both cards equal, tall. */
-/* CHAT REMOVED 2026-10-08 — was `1fr 1.7fr`: New submissions on the left, Unread Chats on the
-   right. With the chat card gone the survivor would sit in the narrow column
-   with a hole beside it, so the row is a single full-width column now.
-   Restore the two-column value when re-enabling chat. */
-.home-updates { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: stretch; margin-bottom: 4px; }
-.home-updates .report-card { min-height: 230px; }
-.home-newsubs, .home-unread { display: flex; flex-direction: column; text-decoration: none; color: inherit; transition: border-color .14s, box-shadow .14s; }
-.home-newsubs:hover, .home-unread:hover { border-color: var(--brand); box-shadow: var(--shadow-md); }
+/* MERGED 2026-10-08 — the Updates row (.home-updates) is gone; New Unacted is
+   a region of .home-overview now. .home-unread is kept for the quarantined
+   chat card (src/_disabled/chat/). */
+.home-unread { display: flex; flex-direction: column; text-decoration: none; color: inherit; transition: border-color .14s, box-shadow .14s; }
+.home-unread:hover { border-color: var(--brand); box-shadow: var(--shadow-md); }
 
 /* New Unacted Submissions — two stage columns, each: count today + latest listing. */
 .ns-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
-.ns-col { display: flex; flex-direction: column; gap: 3px; }
+/* Each column links to its own stage filter (the whole card used to be one
+   Link; it can't be, now that Pipeline rows are Links inside the same card). */
+.ns-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 8px 10px; margin: -8px -10px; border-radius: var(--r-sm); text-decoration: none; color: inherit; transition: background .12s; }
+.ns-col:hover { background: var(--surface-2); }
 .ns-stage { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .ns-count { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 700; line-height: 1; color: var(--text); }
 .ns-cap { font-size: 11px; }
@@ -534,8 +543,9 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .uc-more { font-size: 12px; margin-top: 8px; text-align: right; }
 
 @media (max-width: 860px) {
-  .home-reports { grid-template-columns: 1fr; }
-  .home-updates { grid-template-columns: 1fr; }
+  /* Stack the top band and swap the vertical rule for a horizontal one. */
+  .ov-top { grid-template-columns: 1fr; gap: 20px; }
+  .ov-top > .ov-block + .ov-block { border-left: 0; padding-left: 0; padding-top: 20px; border-top: 1px solid var(--hairline); }
 }
 /* Follow Ups matrix (status × time) */
 .fu-matrix { display: flex; flex-direction: column; gap: 2px; }
