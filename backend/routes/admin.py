@@ -1525,7 +1525,8 @@ EDITABLE_FIELDS = {
 @require_staff
 # Unit-details editing is open to every staff role (admin/manager/rm/viewer) —
 # only CPs are excluded, and they can't reach admin routes anyway. (Was
-# admin-only; deliberately relaxed per product decision.)
+# admin-only; deliberately relaxed per product decision.) Each role is held to
+# its own scope via _scoped_city_filter below — an RM edits only their listings.
 def edit_submission(sid: int):
     data = request.get_json(silent=True) or {}
     allowed = {k: v for k, v in data.items() if k in EDITABLE_FIELDS}
@@ -1572,9 +1573,21 @@ def edit_submission(sid: int):
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
+            # Scoped exactly like get_submission: an RM may edit only listings
+            # they can see (their own, or via the CP's RM when there's no
+            # override); a manager, their team's; admin, everything. Out of
+            # scope reads as 404 — same as a GET, so it can't be used to probe
+            # which ids exist. The cp join is required: the RM clause of the
+            # scope filter reads cp.rm_id.
+            scope_sql, scope_params = _scoped_city_filter(cur)
             cur.execute(
-                "SELECT id, public_id FROM submissions WHERE id = %s AND deleted_at IS NULL",
-                (sid,),
+                f"""
+                SELECT s.id, s.public_id
+                FROM submissions s
+                JOIN channel_partners cp ON s.cp_id = cp.id
+                WHERE s.id = %s AND s.deleted_at IS NULL {scope_sql}
+                """,
+                [sid, *scope_params],
             )
             sub = cur.fetchone()
             if not sub:
@@ -1629,6 +1642,90 @@ def delete_submission(sid: int):
     finally:
         put_app_conn(conn)
     return jsonify({"ok": True}), 200
+
+
+@bp.patch("/submissions/<int:sid>/cp")
+@require_staff
+@require_admin_role
+def change_submission_cp(sid: int):
+    """Reassign a submission to a different channel partner. Admin only.
+
+    Body: { "cp_id": int }
+
+    Moves the listing out of the old CP's app and into the new one's. ONLY
+    cp_id changes, deliberately:
+      - listing_rm_id is untouched. It's resolved from the SOCIETY at insert
+        (listing_rm.resolve_listing_rm), not from the CP, so the owning RM
+        doesn't depend on who listed the unit.
+      - public_id is city-based (OHL{city}C{n}), not CP-based.
+
+    The target must be an active, non-admin CP — the same set the CP picker
+    offers (search_cps). Re-checked here rather than trusted from the client.
+
+    Audited twice: a submission_events row for the card's own timeline, and an
+    activity_log row for the dashboard-wide Logs page. This is an attribution
+    change (whose listing it is), so both trails matter.
+    """
+    data = request.get_json(silent=True) or {}
+    new_cp_id = to_int(data.get("cp_id"))
+    if not new_cp_id:
+        return jsonify({"error": "cp_id is required"}), 400
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            # Inner join is safe: submissions.cp_id is NOT NULL with an FK.
+            cur.execute("""
+                SELECT s.id, s.public_id, s.cp_id, cp.name AS cp_name, cp.cp_code
+                FROM submissions s
+                JOIN channel_partners cp ON cp.id = s.cp_id
+                WHERE s.id = %s
+            """, (sid,))
+            sub = cur.fetchone()
+            if not sub:
+                return jsonify({"error": "Submission not found"}), 404
+
+            cur.execute("""
+                SELECT id, name, cp_code, phone
+                FROM channel_partners
+                WHERE id = %s AND is_active = TRUE AND COALESCE(is_admin, FALSE) = FALSE
+            """, (new_cp_id,))
+            new_cp = cur.fetchone()
+            if not new_cp:
+                return jsonify({"error": "That CP doesn't exist or is inactive."}), 400
+
+            # Returned either way so the client can patch the card in place.
+            out = {
+                "cp_id": new_cp["id"], "cp_name": new_cp["name"],
+                "cp_code": new_cp["cp_code"], "cp_phone": new_cp["phone"],
+            }
+            if sub["cp_id"] == new_cp["id"]:
+                return jsonify({"ok": True, "unchanged": True, **out}), 200
+
+            cur.execute("UPDATE submissions SET cp_id = %s WHERE id = %s", (new_cp["id"], sid))
+            cur.execute("""
+                INSERT INTO submission_events (submission_id, actor_cp_id, actor_rm_id, kind, text)
+                VALUES (%s, %s, %s, 'system', %s)
+            """, (
+                sid, g.user.get("cp_id"), g.user.get("rm_id"),
+                f"CP changed from {sub['cp_name']} ({sub['cp_code']}) "
+                f"to {new_cp['name']} ({new_cp['cp_code']}).",
+            ))
+            log_activity(
+                cur, action="submission_cp_changed", category="submission",
+                entity_uid=sub["public_id"], entity_type="submission", entity_id=sid,
+                details={
+                    "from_cp_id": sub["cp_id"], "from_cp_name": sub["cp_name"],
+                    "from_cp_code": sub["cp_code"],
+                    "to_cp_id": new_cp["id"], "to_cp_name": new_cp["name"],
+                    "to_cp_code": new_cp["cp_code"],
+                },
+            )
+            conn.commit()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({"ok": True, **out}), 200
 
 
 # ============================================================
@@ -3504,6 +3601,10 @@ def search_cps():
                 or_clauses.append("REGEXP_REPLACE(COALESCE(cp.phone, ''), '\\D', '', 'g') LIKE %s")
                 params.append(f"%{q_digits}%")
             or_clauses.append("LOWER(cp.name) LIKE LOWER(%s)")
+            params.append(f"%{q}%")
+            # cp_code too — it's how staff refer to a CP ("CP00311"). Shared by
+            # the on-behalf, View-as-CP and change-CP pickers.
+            or_clauses.append("cp.cp_code ILIKE %s")
             params.append(f"%{q}%")
             sql_parts.append(f"AND ({' OR '.join(or_clauses)})")
 

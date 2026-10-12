@@ -322,6 +322,10 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return request(`/admin/cps?${qs}`);
   },
+  // Admin-only: reassign a submission to a different CP. Returns the new CP's
+  // { cp_id, cp_name, cp_code, cp_phone } so the caller can patch in place.
+  adminChangeSubmissionCp: (submissionId, cpId) =>
+    request(`/admin/submissions/${submissionId}/cp`, { method: 'PATCH', body: { cp_id: cpId } }),
   // Admin-only: mint a short-lived CP-scoped token for "View as CP". Returns { token }.
   adminImpersonateCp: (cpId) =>
     request(`/admin/impersonate-cp/${cpId}`, { method: 'POST' }),

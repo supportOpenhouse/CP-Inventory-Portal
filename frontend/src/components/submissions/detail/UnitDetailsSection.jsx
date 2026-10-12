@@ -6,8 +6,10 @@
  * sits next to the title like CP). Editing covers the same cross-section
  * fields CP's editor did (pricing / seller / drive links / comments).
  *
- * Save is admin-gated server-side (PATCH /api/admin/submissions/<id> is
- * @require_admin_role), so the Edit button only shows to admins.
+ * Who can edit: admin, manager and RM. The endpoint (PATCH
+ * /api/admin/submissions/<id>) is plain @require_staff and holds each role to
+ * its own scope, so an RM's edit only lands on listings they can see. Viewers
+ * are read-only throughout the UI, so they don't get the button.
  */
 import { useState } from 'react';
 import { api } from '../../../api';
@@ -47,7 +49,9 @@ export default function UnitDetailsSection({ submission, onChanged }) {
 
   if (!submission) return null;
   const s = submission;
-  const isAdmin = getUser()?.role === 'admin';
+  // RM added 2026-10-12 (was admin-only). Manager too — they sit above RMs, so
+  // an RM holding a power their manager lacks would be backwards.
+  const canEdit = ['admin', 'manager', 'rm'].includes(getUser()?.role);
 
   const startEdit = () => {
     const form = {};
@@ -95,8 +99,9 @@ export default function UnitDetailsSection({ submission, onChanged }) {
     <div className="card-block">
       <div className="card-head">
         <h3>Unit details</h3>
-        {isAdmin && (editMode
-          ? <small className="muted" style={{ fontWeight: 400 }}>Society &amp; CP cannot be changed</small>
+        {canEdit && (editMode
+          // "here" matters: admins CAN change the CP — from the People section.
+          ? <small className="muted" style={{ fontWeight: 400 }}>Society &amp; CP aren't edited here</small>
           : <button type="button" className="btn-soft" onClick={startEdit} disabled={busy}><IconEdit size={13} style={{ verticalAlign: '-2px', marginRight: 4 }} />Edit</button>
         )}
       </div>

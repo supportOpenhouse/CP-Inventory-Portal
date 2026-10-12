@@ -34,7 +34,7 @@ import {
   IconCalendar, IconNote, IconEdit, IconCheck, IconTrash, IconUndo, IconToken,
   IconRejected, IconHandRaise, IconCamera, IconReload, IconBuilding, IconProfile,
   IconLock, IconEye, IconTicket, IconChat,
-  IconArrowUp, IconArrowDown, IconArrowRight, IconSort,
+  IconArrowUp, IconArrowDown, IconArrowRight, IconSort, IconUsers,
 } from '../components/icons.jsx';
 
 const PAGE_SIZE = 100;
@@ -115,6 +115,8 @@ function Details({ row }) {
       return <><DIcon icon={IconCheck} />Submission created{d.initial_status ? ` · ${d.initial_status}` : ''}</>;
     case 'submission_created_on_behalf':
       return <><DIcon icon={IconCheck} />Submitted on behalf of {d.target_cp_name}{d.submitted_by_name ? ` · by ${d.submitted_by_name}` : ''}</>;
+    case 'submission_cp_changed':
+      return <><DIcon icon={IconUsers} />CP changed: {d.from_cp_name} ({d.from_cp_code}) <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> <b>{d.to_cp_name}</b> ({d.to_cp_code})</>;
     case 'submission_deleted':
       return <><DIcon icon={IconTrash} />Submission deleted</>;
     case 'submission_withdrawn':

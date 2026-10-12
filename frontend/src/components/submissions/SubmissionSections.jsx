@@ -289,7 +289,7 @@ export default function SubmissionSections({ s, canAct, onChanged, onOpenCpHisto
           </div>
           <div className="expand-col">
             <PricingSection submission={s} canAct={canAct} onChanged={onChanged} />
-            <PeopleSection submission={s} onOpenCpHistory={onOpenCpHistory} />
+            <PeopleSection submission={s} onChanged={onChanged} onOpenCpHistory={onOpenCpHistory} />
             <CounterOfferSection submission={s} canAct={canAct} onChanged={onChanged} />
           </div>
           <div className="expand-col">
@@ -322,7 +322,7 @@ export default function SubmissionSections({ s, canAct, onChanged, onOpenCpHisto
           <h3>Pricing &amp; People</h3>
           <PricingSection submission={s} embedded />
           <div className="pair-divider" />
-          <PeopleSection submission={s} onOpenCpHistory={onOpenCpHistory} embedded />
+          <PeopleSection submission={s} onChanged={onChanged} onOpenCpHistory={onOpenCpHistory} embedded />
         </div>
         <CounterOfferSection submission={s} canAct={canAct} onChanged={onChanged} />
         <ReassignRmSection submission={s} canAct={canAct} onChanged={onChanged} />

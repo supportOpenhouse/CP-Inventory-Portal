@@ -8,15 +8,34 @@
  *   onOpenCpHistory?: (cpId) => void — opens the CP's full submission
  *   history (same as CP's `onOpenCpHistory` DetailPanel prop).
  */
+import { useState } from 'react';
 import { IconEdit } from '../../icons.jsx';
+import { getUser } from '../../../auth';
+import ChangeCpModal from './ChangeCpModal.jsx';
+
 export default function PeopleSection({ submission, canAct, onChanged, onOpenCpHistory, embedded }) {
+  const [changingCp, setChangingCp] = useState(false);
   if (!submission) return null;
   const s = submission;
+  // Admin-only, matching the endpoint's @require_admin_role. Reassigning a
+  // listing changes who it's attributed to, so it isn't an RM/manager action.
+  const isAdmin = getUser()?.role === 'admin';
   const body = (
       <div className="field-grid-2">
         <div className="field-row">
           <div className="field-lbl">Channel partner</div>
-          <div className="field-val">
+          <div className="field-val field-val-editable">
+            {isAdmin && (
+              <button
+                type="button"
+                className="field-edit-btn"
+                onClick={() => setChangingCp(true)}
+                title="Change channel partner"
+                aria-label="Change channel partner"
+              >
+                <IconEdit size={14} />
+              </button>
+            )}
             <button
               type="button"
               className="btn-link"
@@ -55,11 +74,16 @@ export default function PeopleSection({ submission, canAct, onChanged, onOpenCpH
       </div>
   );
 
-  if (embedded) return body;
+  const modal = changingCp && (
+    <ChangeCpModal submission={s} onClose={() => setChangingCp(false)} onChanged={onChanged} />
+  );
+
+  if (embedded) return <>{body}{modal}</>;
   return (
     <div className="card-block">
       <h3>People</h3>
       {body}
+      {modal}
     </div>
   );
 }
