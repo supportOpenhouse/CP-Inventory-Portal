@@ -2245,3 +2245,18 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .cpx-meta { font-size: 12px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cpx-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); }
 .cpx-check { color: var(--brand); flex-shrink: 0; }
+
+/* ── Assigned RM: explicit current-RM line ────────────────────────────── */
+/* State is stated in text rather than left to a <select>, which can't show a
+   deactivated RM honestly on its own (see ReassignRmSection). */
+.arm-current { font-size: 13px; margin-bottom: 10px; line-height: 1.5; }
+.arm-disabled {
+  display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+  background: var(--amber-bg); color: var(--amber-fg); vertical-align: 1px;
+}
+.arm-warn {
+  font-size: 12px; line-height: 1.45; color: var(--amber-fg);
+  background: var(--amber-bg); border-radius: var(--r-sm);
+  padding: 8px 10px; margin-bottom: 10px;
+}

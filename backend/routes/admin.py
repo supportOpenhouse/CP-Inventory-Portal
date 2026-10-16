@@ -1283,8 +1283,14 @@ def get_submission(sid: int):
                        cp.onboarded_by AS cp_onboarded_by,
                        cp.rm_id AS cp_rm_id,
                        cp_rm.name AS cp_rm_name,
+                       -- Active flags so the Assigned RM picker can show a
+                       -- deactivated RM by name without offering it as a choice.
+                       -- `id IS NOT NULL AND ...`: a dangling id (no rms row)
+                       -- must read as NOT active, not COALESCE its way to true.
+                       (cp_rm.id IS NOT NULL AND COALESCE(cp_rm.is_active, TRUE)) AS cp_rm_active,
                        rm.name AS assigned_rm_name,
                        listing_rm.name AS listing_rm_name,
+                       (listing_rm.id IS NOT NULL AND COALESCE(listing_rm.is_active, TRUE)) AS listing_rm_active,
                        tmr.submitted_stage_at, tmr.visit_completed_stage_at,
                        co.counter_offers_sent, co.cp_counter_offers
                 FROM submissions s
