@@ -132,6 +132,14 @@ export default function Submissions() {
   const [dateFrom, setDateFrom] = useStickyState('submissions.dateFrom', '');
   const [dateTo, setDateTo] = useStickyState('submissions.dateTo', '');
   const [rmFilter, setRmFilter] = useStickyState('submissions.rm', ''); // '' = All RMs
+  // Server filter: listings no active RM can work — the RM was deactivated
+  // (their listings deliberately stay theirs until reassigned) or there's no RM
+  // at all. Deep-linked from Home's "Invalid RM leads" card as ?invalid_rm=1,
+  // which (like ?status=) beats the remembered value.
+  const deepLinkInvalidRm = searchParams.get('invalid_rm') === '1';
+  const [invalidRm, setInvalidRm] = useStickyState(
+    'submissions.invalidRm', false, deepLinkInvalidRm ? true : undefined,
+  );
   // Multi-select stage filter: an array of stage keys (client-side union).
   // [] = All. Deep-links may pass a comma list (?status=Unapproved,Submitted).
   const deepLinkStatus = searchParams.get('status');
@@ -160,7 +168,10 @@ export default function Submissions() {
   useEffect(() => {
     if (!isStaff && !isViewer) return;
     let alive = true;
-    api.adminListRms()
+    // includeInactive: a disabled RM's listings stay theirs until reassigned,
+    // so the filter must be able to pick them. This list only feeds the filter
+    // — never an assignment picker.
+    api.adminListRms({ includeInactive: true })
       .then((data) => { if (alive) setRms(data?.rms || []); })
       .catch(() => { if (alive) setRms([]); });
     return () => { alive = false; };
@@ -251,6 +262,7 @@ export default function Submissions() {
     setPriceMax(a.priceMax ?? '');
     setOhPriceFilter(a.ohPrice ?? '');
     setRejectReasons(a.rejectReasons ?? []);
+    setInvalidRm(a.invalidRm ?? false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -263,15 +275,15 @@ export default function Submissions() {
     prioritySeeded.current = true;
     // A ?status= deep link from Home is an explicit instruction — it outranks
     // both the sticky store and the priority preset.
-    if (deepLinkStatus || !stickyExpired) return;
+    if (deepLinkStatus || deepLinkInvalidRm || !stickyExpired) return;
     const p = presetDoc.priority ? presetDoc.presets[presetDoc.priority - 1] : null;
     if (p && p.filters) applyFilters(p.filters);
-  }, [presetDoc, stickyExpired, deepLinkStatus, applyFilters]);
+  }, [presetDoc, stickyExpired, deepLinkStatus, deepLinkInvalidRm, applyFilters]);
 
   // Restart the 12h window whenever a filter actually moves, so "expired"
   // means 12h of not touching the filters rather than 12h since first use.
   useEffect(() => { touchSticky(FILTER_NS); }, [
-    city, search, statusFilter, bhk, dateFrom, dateTo, rmFilter,
+    city, search, statusFilter, bhk, dateFrom, dateTo, rmFilter, invalidRm,
     matchTypes, missingInfo, priceMin, priceMax, ohPriceFilter, rejectReasons,
   ]);
 
@@ -299,7 +311,7 @@ export default function Submissions() {
     !!ohPriceFilter,
     rejectReasons.length > 0,
   ].filter(Boolean).length;
-  const activeFilterCount = [bhk, dateFrom, dateTo, rmFilter].filter(Boolean).length + clientFilterCount;
+  const activeFilterCount = [bhk, dateFrom, dateTo, rmFilter, invalidRm].filter(Boolean).length + clientFilterCount;
   // The Reset button's visibility. Broader than activeFilterCount (which only
   // counts what the Filters modal owns) because Reset also clears the stage
   // pills and the search term — the search box's own clear affordance is gone,
@@ -356,8 +368,9 @@ export default function Submissions() {
     if (dateFrom) f.date_from = dateFrom;
     if (dateTo) f.date_to = dateTo;
     if (rmFilter) f.rm_id = rmFilter;
+    if (invalidRm) f.invalid_rm = 'true';
     return f;
-  }, [city, search, bhk, dateFrom, dateTo, rmFilter]);
+  }, [city, search, bhk, dateFrom, dateTo, rmFilter, invalidRm]);
 
   // A selection must never outlive the filter it was made under. BOTH the
   // server-side filters (city/search/bhk/date range/RM — effectiveFilters)
@@ -708,6 +721,7 @@ export default function Submissions() {
         initial={{
           bhk, dateFrom, dateTo, rmFilter, statusFilter,
           matchTypes, missingInfo, priceMin, priceMax, ohPrice: ohPriceFilter, rejectReasons,
+          invalidRm,
         }}
         rms={rms}
         canFilterRm={isAdmin || isManager}

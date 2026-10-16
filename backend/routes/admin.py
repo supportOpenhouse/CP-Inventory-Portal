@@ -108,6 +108,32 @@ def require_admin_or_manager(f):
 # their direct reports'. UNION (not UNION ALL) defends against accidental
 # cycles in the manager_ids graph. One %s placeholder for the root rm_id; wrap
 # the call site in `... IN { _TEAM_RM_IDS_SQL }`.
+# A listing no active RM can work: its effective RM — the per-listing RM if
+# set, else the CP's permanent RM, mirroring _scoped_city_filter — is missing,
+# dangling, or deactivated.
+#
+# Deactivating an RM deliberately does NOT reassign their listings; they stay
+# theirs until an admin moves them by hand. This predicate is how those
+# listings are found again. It is shared by the board filter (_apply_filters),
+# the stage-pill counts (_stage_counts) and the Home summary
+# (invalid_rm_summary) — keep it in this one place, or the card, the filtered
+# board and the pill counts will drift apart.
+#
+# Alias-free apart from `s` (subquery for the CP's RM, as the scope filter
+# does), so it works whether or not the caller joins channel_partners.
+_INVALID_RM_SQL = """NOT EXISTS (
+    SELECT 1 FROM rms _r
+    WHERE _r.id = COALESCE(
+              s.listing_rm_id,
+              (SELECT _c.rm_id FROM channel_partners _c WHERE _c.id = s.cp_id))
+      AND COALESCE(_r.is_active, TRUE) = TRUE
+)"""
+
+# Stages where a lead is finished — no RM needs to act on it, so the Home card
+# reports them separately from the live pipeline rather than inflating it.
+_TERMINAL_STAGES = ("Rejected", "Price Rejected", "Closure", "Visit Cancelled")
+
+
 _TEAM_RM_IDS_SQL = (
     "(WITH RECURSIVE my_team(id) AS ("
     " SELECT id FROM rms WHERE id = %s"
@@ -293,6 +319,10 @@ def _apply_filters(base_sql: str, params: list):
     if date_to:
         base_sql += " AND s.submitted_at < (%s::date + interval '1 day')"
         params.append(date_to)
+
+    # Board filter "Invalid RM" (admin/manager). Mirrored in _stage_counts.
+    if request.args.get("invalid_rm", "false").lower() == "true":
+        base_sql += f" AND {_INVALID_RM_SQL}"
 
     return base_sql, params
 
@@ -1042,6 +1072,12 @@ def _stage_counts():
             if date_to:
                 base_sql += " AND s.submitted_at < (%s::date + interval '1 day')"
                 params.append(date_to)
+            # Mirror of the same filter in _apply_filters. This function
+            # re-implements every board filter by hand rather than calling it,
+            # so a filter added there and not here would filter the board's
+            # rows but leave its stage-pill counts unfiltered.
+            if request.args.get("invalid_rm", "false").lower() == "true":
+                base_sql += f" AND {_INVALID_RM_SQL}"
 
             base_sql += " GROUP BY s.status"
             cur.execute(base_sql, params)
@@ -1116,6 +1152,60 @@ def list_submissions():
     if counts is not None:
         payload["counts"] = counts
     return jsonify(payload), 200
+
+
+@bp.get("/submissions/invalid-rm")
+@require_staff
+@require_admin_or_manager
+def invalid_rm_summary():
+    """Home "Invalid RM leads" card: listings no active RM can work.
+
+    Returns:
+      { "total": int,          # every invalid-RM lead the caller can see
+        "live":  int,          # of those, still in the pipeline (not terminal)
+        "owners": [ { "rm_id": int|null, "rm_name": str|null,
+                      "n": int, "live": int }, ... ] }   # most first
+
+    rm_id null = no RM at all (neither the listing nor its CP has one);
+    rm_id set with rm_name null = points at an RM row that no longer exists.
+
+    Scoped like the board: a manager sees their own team's disabled RMs only,
+    an admin everything. Uses the same visibility rule for withdrawn rows and
+    the same _INVALID_RM_SQL as the board filter, so the card's total equals
+    what the filter then shows. Deliberately a dedicated query rather than a
+    third /submissions call from Home: that path runs three cross-DB syncs
+    before counting, and Home already makes two such calls.
+    """
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            scope_sql, scope_params = _scoped_city_filter(cur)
+            cur.execute(f"""
+                SELECT eff.rm_id, r.name AS rm_name,
+                       COUNT(*) AS n,
+                       COUNT(*) FILTER (WHERE s.status NOT IN %s) AS live
+                FROM submissions s
+                CROSS JOIN LATERAL (
+                    SELECT COALESCE(
+                        s.listing_rm_id,
+                        (SELECT rm_id FROM channel_partners WHERE id = s.cp_id)
+                    ) AS rm_id
+                ) eff
+                LEFT JOIN rms r ON r.id = eff.rm_id
+                WHERE (s.deleted_at IS NULL OR s.withdraw_reason = 'cp_withdrawn')
+                  AND {_INVALID_RM_SQL} {scope_sql}
+                GROUP BY eff.rm_id, r.name
+                ORDER BY n DESC
+            """, [_TERMINAL_STAGES, *scope_params])
+            owners = cur.fetchall()
+    finally:
+        put_app_conn(conn)
+
+    return jsonify({
+        "total": sum(o["n"] for o in owners),
+        "live": sum(o["live"] for o in owners),
+        "owners": owners,
+    }), 200
 
 
 # Home's submissions-trend chart. Max window it can request; the frontend's
@@ -3147,33 +3237,45 @@ def list_rms():
 
     Returns: { rms: [ {id, name, phone, email, city, is_manager, manager_ids}, ... ] }
     manager_ids is a list (possibly empty) — an RM can report to several managers.
-    Active only, ordered by name.
     Defensive: falls back gracefully if city/is_manager columns aren't there yet.
+
+    ACTIVE ONLY by default — and that default is load-bearing: the reassign
+    pickers (single + bulk listing RM) and ticket assignment all read this
+    list, and none of them may offer a deactivated RM as a target.
+
+    `?include_inactive=true` adds deactivated RMs, sorted after the active ones,
+    each row carrying `is_active`. Only the board's RM *filter* asks for it: a
+    disabled RM's listings stay theirs until reassigned (see _INVALID_RM_SQL),
+    so you need to be able to filter by them.
     """
+    include_inactive = request.args.get("include_inactive", "false").lower() == "true"
+    active_where = "" if include_inactive else "WHERE COALESCE(r.is_active, TRUE) = TRUE"
     conn = get_app_conn()
     try:
         with conn.cursor() as cur:
             try:
-                cur.execute("""
+                cur.execute(f"""
                     SELECT r.id, r.name, r.phone, r.email,
                            r.city AS city, r.manager_ids,
-                           COALESCE(r.is_manager, FALSE) AS is_manager
+                           COALESCE(r.is_manager, FALSE) AS is_manager,
+                           COALESCE(r.is_active, TRUE) AS is_active
                     FROM rms r
-                    WHERE COALESCE(r.is_active, TRUE) = TRUE
-                    ORDER BY r.name ASC, r.id ASC
+                    {active_where}
+                    ORDER BY COALESCE(r.is_active, TRUE) DESC, r.name ASC, r.id ASC
                 """)
                 rows = cur.fetchall()
             except Exception:
                 conn.rollback()
                 # Fallback for schemas missing city / is_manager / manager_ids
-                cur.execute("""
+                cur.execute(f"""
                     SELECT r.id, r.name, r.phone, r.email,
                            NULL::varchar AS city,
                            FALSE AS is_manager,
-                           NULL::integer[] AS manager_ids
+                           NULL::integer[] AS manager_ids,
+                           COALESCE(r.is_active, TRUE) AS is_active
                     FROM rms r
-                    WHERE COALESCE(r.is_active, TRUE) = TRUE
-                    ORDER BY r.name ASC, r.id ASC
+                    {active_where}
+                    ORDER BY COALESCE(r.is_active, TRUE) DESC, r.name ASC, r.id ASC
                 """)
                 rows = cur.fetchall()
     finally:
@@ -4779,6 +4881,11 @@ def patch_staff_user(source, user_id):
         sets.append("manager_ids = %s")
         params.append(mids or None)   # empty -> NULL, same as "no managers"
     if "is_active" in data:
+        # Deactivating an RM deliberately does NOT reassign their listings —
+        # they stay theirs until an admin moves them by hand (product decision,
+        # 2026-10-16). They surface via the "Invalid RM" board filter and the
+        # Home "Invalid RM leads" card (see _INVALID_RM_SQL). Don't add an
+        # automatic reassignment here.
         sets.append("is_active = %s")
         params.append(bool(data["is_active"]))
     if "role" in data:

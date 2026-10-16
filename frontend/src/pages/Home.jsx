@@ -21,6 +21,10 @@ export default function Home() {
   const { user } = useAuth();
   const isViewer = user?.role === 'viewer';
   const isAdmin = user?.role === 'admin';
+  // "Invalid RM leads" is an admin/manager card — they're the ones who can
+  // reassign. Same gate as the endpoint (@require_admin_or_manager).
+  const canSeeInvalidRm = isAdmin || user?.role === 'manager';
+  const [invalidRm, setInvalidRm] = useState(null); // null until loaded
   // CHAT REMOVED 2026-10-08
   // const unreadChats = useUnreadConversations({ city: user?.city, isAdmin, enabled: !isViewer });
 
@@ -44,6 +48,15 @@ export default function Home() {
     // }
     return () => { alive = false; };
   }, [isViewer]);
+
+  useEffect(() => {
+    if (!canSeeInvalidRm) return undefined;
+    let alive = true;
+    api.adminInvalidRmSummary()
+      .then((d) => { if (alive) setInvalidRm(d); })
+      .catch(() => { if (alive) setInvalidRm({ failed: true }); });
+    return () => { alive = false; };
+  }, [canSeeInvalidRm]);
 
   // New submissions in the chosen range. date_from..date_to scopes submitted_at
   // AND makes `counts` range-scoped; limit:1 → latest row per stage (PARTITION
@@ -95,7 +108,9 @@ export default function Home() {
           New Unacted / Outcomes; Pipeline spans the full width beneath, which
           is the real win — its bars were previously squeezed into 1.7fr. */}
       <div className="report-card home-overview">
-        <div className="ov-top">
+        {/* Third column only for admins/managers — everyone else keeps the
+            two-column band rather than a hole where the card would be. */}
+        <div className={`ov-top${canSeeInvalidRm ? ' ov-top-3' : ''}`}>
           {/* New Unacted Submissions — today's Unapproved & Submitted counts
               plus the latest of each. "Unacted" is what those two stages mean:
               nothing has moved them on yet. */}
@@ -178,6 +193,45 @@ export default function Home() {
               ))}
             </div>
           </section>
+
+          {/* Invalid RM leads — listings no active RM can work. Deactivating an
+              RM deliberately leaves their listings with them; this is where
+              admins find those again. A Link of its own (a sibling, not a
+              parent, of the other links in the card), into the board's
+              "Invalid RM only" filter. The total is the same number that
+              filter shows — both come from one predicate on the backend. */}
+          {canSeeInvalidRm && (
+            <Link to="/submissions?invalid_rm=1" className="ov-block ov-invalid" title="Show these leads on the board">
+              <div className="report-head"><h3>Invalid RM leads</h3></div>
+              {invalidRm === null ? (
+                <span className="inv-skel" style={{ width: 60, height: 36, display: 'block' }} />
+              ) : invalidRm.failed ? (
+                <div className="muted" style={{ fontSize: 13 }}>Couldn't load.</div>
+              ) : invalidRm.total === 0 ? (
+                <div className="muted" style={{ fontSize: 13 }}>Every lead has an active RM.</div>
+              ) : (
+                <>
+                  <div className="oc-total ir-total">{invalidRm.total}</div>
+                  {/* Most aren't worth reassigning — Rejected / Closed /
+                      Cancelled leads are finished. Say how many still matter. */}
+                  <div className="oc-total-lbl muted">{invalidRm.live} still in pipeline</div>
+                  <div className="ir-owners">
+                    {invalidRm.owners.slice(0, 4).map((o) => (
+                      <div key={o.rm_id ?? 'none'} className="ir-owner">
+                        <span className="ir-owner-name">
+                          {o.rm_id == null ? 'No RM' : (o.rm_name || `RM #${o.rm_id}`)}
+                        </span>
+                        <span className="ir-owner-n">{o.n}</span>
+                      </div>
+                    ))}
+                    {invalidRm.owners.length > 4 && (
+                      <div className="ir-more muted">+{invalidRm.owners.length - 4} more</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </Link>
+          )}
         </div>
 
         {/* Pipeline — horizontal magnitude bars, one per stage, click to filter. */}

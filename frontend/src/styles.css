@@ -444,6 +444,20 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .ov-top > .ov-block + .ov-block { border-left: 1px solid var(--hairline); padding-left: 28px; }
 .ov-block { min-width: 0; display: flex; flex-direction: column; }
 .ov-pipeline { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--hairline); }
+/* Admin/manager variant: a third region, "Invalid RM leads", right of
+   Outcomes. The existing `.ov-block + .ov-block` rule already draws its
+   divider, so this only needs the extra column. */
+.ov-top.ov-top-3 { grid-template-columns: 1.35fr 1fr 1fr; }
+/* The region is itself the link into the board filter. */
+.ov-invalid { text-decoration: none; color: inherit; border-radius: var(--r-sm); transition: background .12s; }
+.ov-invalid:hover .report-head h3 { color: var(--brand); }
+/* Amber, not red: these need an admin's attention, they aren't failures. */
+.ir-total { color: var(--amber-fg); }
+.ir-owners { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.ir-owner { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.ir-owner-name { color: var(--text-2); font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ir-owner-n { margin-left: auto; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.ir-more { font-size: 12px; text-align: right; }
 .report-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; box-shadow: var(--shadow-sm); }
 .report-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
 .report-head h3 { margin: 0; font-size: 16px; }
@@ -543,8 +557,10 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
 .uc-more { font-size: 12px; margin-top: 8px; text-align: right; }
 
 @media (max-width: 860px) {
-  /* Stack the top band and swap the vertical rule for a horizontal one. */
-  .ov-top { grid-template-columns: 1fr; gap: 20px; }
+  /* Stack the top band and swap the vertical rule for a horizontal one.
+     `.ov-top.ov-top-3` named explicitly: at two classes it would otherwise
+     outrank `.ov-top` and keep three columns on a phone. */
+  .ov-top, .ov-top.ov-top-3 { grid-template-columns: 1fr; gap: 20px; }
   .ov-top > .ov-block + .ov-block { border-left: 0; padding-left: 0; padding-top: 20px; border-top: 1px solid var(--hairline); }
 }
 /* Follow Ups matrix (status × time) */

@@ -75,7 +75,7 @@ const EMPTY = {
   bhk: '', statusFilter: [], rmIds: [],
   dateFrom: '', dateTo: '', datePreset: '',
   matchTypes: [], missingInfo: [], priceMin: '', priceMax: '', ohPrice: '',
-  rejectReasons: [],
+  rejectReasons: [], invalidRm: false,
 };
 
 // The flattened (applied) shape with everything off. Spread under a preset so
@@ -84,7 +84,7 @@ const EMPTY = {
 const EMPTY_APPLIED = {
   bhk: '', statusFilter: [], rmFilter: '', dateFrom: '', dateTo: '',
   matchTypes: [], missingInfo: [], priceMin: '', priceMax: '', ohPrice: '',
-  rejectReasons: [],
+  rejectReasons: [], invalidRm: false,
 };
 
 function seedForm(initial = {}) {
@@ -103,6 +103,7 @@ function seedForm(initial = {}) {
     matchTypes: Array.isArray(initial.matchTypes) ? initial.matchTypes : [],
     missingInfo: Array.isArray(initial.missingInfo) ? initial.missingInfo : [],
     rejectReasons: Array.isArray(initial.rejectReasons) ? initial.rejectReasons : [],
+    invalidRm: !!initial.invalidRm,
   };
 }
 
@@ -183,6 +184,7 @@ export default function FilterModal({
       priceMax: f.priceMax,
       ohPrice: f.ohPrice,
       rejectReasons: f.rejectReasons,
+      invalidRm: f.invalidRm,
     };
   }
 
@@ -288,11 +290,29 @@ export default function FilterModal({
             <div className="filter-block">
               <label>RM</label>
               <SearchableMultiSelect
-                options={rms.map((r) => ({ value: String(r.id), label: r.name || r.email }))}
+                // Disabled RMs are included (they keep their listings until
+                // reassigned) and sorted last by the backend; the label says so.
+                options={rms.map((r) => ({
+                  value: String(r.id),
+                  label: `${r.name || r.email}${r.is_active === false ? ' (disabled)' : ''}`,
+                }))}
                 value={f.rmIds}
                 onChange={(v) => set('rmIds', v)}
                 placeholder="Pick RM…"
               />
+              {/* Listings no active RM can work: the RM was deactivated (their
+                  listings deliberately stay theirs until reassigned) or there
+                  is no RM at all. Server-side, so it spans every page. */}
+              <div className="bhk-pills" style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  className={f.invalidRm ? 'pill pill-on' : 'pill'}
+                  onClick={() => set('invalidRm', !f.invalidRm)}
+                  title="Disabled RM, or no RM at all — needs manual reassignment"
+                >
+                  Invalid RM only
+                </button>
+              </div>
             </div>
           )}
 

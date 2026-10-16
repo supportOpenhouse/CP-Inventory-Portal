@@ -242,6 +242,9 @@ export const api = {
   adminSubmissionsByDate: (days = 30) =>
     request(`/admin/submissions/by-date${buildQuery({ days })}`),
   adminGetSubmission: (id) => request(`/admin/submissions/${id}`),
+  // Admin/manager: listings no active RM can work (disabled RM, or none),
+  // grouped by owner — { total, live, owners: [{ rm_id, rm_name, n, live }] }.
+  adminInvalidRmSummary: () => request('/admin/submissions/invalid-rm'),
   adminChangeStatus: (id, status, statusReason = null) =>
     request(`/admin/submissions/${id}/status`, {
       method: 'POST',
@@ -255,7 +258,12 @@ export const api = {
     request(`/admin/submissions/${id}`, { method: 'DELETE' }),
   adminGetCpHistory: (cpId) =>
     request(`/admin/cp/${cpId}/submissions`),
-  adminListRms: () => request('/admin/rms'),
+  // Active RMs only, unless `includeInactive` — which ONLY the board's RM
+  // filter should pass. Every assignment picker relies on the default, so a
+  // deactivated RM can never be chosen as a target. Separate cache keys, since
+  // the query string differs.
+  adminListRms: ({ includeInactive = false } = {}) =>
+    request(`/admin/rms${includeInactive ? '?include_inactive=true' : ''}`),
   // Admin-only: change a CP's permanent RM (channel_partners.rm_id)
   // rmId may be null to unassign.
   adminSetCpRm: (cpId, rmId) =>
