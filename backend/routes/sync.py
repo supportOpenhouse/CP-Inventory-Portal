@@ -13,9 +13,11 @@ Auth: shared secret via `X-Sync-Token` header (env var SYNC_SECRET_TOKEN).
 
 import hmac
 import logging
+import re
 
 from flask import Blueprint, request, jsonify
 
+from activity_log import log_activity
 from config import Config
 from db import (
     get_app_conn,
@@ -436,6 +438,205 @@ def sync_channel_partners():
         "added": cp_sync_added_samples,
         "invalid": cp_sync_invalid_rows,
     })
+
+# ==============================================================
+# Channel Partner DETAILS update from Google Sheet
+# ==============================================================
+#
+# The update half of the CP sync. sync_channel_partners above is insert-only —
+# a phone already in the DB is skipped — so edits to existing CPs in the sheet
+# never land. This endpoint applies them, for name, email and city only.
+#
+# Caller: apps-script/update CP details.gs, twice a day (12 AM / 12 PM IST).
+
+# Deliberately loose — catches blanks-with-junk and missing @/domain, not RFC
+# 5322. The sheet is hand-typed; the point is to refuse obvious garbage.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@bp.post("/channel-partners/update")
+def update_channel_partners():
+    """Update name / email / city of EXISTING CPs from the Google Sheet.
+
+    Request:  {"rows": [{phone_number, name?, email?, city?}, ...],
+               "dry_run": bool}            # optional, default false
+    Response:
+      { "ok": true, "dry_run": bool, "total": N,
+        "updated": U, "unchanged": C, "not_found": F, "skipped_invalid": K,
+        "city_id_filled": X,
+        "changes":        [{row_index, cp_code, phone, fields: {field: [old, new]}}],
+        "invalid":        [{row_index, reason}],
+        "not_found_rows": [row_index, ...] }
+    row_index is the row's position in THIS request's `rows`.
+
+    Rules:
+      - Matched on phone, normalised to the last 10 digits — the key the insert
+        sync dedupes on. CP accounts only (role 'cp', not admin): an admin whose
+        phone happens to be in the sheet is never overwritten.
+      - An EMPTY cell means "no information", never "erase". Only non-empty
+        values are compared and written.
+      - city must be one of `cities` (case-insensitive) and is written as the
+        canonical name AND its city_id together, so the two can't drift.
+        A row whose city text already matches but whose city_id is NULL gets
+        city_id filled in silently (counted in city_id_filled, not "updated").
+      - email must look like an address; stored lowercased.
+      - A phone shared by more than one CP account is ambiguous — skipped and
+        reported, never guessed.
+      - A row with any invalid value is skipped whole, not half-applied.
+      - dry_run computes everything, returns it, and rolls back.
+
+    Audited as ONE activity_log row per request, not one per CP: no CP has an
+    email yet, so the first run alone could touch thousands of accounts and
+    bury everything else on the Logs page.
+    """
+    auth_err = _require_sync_auth()
+    if auth_err is not None:
+        return auth_err
+
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows")
+    dry_run = bool(data.get("dry_run"))
+    if not isinstance(rows, list):
+        return jsonify({"error": "Missing or invalid 'rows' (expected list)"}), 400
+    if len(rows) > _CP_SYNC_MAX_BATCH:
+        return jsonify({"error": f"Batch too large: {len(rows)} > {_CP_SYNC_MAX_BATCH}"}), 413
+
+    def _clean(v):
+        s = "" if v is None else str(v).strip()
+        return s or None
+
+    conn = get_app_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, name FROM cities")
+            cities = {r["name"].strip().lower(): (r["id"], r["name"]) for r in cur.fetchall()}
+            city_names = sorted(n for _, n in cities.values())
+
+            # 1. Validate + normalise every row before touching the DB.
+            invalid = []
+            wanted = []  # (row_index, phone, {field: value})
+            for i, r in enumerate(rows):
+                if not isinstance(r, dict):
+                    invalid.append({"row_index": i, "reason": "row is not an object"})
+                    continue
+                phone = _cp_sync_normalize_phone(r.get("phone_number"))
+                if not phone:
+                    invalid.append({"row_index": i, "reason": f"invalid phone: {r.get('phone_number')!r}"})
+                    continue
+                vals, bad = {}, None
+                name = _clean(r.get("name"))
+                if name:
+                    vals["name"] = name
+                email = _clean(r.get("email"))
+                if email:
+                    email = email.lower()
+                    if _EMAIL_RE.match(email):
+                        vals["email"] = email
+                    else:
+                        bad = f"invalid email: {email!r}"
+                city = _clean(r.get("city"))
+                if city and not bad:
+                    hit = cities.get(city.lower())
+                    if hit:
+                        vals["city_id"], vals["city"] = hit
+                    else:
+                        bad = f"unknown city: {city!r} (expected one of {city_names})"
+                if bad:
+                    invalid.append({"row_index": i, "reason": bad})
+                    continue
+                wanted.append((i, phone, vals))
+
+            # 2. Load every CP those phones could match, in one query.
+            by_phone = {}
+            if wanted:
+                cur.execute(r"""
+                    SELECT id, cp_code, name, email, city, city_id,
+                           RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\D', '', 'g'), 10) AS p
+                    FROM channel_partners
+                    WHERE role = 'cp' AND NOT COALESCE(is_admin, FALSE)
+                      AND RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\D', '', 'g'), 10) = ANY(%s)
+                """, (list({p for _, p, _ in wanted}),))
+                for cp in cur.fetchall():
+                    by_phone.setdefault(cp["p"], []).append(cp)
+
+            # 3. Diff and apply.
+            changes, not_found = [], []
+            unchanged = city_id_filled = 0
+            field_counts = {"name": 0, "email": 0, "city": 0}
+            for i, phone, vals in wanted:
+                hits = by_phone.get(phone, [])
+                if not hits:
+                    not_found.append(i)
+                    continue
+                if len(hits) > 1:
+                    codes = ", ".join(h["cp_code"] or f"id {h['id']}" for h in hits)
+                    invalid.append({
+                        "row_index": i,
+                        "reason": f"phone {phone} belongs to {len(hits)} CP accounts ({codes}) — resolve the duplicate first",
+                    })
+                    continue
+                cp = hits[0]
+
+                diff = {}
+                if "name" in vals and vals["name"] != cp["name"]:
+                    diff["name"] = [cp["name"], vals["name"]]
+                if "email" in vals and vals["email"] != (cp["email"] or "").lower():
+                    diff["email"] = [cp["email"], vals["email"]]
+                if "city" in vals and vals["city"] != cp["city"]:
+                    diff["city"] = [cp["city"], vals["city"]]
+                fill_city_id = "city" in vals and not diff.get("city") and cp["city_id"] != vals["city_id"]
+
+                sets, params = [], []
+                if "name" in diff:
+                    sets.append("name = %s"); params.append(vals["name"])
+                if "email" in diff:
+                    sets.append("email = %s"); params.append(vals["email"])
+                if "city" in diff or fill_city_id:
+                    sets += ["city = %s", "city_id = %s"]; params += [vals["city"], vals["city_id"]]
+                if not sets:
+                    unchanged += 1
+                    continue
+
+                cur.execute(f"UPDATE channel_partners SET {', '.join(sets)} WHERE id = %s", params + [cp["id"]])
+                if diff:
+                    for f in diff:
+                        field_counts[f] += 1
+                    changes.append({"row_index": i, "cp_code": cp["cp_code"], "phone": phone, "fields": diff})
+                else:
+                    city_id_filled += 1
+
+            if changes and not dry_run:
+                log_activity(
+                    cur, action="cp_sheet_update", category="channel_partner",
+                    details={
+                        "updated": len(changes), "fields": field_counts,
+                        "city_id_filled": city_id_filled,
+                        "cp_codes": [c["cp_code"] for c in changes],
+                    },
+                )
+
+            if dry_run:
+                conn.rollback()
+            else:
+                conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.exception("[cp-update] batch failed: %s", e)
+        return jsonify({"error": "Update failed", "detail": str(e)}), 500
+    finally:
+        put_app_conn(conn)
+
+    log.info("[cp-update] %s: %d updated, %d unchanged, %d not found, %d invalid, %d city_id filled",
+             "DRY RUN" if dry_run else "applied", len(changes), unchanged, len(not_found),
+             len(invalid), city_id_filled)
+    return jsonify({
+        "ok": True, "dry_run": dry_run, "total": len(rows),
+        "updated": len(changes), "unchanged": unchanged,
+        "not_found": len(not_found), "skipped_invalid": len(invalid),
+        "city_id_filled": city_id_filled,
+        "changes": changes, "invalid": invalid, "not_found_rows": not_found,
+    })
+
 
 # ==============================================================
 # Acquisition Prices sync from Google Sheet

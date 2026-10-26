@@ -115,6 +115,12 @@ function Details({ row }) {
       return <><DIcon icon={IconCheck} />Submission created{d.initial_status ? ` · ${d.initial_status}` : ''}</>;
     case 'submission_created_on_behalf':
       return <><DIcon icon={IconCheck} />Submitted on behalf of {d.target_cp_name}{d.submitted_by_name ? ` · by ${d.submitted_by_name}` : ''}</>;
+    case 'cp_sheet_update': {
+      // One row per sync batch (not per CP) — see update_channel_partners.
+      const f = d.fields || {};
+      const parts = ['name', 'email', 'city'].filter((k) => f[k]).map((k) => `${k} ×${f[k]}`);
+      return <><DIcon icon={IconUsers} />CP sheet sync: <b>{d.updated}</b> CP{d.updated === 1 ? '' : 's'} updated{parts.length ? ` (${parts.join(', ')})` : ''}</>;
+    }
     case 'submission_cp_changed':
       return <><DIcon icon={IconUsers} />CP changed: {d.from_cp_name} ({d.from_cp_code}) <IconArrowRight size={12} style={{ verticalAlign: '-2px' }} /> <b>{d.to_cp_name}</b> ({d.to_cp_code})</>;
     case 'submission_deleted':
