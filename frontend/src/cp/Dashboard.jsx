@@ -16,6 +16,7 @@ import MediaVisitActions from './MediaVisitActions';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { IconSearch, IconWarning, IconHome, IconPhone } from '../components/icons.jsx';
 import { showToast } from '../components/Toast.jsx';
+import { isFestive } from '../utils/festive.js';
 
 // Real DB stages the accurate-count endpoint reports on (mirror of the backend
 // VALID_STAGES); summed for the "ALL" box so the count reflects the CP's full
@@ -207,8 +208,10 @@ export default function Dashboard({ rmPhone }) {
       {/* Header: logo flush-left, greeting to the right. */}
       <div className="header cp-home-header">
         <img src="/openhouse-logo.png" alt="Openhouse" className="cp-logo" />
-        <div className="cp-greeting">Hi, {user.name || 'there'}</div>
+        <div className="cp-greeting">Hi, {user.name || 'there'}{isFestive() && <img className="festive-diya" src="/festive/diya.png" alt="" aria-hidden="true" />}</div>
       </div>
+      {/* Festive (Diwali) — utils/festive.js */}
+      {isFestive() && <div className="festive-lights festive-lights-cp" aria-hidden="true" />}
 
       {/* Filter chips: ALL / VISITED / OFFER / CLOSURE. */}
       <div

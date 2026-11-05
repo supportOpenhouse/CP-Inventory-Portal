@@ -8,6 +8,7 @@ import BusyOverlay from './BusyOverlay.jsx';
 import PageTransition from './PageTransition.jsx';
 import Toast from './Toast.jsx';
 import CreateTicketButton from './tickets/CreateTicketButton.jsx';
+import { isFestive } from '../utils/festive.js';
 // CHAT REMOVED 2026-10-08 — hook lives in src/_disabled/chat/.
 // import { useUnreadChat } from '../hooks/useUnreadChat';
 import {
@@ -146,7 +147,7 @@ export default function Layout() {
       <div className="main-col">
         <header className="topbar">
           <button className="icon-btn topbar-menu" onClick={() => setMobileOpen(true)} aria-label="Menu"><IconMenu /></button>
-          <h1>{title}</h1>
+          <h1>{title}{isFestive() && <img className="festive-diya" src="/festive/diya.png" alt="" aria-hidden="true" />}</h1>
           <div className="topbar-spacer" />
           {/* Portal slot: pages inject their own topbar action buttons here so
               they keep their live state (see Submissions' Select / CSV). */}

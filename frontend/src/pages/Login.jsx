@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { sanitizePhone } from '../format';
 import OtpInput from '../components/OtpInput';
 import LegalLinks from '../components/LegalLinks';
+import { isFestive } from '../utils/festive.js';
 
 // three.js is ~150KB gzipped and this is the app's ENTRY screen — lazy so the
 // bundle never blocks the phone/OTP form. The backdrop fades in a beat later;
@@ -96,10 +97,13 @@ export default function Login() {
         <DottedSurface color="#ffffff" opacity={0.55} size={7} />
       </Suspense>
       <div className="login-card card-block">
+        {/* Festive (Diwali) — utils/festive.js */}
+        {isFestive() && <img className="login-fireworks" src="/festive/fireworks.webp" alt="" aria-hidden="true" fetchpriority="low" decoding="async" />}
         <div className="login-brand">
           <img src="/oh_full_logo.png" alt="Openhouse" className="login-logo" />
           <div className="login-tag muted">Sourcing Portal</div>
         </div>
+        {isFestive() && <h2 className="login-festive-title">Happy Diwali</h2>}
 
         {step === 'phone' && (
           <form onSubmit={handleSendOtp}>

@@ -2260,3 +2260,30 @@ label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2);
   background: var(--amber-bg); border-radius: var(--r-sm);
   padding: 8px 10px; margin-bottom: 10px;
 }
+
+/* ── festive (Diwali) ─────────────────────────────────────────────────────
+   Shown only 6–10 Nov 2026 by the viewer's clock — gated by isFestive()
+   (utils/festive.js); these rules are inert outside it. Mirrors Direct_Inventory.
+   To take it down: delete this block, the isFestive() call sites (Layout, Home,
+   Login, cp/Dashboard), utils/festive.js and public/festive/. */
+
+/* Staff Home strip, flush under the topbar and edge to edge: the negative margin
+   cancels .main's 24px padding. lights 2.webp is 700x350 with all its art in the
+   top 84px, so scaling it to 200px tall makes that lit band exactly the 48px strip.
+   `round` fits a whole number of tiles across, so the swags end cleanly at both edges. */
+.festive-lights {
+  height: 48px; margin: -24px -24px 8px; pointer-events: none;
+  background: url('/festive/lights%202.webp') left top / auto 200px;
+  background-repeat: round no-repeat;
+}
+/* The strip pushes Summary off :first-child, which would add .home-sec's 30px top gap. */
+.festive-lights + .home-sec { margin-top: 0; }
+/* CP app: under the header, full width of the 480px shell (no padding to cancel). */
+.festive-lights.festive-lights-cp { margin: 4px 0 0; }
+/* Diya, right of the staff page name and of the CP app greeting. */
+.festive-diya { height: 22px; width: auto; margin-left: 8px; vertical-align: -3px; filter: drop-shadow(0 0 6px rgba(255, 160, 0, .45)); }
+/* Shared login card: fireworks (background keyed to transparent) above the brand,
+   greeting under it. The warm drop-shadow keeps the cream bursts visible on the
+   light card. */
+.login-card .login-fireworks { display: block; width: 200px; height: auto; margin: -6px auto 2px; pointer-events: none; filter: drop-shadow(0 0 2px rgba(190, 95, 0, .55)); }
+.login-festive-title { font-family: 'Fraunces', serif; font-size: 24px; font-weight: 700; text-align: center; margin: -10px 0 18px; }

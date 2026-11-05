@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import SegToggle from '../components/SegToggle.jsx';
 import SubmissionsTrend from '../components/home/SubmissionsTrend.jsx';
 import { stageMeta, stageLabel } from '../format';
+import { isFestive } from '../utils/festive.js';
 
 // Pipeline order (funnel top → bottom, then the two terminal rejections). Each
 // bar is directly labelled (stage name + value), so the stage colours — reused
@@ -102,6 +103,8 @@ export default function Home() {
 
   return (
     <div className="home">
+      {/* Festive (Diwali) — utils/festive.js */}
+      {isFestive() && <div className="festive-lights" aria-hidden="true" />}
       <h2 className="home-sec">Summary</h2>
 
       {/* One card, three regions (was four separate cards). Top band splits
